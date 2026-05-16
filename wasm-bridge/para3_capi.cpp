@@ -1,0 +1,99 @@
+// =============================================================================
+//  PARA-3 :: C-API bridge implementation
+//  Wraps the verified ParaEngine + Controller. RT-safe; allocation only in
+//  para3_create (engine delay buffer, pattern bank) — never in para3_render.
+// =============================================================================
+#include "para3_capi.h"
+#include "Para3Engine.hpp"
+#include <new>
+
+struct Para3 {
+    para3::ParaEngine engine;
+    para3::Controller ctrl;
+};
+
+extern "C" {
+
+Para3* para3_create(double sr, int maxBlock) {
+    Para3* p = new (std::nothrow) Para3();              // create-time only
+    if (!p) return nullptr;
+    p->engine.prepare(sr, maxBlock);
+    p->ctrl.prepare(p->engine, sr);
+    return p;
+}
+void para3_destroy(Para3* p) { delete p; }
+void para3_reset(Para3* p)   { if (p) p->engine.reset(); }
+
+static para3::ParaEngine::Param mapParam(int id) {
+    using P = para3::ParaEngine::Param;
+    switch (id) {
+        case PARA3_P_RESONANCE:        return P::Resonance;
+        case PARA3_P_DRIVE:            return P::Drive;
+        case PARA3_P_LFO_CUT_DEPTH:    return P::LfoCutDepth;
+        case PARA3_P_DELAY_MIX:        return P::DelayMix;
+        case PARA3_P_LFO_RATE:         return P::LfoRate;
+        case PARA3_P_LFO_PITCH_DEPTH:  return P::LfoPitchDepth;
+        case PARA3_P_DELAY_TIME:       return P::DelayTime;
+        case PARA3_P_DELAY_FEEDBACK:   return P::DelayFeedback;
+        case PARA3_P_ATTACK:           return P::Attack;
+        case PARA3_P_DECREL:           return P::DecRel;
+        case PARA3_P_SUSTAIN:          return P::Sustain;
+        default:                       return P::Cutoff;
+    }
+}
+static para3::ParaAllocator::Mode mapMode(int m) {
+    using M = para3::ParaAllocator::Mode;
+    switch (m) {
+        case PARA3_M_UNISON:   return M::Unison;
+        case PARA3_M_OCTAVE:   return M::Octave;
+        case PARA3_M_FIFTH:    return M::Fifth;
+        case PARA3_M_UNIRING:  return M::UniRing;
+        case PARA3_M_POLYRING: return M::PolyRing;
+        default:               return M::Poly;
+    }
+}
+
+void para3_set_param(Para3* p, int id, double n) {
+    if (p) p->engine.setParamNorm(mapParam(id), n);
+}
+void para3_set_mode(Para3* p, int m)  { if (p) p->engine.setMode(mapMode(m)); }
+void para3_set_lfo_shape(Para3* p, int s) {
+    if (!p) return;
+    using S = para3::Lfo::Shape;
+    S sh = (s == 1) ? S::Triangle : (s == 2) ? S::Saw
+         : (s == 3) ? S::Square   : S::Sine;
+    p->engine.setLfoShape(sh);
+}
+void para3_note_on (Para3* p, int n)  { if (p) p->engine.noteOn(n);  }
+void para3_note_off(Para3* p, int n)  { if (p) p->engine.noteOff(n); }
+
+void para3_seq_set_tempo (Para3* p, double bpm)  { if (p) p->ctrl.clock().setTempo(bpm,4); }
+void para3_seq_set_swing (Para3* p, double s)    { if (p) p->ctrl.clock().setSwing(s); }
+void para3_seq_start     (Para3* p)              { if (p) p->ctrl.clock().start(); }
+void para3_seq_stop      (Para3* p)              { if (p) p->ctrl.clock().stop(); }
+void para3_seq_arm_record(Para3* p, int on)      { if (p) p->ctrl.armRecord(on != 0); }
+
+void para3_seq_set_step(Para3* p, int idx, int note, int gate,
+                        int motionOn, double motionCut) {
+    if (!p || idx < 0 || idx >= 16) return;
+    para3::Step& s = p->ctrl.editPattern().steps[idx];   // accumulating model
+    s.note      = note;
+    s.gate      = gate != 0;
+    s.motionOn  = motionOn != 0;
+    s.motionCut = motionCut;
+}
+void para3_seq_set_length(Para3* p, int len) {
+    if (!p) return;
+    p->ctrl.editPattern().length = (len < 1) ? 1 : (len > 16 ? 16 : len);
+}
+void para3_seq_commit(Para3* p)        { if (p) p->ctrl.commitEdit(); }
+int  para3_seq_current_step(Para3* p)  { return p ? p->ctrl.currentStep() : -1; }
+
+void para3_midi_cc(Para3* p, int cc, double n) { if (p) p->ctrl.midiCC(cc, n); }
+
+void para3_render(Para3* p, float* out, int n) {
+    if (!p) return;
+    p->ctrl.render(out, n);                              // RT-safe path
+}
+
+} // extern "C"

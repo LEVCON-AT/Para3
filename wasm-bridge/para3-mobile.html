@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>PARA·3 — Mobile</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{display:flex;justify-content:center;background:#000;
+  font-family:'Chakra Petch',sans-serif}
+
+.app{
+  width:100%;max-width:440px;min-height:100vh;position:relative;overflow:hidden;
+  /* ---- THEME: OBSIDIAN (default) ---- */
+  --bg1:#1b1c23; --bg2:#0a0a0c; --bg3:#060608;
+  --card1:#23242b; --card2:#15161c;
+  --metal1:#46484f; --metal2:#1d1e24; --metal3:#0f1014;
+  --accent:#ff6a18; --accent2:#ff8a3d; --accent-dim:#7a3c12;
+  --phos:#ffae5e;
+  --ink:#cdd0d9; --ink-dim:#7d8090; --line:#000;
+  --keyw1:#dad9d4; --keyw2:#a9a8a2; --grain:overlay; --gop:.05;
+  --soft:0 6px 16px -10px #000;
+  background:radial-gradient(120% 60% at 50% 0%,var(--bg1),var(--bg2) 55%,var(--bg3));
+  color:var(--ink);transition:background .4s,color .4s;
+}
+.app[data-theme="bone"]{
+  --bg1:#f2ece0; --bg2:#e4dccb; --bg3:#d8cfb9;
+  --card1:#efe8d8; --card2:#e0d7c2;
+  --metal1:#fbf6ea; --metal2:#cdc2a8; --metal3:#a99c7e;
+  --accent:#cf4a14; --accent2:#e7702e; --accent-dim:#b07a4e;
+  --phos:#7a3410;
+  --ink:#2c271f; --ink-dim:#897e66; --line:#bdb39a;
+  --keyw1:#fcfaf3; --keyw2:#d8cfba; --grain:multiply; --gop:.04;
+  --soft:0 6px 16px -12px rgba(80,60,30,.5);
+  background:radial-gradient(120% 60% at 50% 0%,var(--bg1),var(--bg2) 55%,var(--bg3));
+}
+.app::after{content:"";position:absolute;inset:0;pointer-events:none;z-index:999;
+  opacity:var(--gop);mix-blend-mode:var(--grain);
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/></filter><rect width='140' height='140' filter='url(%23n)'/></svg>")}
+
+/* ---- TOP BAR ---- */
+.bar{position:sticky;top:0;z-index:50;display:flex;align-items:center;
+  justify-content:space-between;padding:14px 16px 12px;
+  background:linear-gradient(180deg,var(--bg1),transparent);
+  backdrop-filter:blur(2px)}
+.logo{font-size:22px;font-weight:700;letter-spacing:3px;color:var(--ink)}
+.logo b{color:var(--accent);text-shadow:0 0 12px color-mix(in srgb,var(--accent) 60%,transparent)}
+.themes{display:flex;gap:5px;background:var(--card2);padding:4px;border-radius:9px;
+  box-shadow:0 0 0 1px var(--line) inset}
+.themes button{font-family:'Chakra Petch';font-size:9px;font-weight:700;letter-spacing:1.5px;
+  border:none;border-radius:6px;padding:6px 9px;color:var(--ink-dim);background:transparent;
+  cursor:pointer;transition:.2s}
+.themes button.on{color:#fff;background:var(--accent);
+  box-shadow:0 0 12px color-mix(in srgb,var(--accent) 55%,transparent)}
+.app[data-theme="bone"] .themes button.on{color:#fff}
+
+/* ---- PATCHES ---- */
+.patch{display:flex;gap:6px;padding:0 14px 12px;overflow-x:auto;scrollbar-width:none}
+.patch::-webkit-scrollbar{display:none}
+.pslot{flex:0 0 auto;width:42px;height:38px;border:none;border-radius:8px;cursor:pointer;
+  font-family:'DM Mono',monospace;font-size:11px;color:var(--ink-dim);
+  background:linear-gradient(180deg,var(--card1),var(--card2));
+  box-shadow:0 1px 0 rgba(255,255,255,.05) inset,var(--soft);transition:.15s;position:relative}
+.pslot.filled{color:var(--ink)}
+.pslot.filled::after{content:"";position:absolute;top:5px;right:5px;width:5px;height:5px;
+  border-radius:50%;background:var(--accent);box-shadow:0 0 5px var(--accent)}
+.pslot.active{color:#fff;background:linear-gradient(180deg,var(--accent2),var(--accent));
+  box-shadow:0 0 14px color-mix(in srgb,var(--accent) 55%,transparent)}
+.psave{flex:0 0 auto;width:54px;height:38px;border:none;border-radius:8px;cursor:pointer;
+  font-family:'Chakra Petch';font-size:10px;font-weight:700;letter-spacing:1px;
+  color:var(--ink-dim);background:linear-gradient(180deg,var(--card1),var(--card2));
+  box-shadow:var(--soft)}
+.psave.arm{color:#fff;background:linear-gradient(180deg,var(--accent2),var(--accent))}
+
+/* ---- DISPLAY ---- */
+.disp{margin:0 14px 14px;border-radius:12px;padding:13px 16px;position:relative;
+  overflow:hidden;background:linear-gradient(180deg,#0c0905,#070503);
+  box-shadow:0 0 0 1px rgba(255,255,255,.04) inset,0 8px 18px -10px #000 inset}
+.app[data-theme="bone"] .disp{background:linear-gradient(180deg,#1c130a,#0d0805)}
+.disp::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background:repeating-linear-gradient(0deg,rgba(0,0,0,.32) 0 1px,transparent 1px 3px)}
+.dRow{display:flex;justify-content:space-between;align-items:flex-end;z-index:1;position:relative}
+.dParam{font-family:'DM Mono',monospace;font-size:11px;letter-spacing:2px;
+  color:#8a4a1e;text-transform:uppercase}
+.dVal{font-family:'DM Mono',monospace;font-size:34px;color:#ffb066;
+  text-shadow:0 0 16px rgba(255,150,70,.5);line-height:1}
+.dUnit{font-size:12px;color:#8a4a1e;margin-left:5px}
+#scope{width:100%;height:30px;display:block;margin-top:8px;position:relative;z-index:1}
+
+/* ---- SECTIONS ---- */
+.scroll{padding:0 14px 140px}
+.sec{background:linear-gradient(180deg,var(--card1),var(--card2));border-radius:14px;
+  padding:14px 14px 16px;margin-bottom:12px;
+  box-shadow:0 1px 0 rgba(255,255,255,.05) inset,var(--soft)}
+.sec h2{font-size:10px;letter-spacing:3px;color:var(--ink-dim);text-transform:uppercase;
+  font-weight:600;margin-bottom:14px;padding-bottom:7px;border-bottom:1px solid var(--line)}
+.sec h2 b{color:var(--accent)}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;justify-items:center}
+
+/* ---- KNOB ---- */
+.knob{width:100%;display:flex;flex-direction:column;align-items:center;gap:6px;
+  user-select:none;touch-action:none}
+.dial{position:relative;width:62px;height:62px}
+.dial svg{position:absolute;inset:0;transform:rotate(135deg)}
+.trk{fill:none;stroke:rgba(0,0,0,.5);stroke-width:4;stroke-linecap:round}
+.app[data-theme="bone"] .trk{stroke:rgba(120,100,60,.35)}
+.flx{fill:none;stroke:var(--accent);stroke-width:4;stroke-linecap:round;
+  filter:drop-shadow(0 0 4px color-mix(in srgb,var(--accent) 70%,transparent))}
+.cap{position:absolute;inset:9px;border-radius:50%;
+  background:radial-gradient(circle at 38% 30%,var(--metal1),var(--metal2) 48%,var(--metal3));
+  box-shadow:0 3px 6px -2px rgba(0,0,0,.6),0 0 0 1px var(--line),
+    0 1px 0 rgba(255,255,255,.08) inset}
+.ind{position:absolute;left:50%;top:8px;width:3px;height:14px;border-radius:2px;
+  background:var(--accent);transform:translateX(-50%);transform-origin:50% 23px;
+  box-shadow:0 0 7px 1px color-mix(in srgb,var(--accent) 80%,transparent)}
+.knob label{font-size:9px;letter-spacing:1px;color:var(--ink-dim);text-transform:uppercase;
+  font-weight:500;text-align:center}
+.knob.tgt .cap{box-shadow:0 0 0 2px var(--accent),0 3px 6px -2px #000}
+
+/* ---- FADERS ---- */
+.fwrap{display:flex;justify-content:space-around;padding-top:2px}
+.fader{display:flex;flex-direction:column;align-items:center;gap:8px;
+  user-select:none;touch-action:none}
+.slot{position:relative;width:16px;height:118px;border-radius:8px;cursor:ns-resize;
+  background:linear-gradient(180deg,#0a0b0e,#1a1b21)}
+.app[data-theme="bone"] .slot{background:linear-gradient(180deg,#bcb094,#d6ccb2)}
+.slot{box-shadow:0 0 0 1px var(--line) inset,0 2px 4px rgba(0,0,0,.4) inset}
+.sfill{position:absolute;left:50%;bottom:9px;width:3px;transform:translateX(-50%);
+  background:var(--accent);border-radius:2px;
+  box-shadow:0 0 6px color-mix(in srgb,var(--accent) 70%,transparent)}
+.grip{position:absolute;left:50%;width:34px;height:20px;border-radius:5px;
+  transform:translate(-50%,50%);
+  background:linear-gradient(180deg,var(--metal1),var(--metal2) 60%,var(--metal3));
+  box-shadow:0 2px 5px -1px rgba(0,0,0,.6),0 0 0 1px var(--line),
+    0 1px 0 rgba(255,255,255,.15) inset}
+.grip::after{content:"";position:absolute;left:6px;right:6px;top:50%;height:2px;
+  transform:translateY(-50%);background:var(--accent);border-radius:2px}
+.fader label{font-size:9px;letter-spacing:1px;color:var(--ink-dim);text-transform:uppercase}
+
+/* ---- SELECTORS ---- */
+.vgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.vgrid button{font-family:'Chakra Petch';font-size:9px;font-weight:600;letter-spacing:.5px;
+  text-transform:uppercase;color:var(--ink-dim);border:none;border-radius:7px;padding:11px 2px;
+  cursor:pointer;background:linear-gradient(180deg,var(--card1),var(--card2));
+  box-shadow:0 1px 0 rgba(255,255,255,.05) inset,var(--soft);transition:.15s}
+.vgrid button.on{color:#fff;background:linear-gradient(180deg,var(--accent2),var(--accent));
+  box-shadow:0 0 14px color-mix(in srgb,var(--accent) 55%,transparent)}
+.wave{display:flex;gap:7px;justify-content:center;margin-top:13px;align-items:center}
+.wave button{width:44px;height:34px;border:none;border-radius:7px;cursor:pointer;
+  background:linear-gradient(180deg,var(--card1),var(--card2));color:var(--ink-dim);
+  box-shadow:var(--soft);display:flex;align-items:center;justify-content:center}
+.wave button svg{width:24px;height:15px;stroke:currentColor;fill:none;stroke-width:2}
+.wave button.on{color:#fff;background:linear-gradient(180deg,var(--accent2),var(--accent))}
+.lled{width:12px;height:12px;border-radius:50%;background:var(--accent-dim);
+  margin-left:6px;box-shadow:0 0 0 1px var(--line)}
+
+/* ---- SEQUENCER ---- */
+.seqhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.seqhead h2{margin:0;border:0;padding:0;font-size:10px;letter-spacing:3px;
+  color:var(--ink-dim);text-transform:uppercase;font-weight:600}
+.seqhead h2 b{color:var(--accent)}
+.tg{display:flex;gap:7px}
+.tbtn{font-family:'Chakra Petch';font-size:10px;font-weight:700;letter-spacing:1px;
+  text-transform:uppercase;color:var(--ink);border:none;padding:9px 13px;border-radius:8px;
+  background:linear-gradient(180deg,var(--card1),var(--card2));
+  box-shadow:0 1px 0 rgba(255,255,255,.06) inset,var(--soft);cursor:pointer;transition:.15s}
+.tbtn.on{color:#fff;background:linear-gradient(180deg,var(--accent2),var(--accent));
+  box-shadow:0 0 14px color-mix(in srgb,var(--accent) 55%,transparent)}
+.steps{display:grid;grid-template-columns:repeat(8,1fr);gap:7px}
+.step{aspect-ratio:1/1.25;border-radius:7px;border:none;cursor:pointer;position:relative;
+  background:linear-gradient(180deg,var(--card1),var(--card2));
+  box-shadow:0 1px 0 rgba(255,255,255,.05) inset,var(--soft);transition:transform .08s}
+.step::after{content:"";position:absolute;left:50%;top:6px;width:9px;height:9px;
+  border-radius:50%;transform:translateX(-50%);background:rgba(0,0,0,.5)}
+.app[data-theme="bone"] .step::after{background:rgba(120,100,60,.3)}
+.step.on::after{background:var(--accent-dim)}
+.step.cur{transform:scale(.92)}
+.step.cur::after{background:var(--accent);
+  box-shadow:0 0 10px 3px color-mix(in srgb,var(--accent) 85%,transparent)}
+.step .n{position:absolute;bottom:4px;left:0;right:0;text-align:center;
+  font-family:'DM Mono',monospace;font-size:8px;color:var(--ink-dim)}
+
+/* ---- MOTION LANE ---- */
+.mhead{display:flex;justify-content:space-between;align-items:center;
+  margin:16px 0 9px}
+.mhead .mt{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:1px;
+  color:var(--ink-dim)}
+.mhead .mt b{color:var(--accent)}
+.mbtn{font-family:'Chakra Petch';font-size:9px;font-weight:700;letter-spacing:1px;
+  border:none;border-radius:7px;padding:7px 11px;color:var(--ink-dim);cursor:pointer;
+  background:linear-gradient(180deg,var(--card1),var(--card2));box-shadow:var(--soft)}
+.mbtn.on{color:#fff;background:linear-gradient(180deg,var(--accent2),var(--accent));
+  box-shadow:0 0 12px color-mix(in srgb,var(--accent) 55%,transparent)}
+.lane{display:grid;grid-template-columns:repeat(16,1fr);gap:3px;height:64px;
+  background:linear-gradient(180deg,rgba(0,0,0,.35),rgba(0,0,0,.15));
+  border-radius:9px;padding:7px 6px;touch-action:none}
+.app[data-theme="bone"] .lane{background:linear-gradient(180deg,rgba(140,120,80,.22),rgba(140,120,80,.1))}
+.mb{align-self:end;border-radius:2px;background:var(--accent-dim);min-height:2px;
+  transition:height .04s}
+.mb.cur{background:var(--accent);
+  box-shadow:0 0 8px color-mix(in srgb,var(--accent) 80%,transparent)}
+
+/* ---- KEYBOARD ---- */
+.kbd{position:fixed;left:0;right:0;bottom:0;max-width:440px;margin:0 auto;
+  height:118px;display:flex;z-index:40;background:#000;
+  box-shadow:0 -8px 22px -10px #000}
+.wk{flex:1;background:linear-gradient(180deg,var(--keyw1),var(--keyw2));
+  border-right:1px solid #2a2a28;position:relative;cursor:pointer;transition:.06s}
+.wk:last-child{border-right:none}
+.wk.dn{background:linear-gradient(180deg,var(--accent2),var(--accent));
+  box-shadow:0 0 26px color-mix(in srgb,var(--accent) 60%,transparent) inset}
+.bk{position:absolute;top:0;width:9%;height:60%;z-index:2;cursor:pointer;
+  background:linear-gradient(180deg,#26272d,#0c0d11);border-radius:0 0 4px 4px;
+  box-shadow:0 4px 6px -2px #000,0 0 0 1px #000;transition:.06s}
+.bk.dn{background:linear-gradient(180deg,var(--accent),var(--accent-dim));
+  box-shadow:0 0 18px color-mix(in srgb,var(--accent) 70%,transparent)}
+</style>
+</head>
+<body>
+<div class="app" id="app" data-theme="obsidian">
+
+  <div class="bar">
+    <div class="logo">PARA<b>·</b>3</div>
+    <div class="themes" id="themes">
+      <button class="on" data-t="obsidian">OBSIDIAN</button>
+      <button data-t="bone">BONE</button>
+    </div>
+  </div>
+
+  <div class="patch" id="patch">
+    <button class="psave" id="psave">SAVE</button>
+  </div>
+
+  <div class="disp">
+    <div class="dRow">
+      <span class="dParam" id="dP">READY</span>
+      <span class="dParam" id="dEng">PARAPHONIC · 3 VCO</span>
+    </div>
+    <div style="z-index:1;position:relative"><span class="dVal" id="dV">—</span><span class="dUnit" id="dU"></span></div>
+    <canvas id="scope" width="412" height="60"></canvas>
+  </div>
+
+  <div class="scroll">
+
+    <div class="sec">
+      <h2>VCO · <b>VOICE</b></h2>
+      <div class="vgrid" id="voice">
+        <button class="on">Poly</button><button>Unison</button><button>Octave</button>
+        <button>Fifth</button><button>Uni Ring</button><button>Poly Ring</button>
+      </div>
+    </div>
+
+    <div class="sec">
+      <h2>OSC · <b>TUNE</b></h2>
+      <div class="grid3" data-knobgrid>
+        <div class="knob" data-min="-2" data-max="2" data-val="0" data-unit="oct" data-name="OCTAVE" data-k="oct"></div>
+        <div class="knob" data-min="0" data-max="100" data-val="22" data-unit="" data-name="DETUNE" data-k="det"></div>
+        <div class="knob" data-min="0" data-max="100" data-val="0" data-unit="" data-name="PORTAMENTO" data-k="por"></div>
+      </div>
+    </div>
+
+    <div class="sec">
+      <h2>V<b>CF</b></h2>
+      <div class="grid3" data-knobgrid>
+        <div class="knob" data-min="0" data-max="100" data-val="64" data-unit="" data-name="CUTOFF" data-k="cut"></div>
+        <div class="knob" data-min="0" data-max="100" data-val="35" data-unit="" data-name="PEAK" data-k="pk"></div>
+        <div class="knob" data-min="-100" data-max="100" data-val="20" data-unit="" data-name="EG INT" data-k="egi"></div>
+      </div>
+    </div>
+
+    <div class="sec">
+      <h2>E<b>G</b></h2>
+      <div class="fwrap" id="faders">
+        <div class="fader" data-val="14" data-name="ATTACK" data-k="atk"><div class="slot"><div class="sfill"></div><div class="grip"></div></div><label>Atk</label></div>
+        <div class="fader" data-val="55" data-name="DECAY/REL" data-k="dec"><div class="slot"><div class="sfill"></div><div class="grip"></div></div><label>Dec</label></div>
+        <div class="fader" data-val="70" data-name="SUSTAIN" data-k="sus"><div class="slot"><div class="sfill"></div><div class="grip"></div></div><label>Sus</label></div>
+      </div>
+    </div>
+
+    <div class="sec">
+      <h2>L<b>FO</b></h2>
+      <div class="grid3" data-knobgrid>
+        <div class="knob" data-min="0" data-max="100" data-val="30" data-unit="" data-name="LFO RATE" data-k="lrt"></div>
+        <div class="knob" data-min="0" data-max="100" data-val="0" data-unit="" data-name="PITCH INT" data-k="lpi"></div>
+        <div class="knob" data-min="0" data-max="100" data-val="40" data-unit="" data-name="CUTOFF INT" data-k="lci"></div>
+      </div>
+      <div class="wave" id="wave">
+        <button class="on"><svg viewBox="0 0 24 15"><polyline points="1,14 6,1 12,14 18,1 23,14"/></svg></button>
+        <button><svg viewBox="0 0 24 15"><polyline points="1,14 11,1 11,14 23,1"/></svg></button>
+        <button><svg viewBox="0 0 24 15"><polyline points="1,14 1,1 12,1 12,14 23,14 23,1"/></svg></button>
+        <span class="lled" id="lled"></span>
+      </div>
+    </div>
+
+    <div class="sec">
+      <h2>DELAY · <b>MASTER</b></h2>
+      <div class="grid3" data-knobgrid style="grid-template-columns:repeat(4,1fr)">
+        <div class="knob" data-min="0" data-max="100" data-val="38" data-unit="" data-name="DLY TIME" data-k="dt"></div>
+        <div class="knob" data-min="0" data-max="100" data-val="46" data-unit="" data-name="FEEDBACK" data-k="df"></div>
+        <div class="knob" data-min="0" data-max="100" data-val="78" data-unit="" data-name="VOLUME" data-k="vol"></div>
+        <div class="knob" data-min="50" data-max="240" data-val="120" data-unit="BPM" data-name="TEMPO" data-k="tmp" id="kTmp"></div>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="seqhead">
+        <h2>STEP <b>SEQ</b> · 16</h2>
+        <div class="tg">
+          <button class="tbtn" id="play">▶</button>
+          <button class="tbtn" id="clr">CLR</button>
+        </div>
+      </div>
+      <div class="steps" id="steps"></div>
+
+      <div class="mhead">
+        <span class="mt">MOTION → <b id="mTgt">CUTOFF</b></span>
+        <button class="mbtn" id="mArm">MOTION REC</button>
+      </div>
+      <div class="lane" id="lane"></div>
+    </div>
+
+  </div>
+
+  <div class="kbd" id="kbd"></div>
+</div>
+
+<script>
+(function(){
+  const app=document.getElementById('app');
+  const dP=document.getElementById('dP'),dV=document.getElementById('dV'),dU=document.getElementById('dU');
+  function show(n,v,u){dP.textContent=n;
+    dV.textContent=(typeof v==='number'?(Number.isInteger(v)?v:v.toFixed(1)):v);
+    dU.textContent=u||'';}
+
+  // ---- THEME ----
+  const themes=document.getElementById('themes');
+  themes.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+    [...themes.children].forEach(x=>x.classList.remove('on'));b.classList.add('on');
+    app.dataset.theme=b.dataset.t;});
+
+  // ---- KNOBS ----
+  const C=2*Math.PI*25, SW=0.75, K={};
+  const KT=`<div class="dial"><svg viewBox="0 0 60 60"><circle class="trk" cx="30" cy="30" r="25"/><circle class="flx" cx="30" cy="30" r="25"/></svg><div class="cap"></div><div class="ind"></div></div>`;
+  document.querySelectorAll('.knob').forEach(k=>{
+    k.insertAdjacentHTML('afterbegin',KT);
+    k.insertAdjacentHTML('beforeend','<label>'+k.dataset.name.replace('PORTAMENTO','PORTA')+'</label>');
+    const min=+k.dataset.min,max=+k.dataset.max,unit=k.dataset.unit,name=k.dataset.name,id=k.dataset.k;
+    let val=+k.dataset.val;
+    const fl=k.querySelector('.flx'),ind=k.querySelector('.ind'),dial=k.querySelector('.dial');
+    fl.style.strokeDasharray=(C*SW)+' '+C;
+    function R(){const f=(val-min)/(max-min);
+      fl.style.strokeDashoffset=C*SW*(1-f);
+      ind.style.transform='translateX(-50%) rotate('+(-135+f*270)+'deg)';}
+    R();
+    const o={get:()=>val,set:v=>{val=Math.max(min,Math.min(max,v));R();},
+      name,unit,min,max,el:k};
+    K[id]=o;
+    let dg=false,sy=0,sv=0;
+    dial.addEventListener('pointerdown',e=>{
+      if(motionArm){setTarget(id);return;}
+      dg=true;sy=e.clientY;sv=val;dial.setPointerCapture(e.pointerId);show(name,disp(val),unit);});
+    dial.addEventListener('pointermove',e=>{if(!dg)return;
+      const sp=max-min,d=(sy-e.clientY)/180*sp;val=Math.max(min,Math.min(max,sv+d));
+      if(Math.abs(min)<=2&&Math.abs(max)<=2)val=Math.round(val);
+      R();show(name,disp(val),unit);});
+    const up=()=>dg=false;
+    dial.addEventListener('pointerup',up);dial.addEventListener('pointercancel',up);
+    function disp(v){return (Math.abs(min)<=2&&Math.abs(max)<=2)?v:Math.round(v);}
+  });
+
+  // ---- FADERS ----
+  const F={};
+  document.querySelectorAll('.fader').forEach(f=>{
+    let val=+f.dataset.val;const name=f.dataset.name,id=f.dataset.k;
+    const fill=f.querySelector('.sfill'),grip=f.querySelector('.grip'),slot=f.querySelector('.slot');
+    function R(){const H=118-18,y=9+(H*(1-val/100));
+      fill.style.height=(118-9-y)+'px';grip.style.bottom=(118-y-10)+'px';}
+    R();F[id]={get:()=>val,set:v=>{val=Math.max(0,Math.min(100,v));R();}};
+    let dg=false;
+    function S(e){const r=slot.getBoundingClientRect();
+      val=Math.max(0,Math.min(100,(1-(e.clientY-r.top-9)/(r.height-18))*100));
+      R();show(name,Math.round(val),'');}
+    slot.addEventListener('pointerdown',e=>{dg=true;slot.setPointerCapture(e.pointerId);S(e);});
+    slot.addEventListener('pointermove',e=>{if(dg)S(e);});
+    slot.addEventListener('pointerup',()=>dg=false);
+    slot.addEventListener('pointercancel',()=>dg=false);
+  });
+
+  // ---- VOICE / WAVE ----
+  const voice=document.getElementById('voice');let voiceIx=0;
+  voice.addEventListener('click',e=>{if(e.target.tagName!=='BUTTON')return;
+    [...voice.children].forEach(b=>b.classList.remove('on'));e.target.classList.add('on');
+    voiceIx=[...voice.children].indexOf(e.target);
+    show('VOICE',e.target.textContent.toUpperCase(),'');});
+  const wave=document.getElementById('wave');let lw=0;
+  wave.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+    [...wave.querySelectorAll('button')].forEach(x=>x.classList.remove('on'));b.classList.add('on');
+    lw=[...wave.querySelectorAll('button')].indexOf(b);
+    show('LFO WAVE',['TRIANGLE','SAW','SQUARE'][lw],'');});
+
+  // ---- SEQUENCER ----
+  const stepsEl=document.getElementById('steps');
+  const onSteps=new Array(16).fill(false);[0,3,6,7,10,12].forEach(i=>onSteps[i]=true);
+  for(let i=0;i<16;i++){const b=document.createElement('button');
+    b.className='step'+(onSteps[i]?' on':'');b.innerHTML='<span class="n">'+(i+1)+'</span>';
+    b.onclick=()=>{onSteps[i]=!onSteps[i];b.classList.toggle('on',onSteps[i]);};
+    stepsEl.appendChild(b);}
+  const sN=[...stepsEl.children];
+  let playing=false,cur=-1,seqT=0;
+  const playB=document.getElementById('play');
+  playB.onclick=()=>{playing=!playing;playB.classList.toggle('on',playing);
+    playB.textContent=playing?'■':'▶';
+    if(!playing&&cur>=0){sN[cur].classList.remove('cur');laneB[cur].classList.remove('cur');cur=-1;}};
+  document.getElementById('clr').onclick=()=>{onSteps.fill(false);
+    sN.forEach(n=>n.classList.remove('on'));};
+
+  // ---- MOTION LANE ----
+  const laneEl=document.getElementById('lane');
+  let motion=new Array(16).fill(50);
+  for(let i=0;i<16;i++){const d=document.createElement('div');d.className='mb';laneEl.appendChild(d);}
+  const laneB=[...laneEl.children];
+  function drawLane(){laneB.forEach((b,i)=>b.style.height=(motion[i]/100*100)+'%');}
+  drawLane();
+  let mdrag=false;
+  function paint(e){const r=laneEl.getBoundingClientRect();
+    let i=Math.floor((e.clientX-r.left)/(r.width)*16);i=Math.max(0,Math.min(15,i));
+    let v=Math.max(0,Math.min(100,(1-(e.clientY-r.top-7)/(r.height-14))*100));
+    motion[i]=v;laneB[i].style.height=(v/100*100)+'%';
+    show('MOTION '+tgtName,Math.round(v),'');}
+  laneEl.addEventListener('pointerdown',e=>{mdrag=true;laneEl.setPointerCapture(e.pointerId);paint(e);});
+  laneEl.addEventListener('pointermove',e=>{if(mdrag)paint(e);});
+  laneEl.addEventListener('pointerup',()=>mdrag=false);
+  laneEl.addEventListener('pointercancel',()=>mdrag=false);
+
+  let motionArm=false,tgtId='cut',tgtName='CUTOFF';
+  const mArm=document.getElementById('mArm'),mTgt=document.getElementById('mTgt');
+  mArm.onclick=()=>{motionArm=!motionArm;mArm.classList.toggle('on',motionArm);
+    Object.values(K).forEach(o=>o.el.classList.remove('tgt'));
+    if(motionArm)K[tgtId].el.classList.add('tgt');};
+  function setTarget(id){tgtId=id;tgtName=K[id].name;mTgt.textContent=tgtName;
+    Object.values(K).forEach(o=>o.el.classList.remove('tgt'));
+    K[id].el.classList.add('tgt');show('MOTION TARGET',tgtName,'');}
+
+  // ---- PATCHES (session memory) ----
+  const patch=document.getElementById('patch'),psave=document.getElementById('psave');
+  const slots={},NS=8;let saveArm=false,activeSlot=-1;
+  for(let i=1;i<=NS;i++){const b=document.createElement('button');
+    b.className='pslot';b.textContent='P'+i;b.dataset.s=i;
+    b.onclick=()=>{const s=i;
+      if(saveArm){slots[s]=snapshot();b.classList.add('filled');
+        saveArm=false;psave.classList.remove('arm');mark(s);show('PATCH','SAVED P'+s,'');}
+      else if(slots[s]){restore(slots[s]);mark(s);show('PATCH','RECALL P'+s,'');}};
+    patch.appendChild(b);}
+  const pSlotEls=[...patch.querySelectorAll('.pslot')];
+  function mark(s){activeSlot=s;pSlotEls.forEach(e=>e.classList.toggle('active',+e.dataset.s===s));}
+  psave.onclick=()=>{saveArm=!saveArm;psave.classList.toggle('arm',saveArm);
+    show('PATCH',saveArm?'PICK SLOT…':'READY','');};
+  function snapshot(){return{
+    k:Object.fromEntries(Object.entries(K).map(([id,o])=>[id,o.get()])),
+    f:Object.fromEntries(Object.entries(F).map(([id,o])=>[id,o.get()])),
+    v:voiceIx,w:lw,st:[...onSteps],mo:[...motion],tg:tgtId};}
+  function restore(p){
+    Object.entries(p.k).forEach(([id,v])=>K[id]&&K[id].set(v));
+    Object.entries(p.f).forEach(([id,v])=>F[id]&&F[id].set(v));
+    [...voice.children].forEach((b,i)=>b.classList.toggle('on',i===p.v));voiceIx=p.v;
+    [...wave.querySelectorAll('button')].forEach((b,i)=>b.classList.toggle('on',i===p.w));lw=p.w;
+    p.st.forEach((on,i)=>{onSteps[i]=on;sN[i].classList.toggle('on',on);});
+    motion=[...p.mo];drawLane();setTarget(p.tg);}
+
+  // ---- KEYBOARD ----
+  const kbd=document.getElementById('kbd');
+  const wn=['C','D','E','F','G','A','B','C'];
+  const bAfter={0:'C#',1:'D#',3:'F#',4:'G#',5:'A#'};
+  wn.forEach(n=>{const w=document.createElement('div');w.className='wk';w.dataset.n=n;kbd.appendChild(w);});
+  const wk=[...kbd.children];
+  wk.forEach((w,i)=>{if(bAfter[i]!==undefined){const b=document.createElement('div');
+    b.className='bk';b.dataset.n=bAfter[i];b.style.left=((i+1)*12.5-4.5)+'%';kbd.appendChild(b);}});
+  kbd.addEventListener('pointerdown',e=>{const t=e.target;
+    if(t.classList.contains('wk')||t.classList.contains('bk')){
+      t.classList.add('dn');show('NOTE',t.dataset.n,'');
+      setTimeout(()=>t.classList.remove('dn'),170);}});
+
+  // ---- LIVE LOOP ----
+  const cv=document.getElementById('scope'),cx=cv.getContext('2d'),lled=document.getElementById('lled');
+  let t=0,last=performance.now();
+  function lfo(p){return lw===0?1-Math.abs(p*2-1):lw===1?p:(p<0.5?1:0);}
+  function frame(now){
+    const dt=(now-last)/1000;last=now;t+=dt;
+    const rate=0.4+K.lrt.get()/100*7,ph=(t*rate)%1,lv=lfo(ph);
+    const acc=getComputedStyle(app).getPropertyValue('--accent').trim();
+    lled.style.background=`color-mix(in srgb, ${acc} ${18+lv*82}%, transparent)`;
+    lled.style.boxShadow=`0 0 ${2+lv*10}px ${lv*3}px color-mix(in srgb,${acc} ${lv*80}%,transparent)`;
+    const w=cv.width,h=cv.height;cx.clearRect(0,0,w,h);
+    cx.strokeStyle='rgba(255,150,70,.9)';cx.lineWidth=2;
+    cx.shadowColor='rgba(255,150,70,.6)';cx.shadowBlur=7;cx.beginPath();
+    for(let x=0;x<w;x++){const p=((x/w*3+t*rate)%1),y=h*.85-lfo(p)*h*.7;
+      x?cx.lineTo(x,y):cx.moveTo(x,y);}
+    cx.stroke();cx.shadowBlur=0;
+    if(playing){const bpm=K.tmp.get(),sm=60000/(bpm*4);seqT+=dt*1000;
+      if(seqT>=sm){seqT-=sm;
+        if(cur>=0){sN[cur].classList.remove('cur');laneB[cur].classList.remove('cur');}
+        cur=(cur+1)%16;sN[cur].classList.add('cur');laneB[cur].classList.add('cur');
+        if(motionArm){const v=motion[cur],o=K[tgtId];
+          o.set(o.min+(o.max-o.min)*v/100);show('MOTION '+tgtName,Math.round(v),'');}}}
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0a0a0c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="apple-touch-icon" href="./icon-192.png">
+<title>PARA·3</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+/* dynamic viewport units: respect the browser chrome AND the safe area; never
+   100vh (which lies on mobile when the URL bar appears/disappears). */
+body{
+  display:flex;justify-content:center;background:#000;font-family:'Chakra Petch',sans-serif;
+  min-height:100svh;min-height:100dvh;
+  overscroll-behavior:none;touch-action:manipulation;
+}
+
+.app{
+  width:100%;max-width:440px;min-height:100svh;min-height:100dvh;
+  position:relative;overflow:hidden;
+  --bg1:#1b1c23;--bg2:#0a0a0c;--bg3:#060608;
+  --card1:#23242b;--card2:#15161c;
+  --metal1:#46484f;--metal2:#1d1e24;--metal3:#0f1014;
+  --accent:#ff6a18;--accent2:#ff8a3d;--accent-dim:#7a3c12;
+  --ink:#cdd0d9;--ink-dim:#7d8090;--line:#000;
+  --keyw1:#dad9d4;--keyw2:#a9a8a2;--grain:overlay;--gop:.05;
+  --soft:0 6px 16px -10px #000;
+  /* keyboard drawer height the scrollable area must clear. JS keeps this in
+     sync with .kbd visible height (40 px collapsed grip → 116/128 open). */
+  --kbH: 40px;
+  background:radial-gradient(120% 60% at 50% 0%,var(--bg1),var(--bg2) 55%,var(--bg3));
+  color:var(--ink);transition:background .4s,color .4s}
+.app[data-theme="bone"]{
+  --bg1:#f2ece0;--bg2:#e4dccb;--bg3:#d8cfb9;
+  --card1:#efe8d8;--card2:#e0d7c2;
+  --metal1:#fbf6ea;--metal2:#cdc2a8;--metal3:#a99c7e;
+  --accent:#cf4a14;--accent2:#e7702e;--accent-dim:#b07a4e;
+  --ink:#2c271f;--ink-dim:#897e66;--line:#bdb39a;
+  --keyw1:#fcfaf3;--keyw2:#d8cfba;--grain:multiply;--gop:.04;
+  --soft:0 6px 16px -12px rgba(80,60,30,.5);
+  background:radial-gradient(120% 60% at 50% 0%,var(--bg1),var(--bg2) 55%,var(--bg3))}
+.app::after{content:"";position:absolute;inset:0;pointer-events:none;z-index:999;
+  opacity:var(--gop);mix-blend-mode:var(--grain);
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/></filter><rect width='140' height='140' filter='url(%23n)'/></svg>")}
+
+.bar{position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-content:space-between;
+  padding:calc(13px + env(safe-area-inset-top)) 16px 11px;
+  background:linear-gradient(180deg,var(--bg1),transparent);backdrop-filter:blur(2px)}
+.logo{font-size:21px;font-weight:700;letter-spacing:3px;color:var(--ink)}
+.logo b{color:var(--accent);text-shadow:0 0 12px color-mix(in srgb,var(--accent) 60%,transparent)}
+.themes{display:flex;gap:5px;background:var(--card2);padding:4px;border-radius:9px;
+  box-shadow:0 0 0 1px var(--line) inset}
+.themes button{font-family:'Chakra Petch';font-size:9px;font-weight:700;letter-spacing:1.5px;
+  border:none;border-radius:6px;padding:6px 9px;color:var(--ink-dim);background:transparent;cursor:pointer;transition:.2s}
+.themes button.on{color:#fff;background:var(--accent);
+  box-shadow:0 0 12px color-mix(in srgb,var(--accent) 55%,transparent)}
+
+.patch{display:flex;gap:6px;padding:0 14px 11px;overflow-x:auto;scrollbar-width:none}
+.patch::-webkit-scrollbar{display:none}
+.pslot{flex:0 0 auto;width:42px;height:36px;border:none;border-radius:8px;cursor:pointer;
+  font-family:'DM Mono',monospace;font-size:11px;color:var(--ink-dim);
+  background:linear-gradient(180deg,var(--card1),var(--card2));
+  box-shadow:0 1px 0 rgba(255,255,255,.05) inset,var(--soft);transition:.15s;position:relative}
+.pslot.filled{color:var(--ink)}
+.pslot.filled::after{content:"";position:absolute;top:5px;right:5px;width:5px;height:5px;border-radius:50%;
+  background:var(--accent);box-shadow:0 0 5px var(--accent)}
+.pslot.active{color:#fff;background:linear-gradient(180deg,var(--accent2),var(--accent));
+  box-shadow:0 0 14px color-mix(in srgb,var(--accent) 55%,transparent)}
+.psave{flex:0 0 auto;width:54px;height:36px;border:none;border-radius:8px;cursor:pointer;
+  font-family:'Chakra Petch';font-size:10px;font-weight:700;letter-spacing:1px;color:var(--ink-dim);
+  background:linear-gradient(180deg,var(--card1),var(--card2));box-shadow:var(--soft)}
+.psave.arm{color:#fff;background:linear-gradient(180deg,var(--accent2),var(--accent))}
+
+.disp{margin:0 14px 12px;border-radius:12px;padding:12px 16px;position:relative;overflow:hidden;
+  background:linear-gradient(180deg,#0c0905,#070503);
+  box-shadow:0 0 0 1px rgba(255,255,255,.04) inset,0 8px 18px -10px #000 inset}
+.app[data-theme="bone"] .disp{background:linear-gradient(180deg,#1c130a,#0d0805)}
+.disp::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background:repeating-linear-gradient(0deg,rgba(0,0,0,.32) 0 1px,transparent 1px 3px)}
+.dRow{display:flex;justify-content:space-between;align-items:flex-end;z-index:1;position:relative}
+.dParam{font-family:'DM Mono',monospace;font-size:11px;letter-spacing:2px;color:#8a4a1e;text-transform:uppercase}
+.dVal{font-family:'DM Mono',monospace;font-size:32px;color:#ffb066;
+  text-shadow:0 0 16px rgba(255,150,70,.5);line-height:1}
+.dUnit{font-size:12px;color:#8a4a1e;margin-left:5px}
+#scope{width:100%;height:40px;display:block;margin-top:7px;position:relative;z-index:1}
+
+/* scroll area must clear the (collapsible) keyboard drawer AND the home indicator */
+.scroll{padding:0 14px;
+  padding-bottom: calc(var(--kbH) + env(safe-area-inset-bottom) + 12px);}
+.sec{background:linear-gradient(180deg,var(--card1),var(--card2));border-radius:14px;
+  padding:13px 14px 15px;margin-bottom:12px;
+  box-shadow:0 1px 0 rgba(255,255,255,.05) inset,var(--soft)}
+.sec h2{font-size:10px;letter-spacing:3px;color:var(--ink-dim);text-transform:uppercase;font-weight:600;
+  margin-bottom:13px;padding-bottom:7px;border-bottom:1px solid var(--line)}
+.sec h2 b{color:var(--accent)}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;justify-items:center}
+
+.knob{width:100%;display:flex;flex-direction:column;align-items:center;gap:6px;user-select:none;touch-action:none}
+.dial{position:relative;width:60px;height:60px}
+.dial svg{position:absolute;inset:0;transform:rotate(135deg)}
+.trk{fill:none;stroke:rgba(0,0,0,.5);stroke-width:4;stroke-linecap:round}
+.app[data-theme="bone"] .trk{stroke:rgba(120,100,60,.35)}
+.flx{fill:none;stroke:var(--accent);stroke-width:4;stroke-linecap:round;
+  filter:drop-shadow(0 0 4px color-mix(in srgb,var(--accent) 70%,transparent))}
+.cap{position:absolute;inset:9px;border-radius:50%;
+  background:radial-gradient(circle at 38% 30%,var(--metal1),var(--metal2) 48%,var(--metal3));
+  box-shadow:0 3px 6px -2px rgba(0,0,0,.6),0 0 0 1px var(--line),0 1px 0 rgba(255,255,255,.08) inset}
+.ind{position:absolute;left:50%;top:8px;width:3px;height:13px;border-radius:2px;background:var(--accent);
+  transform:translateX(-50%);transform-origin:50% 22px;
+  box-shadow:0 0 7px 1px color-mix(in srgb,var(--accent) 80%,transparent)}
+.knob label{font-size:9px;letter-spacing:1px;color:var(--ink-dim);text-transform:uppercase;font-weight:500;text-align:center}
+.knob.tgt .cap{box-shadow:0 0 0 2px var(--accent),0 3px 6px -2px #000}
+/* inert controls (no engine path; UI feedback only) — subtle visual cue */
+.knob.inert .cap{opacity:.6}
+
+.fwrap{display:flex;justify-content:space-around;padding-top:2px}
+.fader{display:flex;flex-direction:column;align-items:center;gap:8px;user-select:none;touch-action:none}
+.slot{position:relative;width:16px;height:116px;border-radius:8px;cursor:ns-resize;
+  background:linear-gradient(180deg,#0a0b0e,#1a1b21);
+  box-shadow:0 0 0 1px var(--line) inset,0 2px 4px rgba(0,0,0,.4) inset}
+.app[data-theme="bone"] .slot{background:linear-gradient(180deg,#bcb094,#d6ccb2)}
+.sfill{position:absolute;left:50%;bottom:9px;width:3px;transform:translateX(-50%);
+  background:var(--accent);border-radius:2px;box-shadow:0 0 6px color-mix(in srgb,var(--accent) 70%,transparent)}
+.grip{position:absolute;left:50%;width:34px;height:20px;border-radius:5px;transform:translate(-50%,50%);
+  background:linear-gradient(180deg,var(--metal1),var(--metal2) 60%,var(--metal3));
+  box-shadow:0 2px 5px -1px rgba(0,0,0,.6),0 0 0 1px var(--line),0 1px 0 rgba(255,255,255,.15) inset}
+.grip::after{content:"";position:absolute;left:6px;right:6px;top:50%;height:2px;transform:translateY(-50%);
+  background:var(--accent);border-radius:2px}
+.fader label{font-size:9px;letter-spacing:1px;color:var(--ink-dim);text-transform:uppercase}
+
+.vgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.vgrid button{font-family:'Chakra Petch';font-size:9px;font-weight:600;letter-spacing:.5px;
+  text-transform:uppercase;color:var(--ink-dim);border:none;border-radius:7px;padding:11px 2px;cursor:pointer;
+  background:linear-gradient(180deg,var(--card1),var(--card2));
+  box-shadow:0 1px 0 rgba(255,255,255,.05) inset,var(--soft);transition:.15s}
+.vgrid button.on{color:#fff;background:linear-gradient(180deg,var(--accent2),var(--accent));
+  box-shadow:0 0 14px color-mix(in srgb,var(--accent) 55%,transparent)}
+.wave{display:flex;gap:7px;justify-content:center;margin-top:13px;align-items:center}
+.wave button{width:44px;height:34px;border:none;border-radius:7px;cursor:pointer;
+  background:linear-gradient(180deg,var(--card1),var(--card2));color:var(--ink-dim);box-shadow:var(--soft);
+  display:flex;align-items:center;justify-content:center}
+.wave button svg{width:24px;height:15px;stroke:currentColor;fill:none;stroke-width:2}
+.wave button.on{color:#fff;background:linear-gradient(180deg,var(--accent2),var(--accent))}
+.lled{width:12px;height:12px;border-radius:50%;background:var(--accent-dim);margin-left:6px;
+  box-shadow:0 0 0 1px var(--line)}
+
+.seqhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.seqhead h2{margin:0;border:0;padding:0;font-size:10px;letter-spacing:3px;color:var(--ink-dim);
+  text-transform:uppercase;font-weight:600}
+.seqhead h2 b{color:var(--accent)}
+.tg{display:flex;gap:7px}
+.tbtn{font-family:'Chakra Petch';font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;
+  color:var(--ink);border:none;padding:9px 13px;border-radius:8px;
+  background:linear-gradient(180deg,var(--card1),var(--card2));
+  box-shadow:0 1px 0 rgba(255,255,255,.06) inset,var(--soft);cursor:pointer;transition:.15s}
+.tbtn.on{color:#fff;background:linear-gradient(180deg,var(--accent2),var(--accent));
+  box-shadow:0 0 14px color-mix(in srgb,var(--accent) 55%,transparent)}
+.steps{display:grid;grid-template-columns:repeat(8,1fr);gap:7px}
+.step{aspect-ratio:1/1.25;border-radius:7px;border:none;cursor:pointer;position:relative;
+  background:linear-gradient(180deg,var(--card1),var(--card2));
+  box-shadow:0 1px 0 rgba(255,255,255,.05) inset,var(--soft);transition:transform .08s}
+.step::after{content:"";position:absolute;left:50%;top:6px;width:9px;height:9px;border-radius:50%;
+  transform:translateX(-50%);background:rgba(0,0,0,.5)}
+.app[data-theme="bone"] .step::after{background:rgba(120,100,60,.3)}
+.step.on::after{background:var(--accent-dim)}
+.step.cur{transform:scale(.92)}
+.step.cur::after{background:var(--accent);box-shadow:0 0 10px 3px color-mix(in srgb,var(--accent) 85%,transparent)}
+.step .n{position:absolute;bottom:4px;left:0;right:0;text-align:center;font-family:'DM Mono',monospace;
+  font-size:8px;color:var(--ink-dim)}
+.mhead{display:flex;justify-content:space-between;align-items:center;margin:16px 0 9px}
+.mhead .mt{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:1px;color:var(--ink-dim)}
+.mhead .mt b{color:var(--accent)}
+.mbtn{font-family:'Chakra Petch';font-size:9px;font-weight:700;letter-spacing:1px;border:none;
+  border-radius:7px;padding:7px 11px;color:var(--ink-dim);cursor:pointer;
+  background:linear-gradient(180deg,var(--card1),var(--card2));box-shadow:var(--soft)}
+.mbtn.on{color:#fff;background:linear-gradient(180deg,var(--accent2),var(--accent))}
+.lane{display:grid;grid-template-columns:repeat(16,1fr);gap:3px;height:62px;
+  background:linear-gradient(180deg,rgba(0,0,0,.35),rgba(0,0,0,.15));border-radius:9px;
+  padding:7px 6px;touch-action:none}
+.app[data-theme="bone"] .lane{background:linear-gradient(180deg,rgba(140,120,80,.22),rgba(140,120,80,.1))}
+.mb{align-self:end;border-radius:2px;background:var(--accent-dim);min-height:2px;transition:height .04s}
+.mb.cur{background:var(--accent);box-shadow:0 0 8px color-mix(in srgb,var(--accent) 80%,transparent)}
+
+/* ===== KEYBOARD DRAWER (collapsible in portrait & landscape) ============== */
+.kbd{position:fixed;left:0;right:0;bottom:0;max-width:440px;margin:0 auto;height:116px;display:flex;
+  z-index:60;background:#000;box-shadow:0 -8px 22px -10px #000;
+  /* default state: collapsed → only the 40 px grip pokes above bottom edge.
+     --kbH (on .app) tracks this same height for the scroll padding-bottom. */
+  transform: translateY(calc(100% - 40px));
+  transition: transform .28s ease;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.kbd.open{ transform: translateY(0); }
+/* grip handle (the 40 px sliver visible when collapsed). Sits ABOVE the
+   keys, on top — gives the user a clear tap-target even with a closed drawer. */
+.kbd::before{
+  content:"⌨ KEYS";
+  position:absolute; left:0; right:0; top:-1px; height:24px;
+  display:flex; align-items:center; justify-content:center;
+  font-family:'Chakra Petch'; font-size:10px; font-weight:700; letter-spacing:2px;
+  color:#fff; background:linear-gradient(180deg,var(--accent2),var(--accent));
+  pointer-events:none;
+  border-radius:8px 8px 0 0;
+}
+.kbd.open::before{ content:"⌨ HIDE"; }
+.wk{flex:1;background:linear-gradient(180deg,var(--keyw1),var(--keyw2));border-right:1px solid #2a2a28;
+  position:relative;cursor:pointer;transition:.06s}
+.wk:last-child{border-right:none}
+.wk.dn{background:linear-gradient(180deg,var(--accent2),var(--accent));
+  box-shadow:0 0 26px color-mix(in srgb,var(--accent) 60%,transparent) inset}
+.bk{position:absolute;top:0;width:9%;height:60%;z-index:2;cursor:pointer;
+  background:linear-gradient(180deg,#26272d,#0c0d11);border-radius:0 0 4px 4px;
+  box-shadow:0 4px 6px -2px #000,0 0 0 1px #000;transition:.06s}
+.bk.dn{background:linear-gradient(180deg,var(--accent),var(--accent-dim));
+  box-shadow:0 0 18px color-mix(in srgb,var(--accent) 70%,transparent)}
+.kbtn{position:fixed;z-index:70;right:14px;bottom:calc(14px + env(safe-area-inset-bottom));
+  font-family:'Chakra Petch';font-size:11px;font-weight:700;letter-spacing:1.5px;border:none;
+  padding:11px 15px;border-radius:11px;color:#fff;cursor:pointer;
+  background:linear-gradient(180deg,var(--accent2),var(--accent));
+  box-shadow:0 8px 20px -6px rgba(0,0,0,.7),0 0 16px color-mix(in srgb,var(--accent) 50%,transparent)}
+
+/* ===== LANDSCAPE ===== */
+@media (orientation:landscape){
+  .app{max-width:100%}
+  .scroll{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;
+    align-items:start;padding:0 14px;
+    padding-bottom: calc(var(--kbH) + env(safe-area-inset-bottom) + 16px);}
+  .sec{margin-bottom:0}
+  .sec.full{grid-column:1/-1}
+  .disp{margin:0 14px 12px}
+  .kbd{max-width:100%;height:128px}
+}
+@media (orientation:landscape) and (min-width:980px){
+  .scroll{grid-template-columns:repeat(3,1fr)}
+}
+
+/* ===== SMALL SCREENS (height < 720) — tighten knob cells, keep 3-col grid ===*/
+@media (max-height: 720px){
+  .dial{width:52px;height:52px}
+  .ind{top:6px;height:11px;transform-origin:50% 20px}
+  .cap{inset:8px}
+  .knob label{font-size:8px}
+  .grid3{gap:8px}
+  .sec{padding:10px 12px 12px;margin-bottom:10px}
+  .slot{height:96px}
+}
+
+/* ===== SPLASH (first user gesture) ======================================= */
+.splash{position:fixed;inset:0;z-index:1000;background:rgba(6,6,8,.94);
+  display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);
+  flex-direction:column;gap:14px;font-family:'Chakra Petch';
+  padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}
+.splash.hidden{display:none}
+.splash .logo2{font-size:26px;font-weight:700;letter-spacing:6px;color:#cdd0d9}
+.splash .logo2 b{color:#ff6a18;text-shadow:0 0 16px rgba(255,106,24,.6)}
+.splash .splashGo{background:linear-gradient(180deg,#ff8a3d,#ff6a18);
+  color:#fff;border:0;font-family:'Chakra Petch';font-size:16px;font-weight:700;
+  letter-spacing:2.5px;padding:18px 36px;border-radius:12px;cursor:pointer;
+  box-shadow:0 8px 30px rgba(255,106,24,.45)}
+.splash .splashGo:disabled{background:#23242b;color:#7d8090;box-shadow:none;cursor:wait}
+.splash .splashTip{font-size:11px;color:#7d8090;letter-spacing:1.5px}
+.splash .splashErr{font-family:'DM Mono',monospace;font-size:11px;color:#ff8a3d;
+  max-width:80%;text-align:center;padding-top:10px;display:none}
+.splash.error .splashErr{display:block}
+</style>
+</head>
+<body>
+
+<div class="splash" id="splash">
+  <div class="logo2">PARA<b>·</b>3</div>
+  <button class="splashGo" id="splashGo">▶ TAP TO START</button>
+  <div class="splashTip">Audio benötigt eine User-Geste</div>
+  <div class="splashErr" id="splashErr"></div>
+</div>
+
+<div class="app" id="app" data-theme="obsidian">
+
+  <div class="bar">
+    <div class="logo">PARA<b>·</b>3</div>
+    <div class="themes" id="themes">
+      <button class="on" data-t="obsidian">OBSIDIAN</button>
+      <button data-t="bone">BONE</button>
+    </div>
+  </div>
+
+  <div class="patch" id="patch"><button class="psave" id="psave">SAVE</button></div>
+
+  <div class="disp">
+    <div class="dRow"><span class="dParam" id="dP">READY</span><span class="dParam">PARAPHONIC · 3 VCO</span></div>
+    <div style="z-index:1;position:relative"><span class="dVal" id="dV">—</span><span class="dUnit" id="dU"></span></div>
+    <canvas id="scope" height="40"></canvas>
+  </div>
+
+  <div class="scroll">
+    <div class="sec"><h2>VCO · <b>VOICE</b></h2>
+      <div class="vgrid" id="voice">
+        <button class="on">Poly</button><button>Unison</button><button>Octave</button>
+        <button>Fifth</button><button>Uni Ring</button><button>Poly Ring</button></div></div>
+
+    <div class="sec"><h2>OSC · <b>TUNE</b></h2><div class="grid3">
+      <div class="knob" data-min="-2" data-max="2" data-val="0" data-unit="oct" data-name="OCTAVE" data-k="oct"></div>
+      <div class="knob" data-min="0" data-max="100" data-val="22" data-unit="" data-name="DETUNE" data-k="det"></div>
+      <div class="knob" data-min="0" data-max="100" data-val="0" data-unit="" data-name="PORTAMENTO" data-k="por"></div></div></div>
+
+    <div class="sec"><h2>V<b>CF</b></h2><div class="grid3">
+      <div class="knob" data-min="0" data-max="100" data-val="64" data-unit="" data-name="CUTOFF" data-k="cut"></div>
+      <div class="knob" data-min="0" data-max="100" data-val="35" data-unit="" data-name="PEAK" data-k="pk"></div>
+      <div class="knob" data-min="-100" data-max="100" data-val="20" data-unit="" data-name="EG INT" data-k="egi"></div></div></div>
+
+    <div class="sec"><h2>E<b>G</b></h2><div class="fwrap" id="faders">
+      <div class="fader" data-val="14" data-name="ATTACK" data-k="atk"><div class="slot"><div class="sfill"></div><div class="grip"></div></div><label>Atk</label></div>
+      <div class="fader" data-val="55" data-name="DECAY/REL" data-k="dec"><div class="slot"><div class="sfill"></div><div class="grip"></div></div><label>Dec</label></div>
+      <div class="fader" data-val="70" data-name="SUSTAIN" data-k="sus"><div class="slot"><div class="sfill"></div><div class="grip"></div></div><label>Sus</label></div></div></div>
+
+    <div class="sec"><h2>L<b>FO</b></h2><div class="grid3">
+      <div class="knob" data-min="0" data-max="100" data-val="30" data-unit="" data-name="LFO RATE" data-k="lrt"></div>
+      <div class="knob" data-min="0" data-max="100" data-val="0" data-unit="" data-name="PITCH INT" data-k="lpi"></div>
+      <div class="knob" data-min="0" data-max="100" data-val="40" data-unit="" data-name="CUTOFF INT" data-k="lci"></div></div>
+      <div class="wave" id="wave">
+        <button class="on"><svg viewBox="0 0 24 15"><polyline points="1,14 6,1 12,14 18,1 23,14"/></svg></button>
+        <button><svg viewBox="0 0 24 15"><polyline points="1,14 11,1 11,14 23,1"/></svg></button>
+        <button><svg viewBox="0 0 24 15"><polyline points="1,14 1,1 12,1 12,14 23,14 23,1"/></svg></button>
+        <span class="lled" id="lled"></span></div></div>
+
+    <div class="sec"><h2>DELAY · <b>MASTER</b></h2>
+      <div class="grid3" style="grid-template-columns:repeat(4,1fr)">
+      <div class="knob" data-min="0" data-max="100" data-val="38" data-unit="" data-name="DLY TIME" data-k="dt"></div>
+      <div class="knob" data-min="0" data-max="100" data-val="46" data-unit="" data-name="FEEDBACK" data-k="df"></div>
+      <div class="knob" data-min="0" data-max="100" data-val="78" data-unit="" data-name="VOLUME" data-k="vol"></div>
+      <div class="knob" data-min="50" data-max="240" data-val="120" data-unit="BPM" data-name="TEMPO" data-k="tmp"></div></div></div>
+
+    <div class="sec full"><div class="seqhead"><h2>STEP <b>SEQ</b> · 16</h2>
+      <div class="tg"><button class="tbtn" id="play">▶</button><button class="tbtn" id="clr">CLR</button></div></div>
+      <div class="steps" id="steps"></div>
+      <div class="mhead"><span class="mt">MOTION → <b id="mTgt">CUTOFF</b></span>
+        <button class="mbtn" id="mArm">MOTION REC</button></div>
+      <div class="lane" id="lane"></div></div>
+  </div>
+
+  <button class="kbtn" id="kbtn">⌨ KEYS</button>
+  <div class="kbd" id="kbd"></div>
+</div>
+
+<script type="module">
+import { Para3Audio, PARAM, MODE, LFO_SHAPE } from './para3-audio.js';
+
+// =============================================================================
+//  PARA-3 :: responsive UI bind  (CLAUDE_INTEGRATE_UI.md + CLAUDE_SCOPE_AND_LAYOUT.md)
+//
+//  Visual logic is the original design. Audio bindings added at every UI hook
+//  so EVERY user input goes through ONE funnel:
+//     UI → Para3Controls → ring → worklet dispatch → engine C-API
+//  Scope is read-only metering off an AnalyserNode wired AFTER the worklet:
+//     workletNode → analyser → destination
+//  The synthetic `lfo()` animator is gone. Silence ⇒ flat. Real signal only.
+// =============================================================================
+
+if ('serviceWorker' in navigator) {
+  addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch((e) =>
+      console.warn('sw register failed', e));
+  });
+}
+
+const audio = new Para3Audio();
+let analyser   = null;            // AnalyserNode, set after audio.start()
+let scopeBuf   = null;            // Float32Array(fftSize) — analyser output
+let masterGain = null;            // host-side master gain for VOLUME knob
+let ready      = false;
+function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.warn(e); } }
+
+(function(){
+  const app=document.getElementById('app');
+  const dP=document.getElementById('dP'),dV=document.getElementById('dV'),dU=document.getElementById('dU');
+  function show(n,v,u){dP.textContent=n;
+    dV.textContent=(typeof v==='number'?(Number.isInteger(v)?v:v.toFixed(1)):v);dU.textContent=u||'';}
+
+  const themes=document.getElementById('themes');
+  themes.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+    [...themes.children].forEach(x=>x.classList.remove('on'));b.classList.add('on');
+    app.dataset.theme=b.dataset.t;});
+
+  // ---- knob-id → engine PARAM (only ids with a real engine path) ----------
+  const KNOB_PARAM = {
+    cut: PARAM.CUTOFF,
+    pk:  PARAM.RESONANCE,
+    lrt: PARAM.LFO_RATE,
+    lpi: PARAM.LFO_PITCH_DEPTH,
+    lci: PARAM.LFO_CUT_DEPTH,
+    dt:  PARAM.DELAY_TIME,
+    df:  PARAM.DELAY_FEEDBACK,
+  };
+  // tmp -> seqTempo(BPM)        (NOT setParam — bpm, not a normalised param)
+  // vol -> masterGain.gain      (host-side; deliberately outside the C-API)
+  // oct -> note-offset at noteOn (host-side)
+  // egi, det, por -> inert: no engine feature; UI feedback only.
+  const INERT_KNOBS = new Set(['egi', 'det', 'por']);
+
+  function emitKnob(id, val, min, max) {
+    const n = (val - min) / (max - min);
+    if (id in KNOB_PARAM) emit((c) => c.setParam(KNOB_PARAM[id], n));
+    else if (id === 'tmp') emit((c) => c.seqTempo(val));
+    else if (id === 'vol' && masterGain) masterGain.gain.value = n;
+    // 'oct' applied at noteOn; inert knobs: no emit
+  }
+
+  const C=2*Math.PI*25,SW=0.75,K={};
+  const KT=`<div class="dial"><svg viewBox="0 0 60 60"><circle class="trk" cx="30" cy="30" r="25"/><circle class="flx" cx="30" cy="30" r="25"/></svg><div class="cap"></div><div class="ind"></div></div>`;
+  document.querySelectorAll('.knob').forEach(k=>{
+    k.insertAdjacentHTML('afterbegin',KT);
+    k.insertAdjacentHTML('beforeend','<label>'+k.dataset.name.replace('PORTAMENTO','PORTA')+'</label>');
+    const min=+k.dataset.min,max=+k.dataset.max,unit=k.dataset.unit,name=k.dataset.name,id=k.dataset.k;
+    let val=+k.dataset.val;
+    if (INERT_KNOBS.has(id)) k.classList.add('inert');
+    const fl=k.querySelector('.flx'),ind=k.querySelector('.ind'),dial=k.querySelector('.dial');
+    fl.style.strokeDasharray=(C*SW)+' '+C;
+    const stepInt=(Math.abs(min)<=2&&Math.abs(max)<=2);
+    function R(){const f=(val-min)/(max-min);fl.style.strokeDashoffset=C*SW*(1-f);
+      ind.style.transform='translateX(-50%) rotate('+(-135+f*270)+'deg)';}
+    R();
+    K[id]={get:()=>val,
+           set:v=>{val=Math.max(min,Math.min(max,v));R();emitKnob(id,val,min,max);},
+           name,unit,min,max,el:k};
+    let dg=false,sy=0,sv=0;
+    dial.addEventListener('pointerdown',e=>{if(motionArm){setTarget(id);return;}
+      dg=true;sy=e.clientY;sv=val;dial.setPointerCapture(e.pointerId);show(name,d(val),unit);});
+    dial.addEventListener('pointermove',e=>{if(!dg)return;
+      const sp=max-min,dd=(sy-e.clientY)/180*sp;val=Math.max(min,Math.min(max,sv+dd));
+      if(stepInt)val=Math.round(val);R();show(name,d(val),unit);
+      emitKnob(id,val,min,max);});
+    const up=()=>dg=false;dial.addEventListener('pointerup',up);dial.addEventListener('pointercancel',up);
+    function d(v){return stepInt?v:Math.round(v);}
+  });
+
+  // ---- faders → engine ATTACK / DECREL / SUSTAIN --------------------------
+  const FADER_PARAM = {
+    atk: PARAM.ATTACK,
+    dec: PARAM.DECREL,
+    sus: PARAM.SUSTAIN,
+  };
+  function emitFader(id, val) {
+    if (id in FADER_PARAM) emit((c) => c.setParam(FADER_PARAM[id], val / 100));
+  }
+  const F={};
+  document.querySelectorAll('.fader').forEach(f=>{
+    let val=+f.dataset.val;const name=f.dataset.name,id=f.dataset.k;
+    const fill=f.querySelector('.sfill'),grip=f.querySelector('.grip'),slot=f.querySelector('.slot');
+    function R(){const H=slot.clientHeight-18,y=9+(H*(1-val/100));
+      fill.style.height=(slot.clientHeight-9-y)+'px';grip.style.bottom=(slot.clientHeight-y-10)+'px';}
+    R();
+    F[id]={get:()=>val,set:v=>{val=Math.max(0,Math.min(100,v));R();emitFader(id,val);}};
+    let dg=false;
+    function S(e){const r=slot.getBoundingClientRect();
+      val=Math.max(0,Math.min(100,(1-(e.clientY-r.top-9)/(r.height-18))*100));R();
+      show(name,Math.round(val),'');emitFader(id,val);}
+    slot.addEventListener('pointerdown',e=>{dg=true;slot.setPointerCapture(e.pointerId);S(e);});
+    slot.addEventListener('pointermove',e=>{if(dg)S(e);});
+    slot.addEventListener('pointerup',()=>dg=false);slot.addEventListener('pointercancel',()=>dg=false);
+  });
+
+  // ---- voice mode (poly/unison/octave/fifth/uniring/polyring) -------------
+  const VOICE_MODE = [MODE.POLY, MODE.UNISON, MODE.OCTAVE, MODE.FIFTH,
+                     MODE.UNIRING, MODE.POLYRING];
+  const voice=document.getElementById('voice');let voiceIx=0;
+  voice.addEventListener('click',e=>{if(e.target.tagName!=='BUTTON')return;
+    [...voice.children].forEach(b=>b.classList.remove('on'));e.target.classList.add('on');
+    voiceIx=[...voice.children].indexOf(e.target);
+    show('VOICE',e.target.textContent.toUpperCase(),'');
+    emit((c) => c.setMode(VOICE_MODE[voiceIx]));});
+
+  // ---- LFO shape: 3 buttons in this UI = TRIANGLE / SAW / SQUARE ----------
+  const LFO_FROM_LW = [LFO_SHAPE.TRIANGLE, LFO_SHAPE.SAW, LFO_SHAPE.SQUARE];
+  const wave=document.getElementById('wave');let lw=0;
+  wave.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+    [...wave.querySelectorAll('button')].forEach(x=>x.classList.remove('on'));b.classList.add('on');
+    lw=[...wave.querySelectorAll('button')].indexOf(b);
+    show('LFO WAVE',['TRIANGLE','SAW','SQUARE'][lw],'');
+    emit((c) => c.setLfoShape(LFO_FROM_LW[lw]));});
+
+  // ---- sequencer ----------------------------------------------------------
+  // Step note: last played MIDI note from the keyboard, fallback C3 (48).
+  let lastNote = 48;
+  function flushPattern() {
+    emit((c) => {
+      for (let i = 0; i < 16; i++)
+        c.seqStep(i, lastNote, onSteps[i], true, motion[i] / 100);
+      c.seqLength(16);
+      c.seqCommit();
+    });
+  }
+  const stepsEl=document.getElementById('steps');
+  const onSteps=new Array(16).fill(false);[0,3,6,7,10,12].forEach(i=>onSteps[i]=true);
+  for(let i=0;i<16;i++){const b=document.createElement('button');
+    b.className='step'+(onSteps[i]?' on':'');b.innerHTML='<span class="n">'+(i+1)+'</span>';
+    b.onclick=()=>{onSteps[i]=!onSteps[i];b.classList.toggle('on',onSteps[i]);flushPattern();};
+    stepsEl.appendChild(b);}
+  const sN=[...stepsEl.children];let playing=false,cur=-1,seqT=0;
+  const playB=document.getElementById('play');
+  playB.onclick=()=>{playing=!playing;playB.classList.toggle('on',playing);
+    playB.textContent=playing?'■':'▶';
+    if(!playing&&cur>=0){sN[cur].classList.remove('cur');laneB[cur].classList.remove('cur');cur=-1;}
+    emit((c) => playing ? c.seqStart() : c.seqStop());};
+  document.getElementById('clr').onclick=()=>{onSteps.fill(false);
+    sN.forEach(n=>n.classList.remove('on'));flushPattern();};
+
+  const laneEl=document.getElementById('lane');let motion=new Array(16).fill(50);
+  for(let i=0;i<16;i++){const d=document.createElement('div');d.className='mb';laneEl.appendChild(d);}
+  const laneB=[...laneEl.children];
+  function drawLane(){laneB.forEach((b,i)=>b.style.height=motion[i]+'%');}drawLane();
+  let mdrag=false;
+  function paint(e){const r=laneEl.getBoundingClientRect();
+    let i=Math.max(0,Math.min(15,Math.floor((e.clientX-r.left)/r.width*16)));
+    let v=Math.max(0,Math.min(100,(1-(e.clientY-r.top-7)/(r.height-14))*100));
+    motion[i]=v;laneB[i].style.height=v+'%';show('MOTION '+tgtName,Math.round(v),'');
+    // Engine motion lane is cutoff-only; commit the single affected step.
+    emit((c) => { c.seqStep(i, lastNote, onSteps[i], true, motion[i] / 100);
+                  c.seqCommit(); });}
+  laneEl.addEventListener('pointerdown',e=>{mdrag=true;laneEl.setPointerCapture(e.pointerId);paint(e);});
+  laneEl.addEventListener('pointermove',e=>{if(mdrag)paint(e);});
+  laneEl.addEventListener('pointerup',()=>mdrag=false);laneEl.addEventListener('pointercancel',()=>mdrag=false);
+
+  let motionArm=false,tgtId='cut',tgtName='CUTOFF';
+  const mArm=document.getElementById('mArm'),mTgt=document.getElementById('mTgt');
+  mArm.onclick=()=>{motionArm=!motionArm;mArm.classList.toggle('on',motionArm);
+    Object.values(K).forEach(o=>o.el.classList.remove('tgt'));
+    if(motionArm)K[tgtId].el.classList.add('tgt');
+    emit((c) => c.seqArmRecord(motionArm));};
+  function setTarget(id){tgtId=id;tgtName=K[id].name;mTgt.textContent=tgtName;
+    Object.values(K).forEach(o=>o.el.classList.remove('tgt'));K[id].el.classList.add('tgt');
+    show('MOTION TARGET',tgtName,'');}
+
+  // ---- patch save/recall (UI-local snapshot; recall re-emits via .set) ----
+  const patch=document.getElementById('patch'),psave=document.getElementById('psave');
+  const slots={},NS=8;let saveArm=false;
+  for(let i=1;i<=NS;i++){const b=document.createElement('button');b.className='pslot';
+    b.textContent='P'+i;b.dataset.s=i;
+    b.onclick=()=>{const s=i;
+      if(saveArm){slots[s]=snap();b.classList.add('filled');saveArm=false;
+        psave.classList.remove('arm');mark(s);show('PATCH','SAVED P'+s,'');}
+      else if(slots[s]){restore(slots[s]);mark(s);show('PATCH','RECALL P'+s,'');}};
+    patch.appendChild(b);}
+  const pE=[...patch.querySelectorAll('.pslot')];
+  function mark(s){pE.forEach(e=>e.classList.toggle('active',+e.dataset.s===s));}
+  psave.onclick=()=>{saveArm=!saveArm;psave.classList.toggle('arm',saveArm);
+    show('PATCH',saveArm?'PICK SLOT…':'READY','');};
+  function snap(){return{k:Object.fromEntries(Object.entries(K).map(([i,o])=>[i,o.get()])),
+    f:Object.fromEntries(Object.entries(F).map(([i,o])=>[i,o.get()])),
+    v:voiceIx,w:lw,st:[...onSteps],mo:[...motion],tg:tgtId};}
+  function restore(p){Object.entries(p.k).forEach(([i,v])=>K[i]&&K[i].set(v));
+    Object.entries(p.f).forEach(([i,v])=>F[i]&&F[i].set(v));
+    [...voice.children].forEach((b,i)=>b.classList.toggle('on',i===p.v));voiceIx=p.v;
+    emit((c) => c.setMode(VOICE_MODE[voiceIx]));
+    [...wave.querySelectorAll('button')].forEach((b,i)=>b.classList.toggle('on',i===p.w));lw=p.w;
+    emit((c) => c.setLfoShape(LFO_FROM_LW[lw]));
+    p.st.forEach((on,i)=>{onSteps[i]=on;sN[i].classList.toggle('on',on);});
+    motion=[...p.mo];drawLane();setTarget(p.tg);flushPattern();}
+
+  // ---- keyboard with collapsible drawer (portrait + landscape) ------------
+  const W_OFS = [0, 2, 4, 5, 7, 9, 11, 12];
+  const B_OFS = { 'C#':1, 'D#':3, 'F#':6, 'G#':8, 'A#':10 };
+  const BASE_C = 48;
+  function midiOfKey(el) {
+    const oct = K.oct ? Math.round(K.oct.get()) : 0;
+    if (el.classList.contains('wk')) {
+      const idx = [...kbd.querySelectorAll('.wk')].indexOf(el);
+      return BASE_C + oct * 12 + W_OFS[idx];
+    }
+    if (el.classList.contains('bk')) return BASE_C + oct * 12 + (B_OFS[el.dataset.n] || 0);
+    return -1;
+  }
+
+  const kbd=document.getElementById('kbd'),kbtn=document.getElementById('kbtn');
+  const wn=['C','D','E','F','G','A','B','C'],bA={0:'C#',1:'D#',3:'F#',4:'G#',5:'A#'};
+  wn.forEach(n=>{const w=document.createElement('div');w.className='wk';w.dataset.n=n;kbd.appendChild(w);});
+  [...kbd.children].forEach((w,i)=>{if(bA[i]!==undefined){const b=document.createElement('div');
+    b.className='bk';b.dataset.n=bA[i];b.style.left=((i+1)*12.5-4.5)+'%';kbd.appendChild(b);}});
+
+  const held = new Map();
+  function keyDown(t, pid) {
+    if (!t || !(t.classList.contains('wk') || t.classList.contains('bk'))) return;
+    if (held.has(pid)) return;
+    const note = midiOfKey(t); if (note < 0) return;
+    t.classList.add('dn'); show('NOTE', t.dataset.n, '');
+    lastNote = note; held.set(pid, { el: t, note });
+    emit((c) => c.noteOn(note));
+  }
+  function keyUp(pid) {
+    const h = held.get(pid); if (!h) return;
+    h.el.classList.remove('dn'); held.delete(pid);
+    emit((c) => c.noteOff(h.note));
+  }
+  kbd.addEventListener('pointerdown', (e) => {
+    // Tapping the closed grip opens the drawer instead of triggering a note.
+    if (!kbd.classList.contains('open')) { setKbOpen(true); return; }
+    try { kbd.setPointerCapture(e.pointerId); } catch (_) {}
+    keyDown(e.target, e.pointerId);
+  });
+  kbd.addEventListener('pointermove', (e) => {
+    if (!held.has(e.pointerId)) return;
+    const t = document.elementFromPoint(e.clientX, e.clientY);
+    const h = held.get(e.pointerId);
+    if (t && t !== h.el && (t.classList.contains('wk') || t.classList.contains('bk'))) {
+      keyUp(e.pointerId); keyDown(t, e.pointerId);
+    }
+  });
+  const releaseKey = (e) => keyUp(e.pointerId);
+  kbd.addEventListener('pointerup',     releaseKey);
+  kbd.addEventListener('pointercancel', releaseKey);
+  kbd.addEventListener('lostpointercapture', releaseKey);
+
+  // drawer toggle: keeps --kbH in sync so .scroll padding clears the drawer
+  function isLandscape(){
+    return window.matchMedia('(orientation:landscape)').matches;
+  }
+  function setKbOpen(open){
+    kbd.classList.toggle('open', open);
+    const h = open ? (isLandscape() ? 128 : 116)
+                   : (isLandscape() ? 0   : 40);
+    app.style.setProperty('--kbH', h + 'px');
+    kbtn.textContent = open ? '⌨ HIDE' : '⌨ KEYS';
+  }
+  kbtn.onclick = () => setKbOpen(!kbd.classList.contains('open'));
+  // initial state: collapsed on both orientations (matches CSS default).
+  setKbOpen(false);
+  window.addEventListener('orientationchange',
+    () => setKbOpen(kbd.classList.contains('open')));
+
+  // ---- splash / first user gesture ---------------------------------------
+  const splash    = document.getElementById('splash');
+  const splashGo  = document.getElementById('splashGo');
+  const splashErr = document.getElementById('splashErr');
+  function pushInitialState() {
+    Object.values(K).forEach((o) => emitKnob(o.el.dataset.k, o.get(), o.min, o.max));
+    Object.entries(F).forEach(([id, o]) => emitFader(id, o.get()));
+    emit((c) => c.setMode(VOICE_MODE[voiceIx]));
+    emit((c) => c.setLfoShape(LFO_FROM_LW[lw]));
+    emit((c) => c.seqTempo(K.tmp.get()));
+    flushPattern();
+  }
+  async function start() {
+    if (ready) return;
+    splashGo.disabled = true;
+    splashGo.textContent = 'starting…';
+    try {
+      await audio.start({ wasmUrl: './para3.wasm' });
+      await audio.resume();
+
+      // Real scope source: AnalyserNode wired AFTER the worklet, BEFORE
+      // destination. The analyser passes the audio through unchanged and
+      // exposes the SAME samples the engine wrote (scope_source_test proves
+      // these samples carry the real signal). No second audio path, no
+      // duplicate render — the analyser is read-only metering.
+      const ctx = audio.ctx;
+      analyser = ctx.createAnalyser();
+      analyser.fftSize = 2048;
+      analyser.smoothingTimeConstant = 0;
+      scopeBuf = new Float32Array(analyser.fftSize);
+
+      // Insert master gain (host-side VOLUME, deliberately outside C-API),
+      // then the read-only analyser, then destination.
+      masterGain = ctx.createGain();
+      masterGain.gain.value = +K.vol.get() / 100;
+      audio.node.disconnect();
+      audio.node.connect(masterGain).connect(analyser).connect(ctx.destination);
+
+      ready = true;
+      pushInitialState();
+      splash.classList.add('hidden');
+      show('READY', 'PLAY', '');
+
+      // Optional in-app proof (Nachweis B). Run on demand: ?selftest=1
+      if (new URLSearchParams(location.search).get('selftest') === '1') {
+        scopeSelftest();
+      }
+    } catch (e) {
+      splashGo.disabled = false;
+      splashGo.textContent = '↻ RETRY';
+      splash.classList.add('error');
+      splashErr.textContent = (e && e.message) || String(e);
+      console.error(e);
+    }
+  }
+  splashGo.addEventListener('click', start);
+
+  // iOS / Android resume on every plausible recovery point.
+  function maybeResume() {
+    if (!ready || !audio.ctx) return;
+    const s = audio.ctx.state;
+    if (s === 'suspended' || s === 'interrupted') audio.resume().catch(() => {});
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') maybeResume();
+  });
+  addEventListener('focus',    maybeResume);
+  addEventListener('pageshow', maybeResume);
+
+  // ===========================================================================
+  //  SCOPE — paints REAL time-domain samples from the analyser. No autogain.
+  //  Silence ⇒ buf ≈ 0 ⇒ a flat line at the centre. Y range fixed to [-1, +1].
+  // ===========================================================================
+  const cv=document.getElementById('scope'),cx=cv.getContext('2d');
+  function sizeCv(){cv.width=cv.clientWidth||400;}sizeCv();
+  window.addEventListener('resize',sizeCv);
+  window.addEventListener('orientationchange',()=>setTimeout(sizeCv,300));
+  const lled=document.getElementById('lled');
+
+  function frame(){
+    const w=cv.width,h=cv.height,mid=h/2;
+    cx.clearRect(0,0,w,h);
+
+    if (ready && analyser) {
+      analyser.getFloatTimeDomainData(scopeBuf);
+      const N = scopeBuf.length;
+      cx.strokeStyle='rgba(255,150,70,.9)';
+      cx.lineWidth=1.5;
+      cx.shadowColor='rgba(255,150,70,.55)';
+      cx.shadowBlur=6;
+      cx.beginPath();
+      // map: x in [0,w], y = mid - sample * (h/2). Clip to ±1 (no auto-gain).
+      for (let x = 0; x < w; x++) {
+        const idx = ((x * (N - 1)) / (w - 1)) | 0;
+        let s = scopeBuf[idx];
+        if (s > 1) s = 1; else if (s < -1) s = -1;
+        const y = mid - s * (h * 0.45);
+        x ? cx.lineTo(x, y) : cx.moveTo(x, y);
+      }
+      cx.stroke();
+      cx.shadowBlur=0;
+
+      // crude RMS-driven LED pulse (real audio, not synthetic LFO)
+      let sum = 0;
+      for (let i = 0; i < N; i++) sum += scopeBuf[i] * scopeBuf[i];
+      const rms = Math.sqrt(sum / N);
+      const lv = Math.min(1, rms * 4);
+      const acc=getComputedStyle(app).getPropertyValue('--accent').trim();
+      lled.style.background=`color-mix(in srgb, ${acc} ${18+lv*82}%, transparent)`;
+      lled.style.boxShadow=`0 0 ${2+lv*10}px ${lv*3}px color-mix(in srgb,${acc} ${lv*80}%,transparent)`;
+    } else {
+      // pre-start: draw a static flat baseline (honest — no signal yet).
+      cx.strokeStyle='rgba(120,80,50,.35)';
+      cx.lineWidth=1;
+      cx.beginPath(); cx.moveTo(0, mid); cx.lineTo(w, mid); cx.stroke();
+    }
+
+    // sequencer visual cursor (UI-soft estimate; engine drives the audio)
+    if (playing) {
+      // cheap step cursor based on audioContext time — purely visual.
+      const bpm = K.tmp.get(), sm = 60 / (bpm * 4);
+      const t = audio.ctx ? audio.ctx.currentTime : 0;
+      const c = (Math.floor(t / sm) % 16 + 16) % 16;
+      if (c !== cur) {
+        if (cur >= 0) { sN[cur].classList.remove('cur'); laneB[cur].classList.remove('cur'); }
+        cur = c; sN[cur].classList.add('cur'); laneB[cur].classList.add('cur');
+      }
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  // ===========================================================================
+  //  SCOPE SELFTEST (Nachweis B — CLAUDE_SCOPE_AND_LAYOUT.md)
+  //
+  //  A pure animation cannot pass both halves of this test simultaneously:
+  //     1) NoteOn(69) ⇒ dominant frequency ≈ 440 Hz  (cannot fake under our
+  //        time-domain autocorrelation while ALSO being flat at rest)
+  //     2) NoteOff ⇒ RMS < 1e-3                       (a fake would still wiggle)
+  //  Result: SCOPE SELFTEST: PASS|FAIL in the JS console.
+  // ===========================================================================
+  function dominantHzAutocorr(buf, sr) {
+    // remove DC
+    let mean = 0; for (let i = 0; i < buf.length; i++) mean += buf[i];
+    mean /= buf.length;
+    const x = new Float32Array(buf.length);
+    for (let i = 0; i < buf.length; i++) x[i] = buf[i] - mean;
+    // search lag in the human audio range (50 .. 1500 Hz)
+    const minLag = Math.floor(sr / 1500);
+    const maxLag = Math.floor(sr / 50);
+    let bestLag = -1, bestVal = 0;
+    for (let lag = minLag; lag <= maxLag; lag++) {
+      let s = 0;
+      for (let i = 0; i < x.length - lag; i++) s += x[i] * x[i + lag];
+      if (s > bestVal) { bestVal = s; bestLag = lag; }
+    }
+    if (bestLag <= 0) return 0;
+    // parabolic interpolation around the peak for sub-sample accuracy
+    const c0 = (lag) => {
+      let s = 0; for (let i = 0; i < x.length - lag; i++) s += x[i] * x[i + lag];
+      return s;
+    };
+    const y1 = c0(bestLag - 1), y2 = bestVal, y3 = c0(bestLag + 1);
+    const denom = (y1 - 2 * y2 + y3);
+    const off = denom !== 0 ? 0.5 * (y1 - y3) / denom : 0;
+    return sr / (bestLag + off);
+  }
+  async function scopeSelftest() {
+    if (!ready || !analyser) return;
+    const sr = audio.ctx.sampleRate;
+    try {
+      // give the engine a clean, audible context
+      emit((c) => c.setParam(PARAM.CUTOFF, 0.85));
+      emit((c) => c.setParam(PARAM.RESONANCE, 0.10));
+      emit((c) => c.setParam(PARAM.LFO_CUT_DEPTH, 0));
+      emit((c) => c.setParam(PARAM.LFO_PITCH_DEPTH, 0));
+      emit((c) => c.setParam(PARAM.DELAY_MIX, 0));
+      emit((c) => c.setParam(PARAM.ATTACK, 0));
+      emit((c) => c.setParam(PARAM.SUSTAIN, 1));
+      emit((c) => c.noteOn(69));                        // A4
+      await new Promise(r => setTimeout(r, 250));       // past attack + warmup
+      const buf = new Float32Array(analyser.fftSize);
+      analyser.getFloatTimeDomainData(buf);
+      const f0    = dominantHzAutocorr(buf, sr);
+      const cents = 1200 * Math.log2(Math.max(f0,1) / 440);
+      const passF = Math.abs(cents) <= 5;
+      console.log(`SCOPE SELFTEST [A4] f0=${f0.toFixed(3)} Hz  err=${cents.toFixed(2)} cents  -> ${passF ? 'PASS' : 'FAIL'}`);
+
+      emit((c) => c.noteOff(69));
+      await new Promise(r => setTimeout(r, 1500));      // past decay/release
+      analyser.getFloatTimeDomainData(buf);
+      let sum = 0; for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+      const rms = Math.sqrt(sum / buf.length);
+      const passR = rms < 1e-3;
+      console.log(`SCOPE SELFTEST [silence] rms=${rms.toExponential(3)}  -> ${passR ? 'PASS' : 'FAIL'}`);
+
+      const overall = passF && passR ? 'PASS' : 'FAIL';
+      console.log(`SCOPE SELFTEST: ${overall}`);
+      show('SELFTEST', overall, '');
+    } catch (e) {
+      console.error('selftest error', e);
+      console.log('SCOPE SELFTEST: FAIL (exception)');
+    }
+  }
+  // Expose for ad-hoc DevTools triggering: window.__para3Selftest()
+  window.__para3Selftest = scopeSelftest;
+
+})();
+</script>
+</body>
+</html>

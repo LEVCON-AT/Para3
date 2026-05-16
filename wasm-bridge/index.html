@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PARA·3 — runnable harness</title>
+<style>
+  :root { color-scheme: dark; }
+  body { font: 14px/1.5 system-ui, sans-serif; background:#15171c; color:#e8e6df;
+         margin:0; padding:24px; }
+  h1 { font-size:15px; letter-spacing:.18em; text-transform:uppercase;
+       color:#e0a14b; margin:0 0 16px; }
+  button { background:#23262e; color:#e8e6df; border:1px solid #3a3e48;
+           border-radius:6px; padding:8px 14px; cursor:pointer; }
+  button:hover { border-color:#e0a14b; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center;
+         margin:12px 0; }
+  .keys button { width:44px; height:96px; }
+  label { display:flex; flex-direction:column; gap:4px; font-size:12px;
+          color:#9aa0ad; }
+  input[type=range] { width:160px; accent-color:#e0a14b; }
+  #status { color:#9aa0ad; font-size:12px; }
+  .note { color:#6f7682; font-size:12px; max-width:60ch; }
+</style>
+</head>
+<body>
+  <h1>PARA·3 — runnable harness</h1>
+  <p class="note">Minimal functional entry point. The full designed UI is
+    <code>para3-responsive.html</code>; bind its controls to
+    <code>controls</code> as shown in <code>integration.md</code>.</p>
+
+  <div class="row">
+    <button id="start">▶ Start Audio</button>
+    <span id="status">idle — click Start (user gesture required)</span>
+  </div>
+
+  <div class="row keys" id="keys"></div>
+
+  <div class="row">
+    <label>Cutoff <input id="cutoff" type="range" min="0" max="1"
+           step="0.001" value="0.6"></label>
+    <label>Resonance <input id="reso" type="range" min="0" max="1"
+           step="0.001" value="0.2"></label>
+    <label>Drive <input id="drive" type="range" min="0" max="1"
+           step="0.001" value="0.3"></label>
+  </div>
+
+  <div class="row">
+    <button id="seqToggle">■ Sequencer: off</button>
+    <label>Tempo <input id="tempo" type="range" min="40" max="200"
+           step="1" value="120"></label>
+  </div>
+
+<script type="module">
+  import { Para3Audio, PARAM } from './para3-audio.js';
+
+  const audio = new Para3Audio();
+  const $ = (id) => document.getElementById(id);
+  let running = false, seqOn = false;
+
+  const notes = [60,62,64,65,67,69,71,72];
+  const kc = $('keys');
+  notes.forEach((n) => {
+    const b = document.createElement('button');
+    b.textContent = n;
+    b.onpointerdown  = () => running && audio.controls.noteOn(n);
+    b.onpointerup    = () => running && audio.controls.noteOff(n);
+    b.onpointerleave = () => running && audio.controls.noteOff(n);
+    kc.appendChild(b);
+  });
+
+  $('start').onclick = async () => {
+    if (running) return;
+    try {
+      $('status').textContent = 'starting…';
+      await audio.start({ wasmUrl: './para3.wasm' });
+      await audio.resume();
+      running = true;
+      $('status').textContent = 'running';
+      audio.controls.setParam(PARAM.CUTOFF,    +$('cutoff').value);
+      audio.controls.setParam(PARAM.RESONANCE, +$('reso').value);
+      audio.controls.setParam(PARAM.DRIVE,     +$('drive').value);
+    } catch (e) {
+      $('status').textContent = 'error: ' + e.message;
+    }
+  };
+
+  $('cutoff').oninput = (e) => running &&
+    audio.controls.setParam(PARAM.CUTOFF, +e.target.value);
+  $('reso').oninput   = (e) => running &&
+    audio.controls.setParam(PARAM.RESONANCE, +e.target.value);
+  $('drive').oninput  = (e) => running &&
+    audio.controls.setParam(PARAM.DRIVE, +e.target.value);
+  $('tempo').oninput  = (e) => running &&
+    audio.controls.seqTempo(+e.target.value);
+
+  $('seqToggle').onclick = () => {
+    if (!running) return;
+    seqOn = !seqOn;
+    if (seqOn) {
+      for (let s = 0; s < 16; s++)
+        audio.controls.seqStep(s, 48 + (s % 8), s % 2 === 0, true, s / 15);
+      audio.controls.seqCommit();
+      audio.controls.seqStart();
+    } else {
+      audio.controls.seqStop();
+    }
+    $('seqToggle').textContent = '■ Sequencer: ' + (seqOn ? 'on' : 'off');
+  };
+</script>
+</body>
+</html>
