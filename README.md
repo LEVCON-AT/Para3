@@ -6,6 +6,7 @@ als installierbare PWA spielbar.
 
 **Live:** https://para3.levcon.at/
 **Doku (lang):** https://para3.levcon.at/documentation
+**Gesprächsverlauf (Konzept + Umsetzung, zwei Tabs):** https://para3.levcon.at/conversation
 **Repo:** https://github.com/LEVCON-AT/Para3
 
 ## Schnellüberblick
@@ -79,6 +80,22 @@ behaupten"), den verwendeten Werkzeugen, den Ergebnissen pro Suite, den
 ehrlichen Grenzen und einer Schritt-für-Schritt-Reproduktion lebt unter
 **[`wasm-bridge/documentation.html`](wasm-bridge/documentation.html)** —
 serverseitig erreichbar als **https://para3.levcon.at/documentation**.
+
+## Gesprächsverlauf (Konzept + Umsetzung)
+
+Eine zweistufige Rekonstruktion der gesamten Konversation als Phasen mit
+ehrlichen Korrekturen, in zwei Tabs:
+
+- **Claude Chat** — Konzept &amp; Engine (Sprint-Plan, Design-Specs,
+  DSP-Messung, C-API, Ring, Build, Glue, Runbooks).
+- **Claude Code** — Umsetzung &amp; Auslieferung (Toolchain auf VPS,
+  Phase A1–A3 Parity bit-identisch, Phase B1 PortTransport, Phase B2
+  PWA, HTTPS via Let's Encrypt, UI-Bindings, echter Scope +
+  Selbsttest, Layout-Fit mit dynamischer Scrollmaske, Brand-Wechsel,
+  Doku-Auslieferung).
+
+Lebt unter **[`wasm-bridge/conversation.html`](wasm-bridge/conversation.html)**
+— serverseitig erreichbar als **https://para3.levcon.at/conversation**.
 
 ## Selbst reproduzieren
 

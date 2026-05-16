@@ -1,0 +1,720 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PARA·3 — Gesprächsverlauf: Claude Chat & Claude Code</title>
+<style>
+  :root{
+    --accent:#d9622b;
+    --bg:#efe7d6; --ink:#2a2724; --soft:#6b6354;
+    --card:#f4eede; --line:rgba(42,39,36,.14); --code:#e7dfca;
+  }
+  html[data-t="obsidian"]{
+    --bg:#15171c; --ink:#e8e6df; --soft:#9aa0ad;
+    --card:#1d1f25; --line:rgba(232,230,223,.13); --code:#0f1115;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{background:var(--bg);color:var(--ink);
+    font:15px/1.65 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased;transition:background .3s,color .3s}
+  .wrap{max-width:880px;margin:0 auto;padding:clamp(28px,5vw,72px)}
+  header{display:flex;align-items:center;justify-content:space-between;
+    gap:20px;flex-wrap:wrap;margin-bottom:14px}
+  .logo svg{height:48px;width:auto;display:block;color:var(--ink)}
+  .toggle{font:600 11px/1 ui-monospace,monospace;letter-spacing:.18em;
+    text-transform:uppercase;color:var(--soft);background:none;
+    border:1px solid var(--line);border-radius:999px;padding:9px 16px;
+    cursor:pointer;transition:.2s}
+  .toggle:hover{border-color:var(--accent);color:var(--ink)}
+  .lede{font-size:clamp(20px,3vw,27px);line-height:1.4;font-weight:600;
+    letter-spacing:-.01em;margin:34px 0 10px;max-width:28ch}
+  .lede b{color:var(--accent)}
+  .sub{color:var(--soft);font-size:16px;max-width:64ch;margin-bottom:8px}
+  .meta{color:var(--soft);font:600 11px/1.5 ui-monospace,monospace;
+    letter-spacing:.16em;text-transform:uppercase;margin-top:30px;
+    padding-top:18px;border-top:1px solid var(--line)}
+
+  /* tabs */
+  .tabs{display:flex;gap:0;margin:40px 0 8px;
+    border-bottom:1px solid var(--line)}
+  .tab{font:700 11px/1 ui-monospace,monospace;letter-spacing:.18em;
+    text-transform:uppercase;color:var(--soft);background:none;
+    border:none;padding:14px 20px 13px;cursor:pointer;transition:.2s;
+    border-bottom:2px solid transparent;margin-bottom:-1px;position:relative}
+  .tab:hover{color:var(--ink)}
+  .tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+  .tab .badge{display:inline-block;margin-left:10px;font-size:9px;
+    padding:2px 7px;border-radius:999px;background:var(--card);
+    color:var(--soft);letter-spacing:.06em}
+  .tab.active .badge{background:var(--accent);color:#fff}
+  .tab-pane{display:none}
+  .tab-pane.active{display:block;animation:fadein .25s ease}
+  @keyframes fadein{from{opacity:0;transform:translateY(4px)}to{opacity:1}}
+
+  h2{font-size:clamp(19px,2.4vw,23px);letter-spacing:-.01em;
+    margin:48px 0 4px;font-weight:700}
+  h2 .n{color:var(--accent);font:700 12px/1 ui-monospace,monospace;
+    letter-spacing:.12em;display:block;margin-bottom:9px}
+  .who{font:700 11px/1 ui-monospace,monospace;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--accent);margin:20px 0 4px}
+  .said{background:var(--card);border:1px solid var(--line);
+    border-left:3px solid var(--accent);border-radius:0 12px 12px 0;
+    padding:14px 18px;margin:8px 0 14px;font-size:14.5px;color:var(--ink)}
+  p{margin:11px 0;max-width:68ch}
+  ul{margin:10px 0 10px 2px;list-style:none}
+  li{position:relative;padding-left:22px;margin:6px 0;max-width:66ch}
+  li::before{content:"";position:absolute;left:2px;top:.62em;width:6px;
+    height:6px;border-radius:50%;background:var(--accent)}
+  code{font:13px/1.5 ui-monospace,"SF Mono",monospace;background:var(--code);
+    padding:.12em .42em;border-radius:5px}
+  pre{background:var(--code);border:1px solid var(--line);border-radius:12px;
+    padding:14px 18px;overflow:auto;margin:14px 0;font-size:12.5px;
+    line-height:1.65;max-width:100%}
+  pre code{background:none;padding:0}
+  .honest{border-left:3px solid var(--accent);padding:4px 0 4px 20px;
+    margin:16px 0;color:var(--ink);font-size:14.5px}
+  .honest b{color:var(--accent)}
+  .res{font:600 12px/1.5 ui-monospace,monospace;color:var(--soft);
+    letter-spacing:.04em;margin:10px 0 0}
+  .res b{color:var(--accent)}
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:14px}
+  th,td{text-align:left;padding:9px 11px;border-bottom:1px solid var(--line);
+    vertical-align:top}
+  th{font:700 11px/1.4 ui-monospace,monospace;letter-spacing:.13em;
+    text-transform:uppercase;color:var(--soft)}
+  td b{color:var(--accent)}
+  footer{margin-top:72px;padding-top:24px;border-top:1px solid var(--line);
+    color:var(--soft);font-size:13px}
+  a{color:var(--accent);text-decoration:none;border-bottom:1px solid transparent}
+  a:hover{border-color:var(--accent)}
+  .toc{columns:2;font-size:14px;margin:18px 0}
+  @media(max-width:620px){.toc{columns:1}}
+  .toc a{color:var(--ink);display:block;padding:3px 0;border:none}
+  .toc a:hover{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="logo" aria-label="PARA·3">
+      <svg viewBox="0 0 760 180" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <g transform="translate(20 25)">
+          <rect width="130" height="130" rx="32" fill="currentColor" opacity=".06"/>
+          <rect x="1" y="1" width="128" height="128" rx="31" stroke="currentColor" stroke-opacity=".30" stroke-width="2"/>
+          <rect x="30" y="36" width="70" height="15" rx="7.5" fill="#d9622b"/>
+          <rect x="30" y="60" width="54" height="15" rx="7.5" fill="currentColor" opacity=".92"/>
+          <rect x="30" y="84" width="38" height="15" rx="7.5" fill="currentColor" opacity=".55"/>
+        </g>
+        <g transform="translate(196 30)" stroke="currentColor" stroke-width="28" stroke-linecap="round" stroke-linejoin="round">
+          <g transform="translate(0 0)"><path d="M14 4 L14 116"/><path d="M14 4 H44 A30 30 0 0 1 44 64 H14"/></g>
+          <g transform="translate(96 0)"><path d="M6 116 L46 4 L86 116"/><path d="M22 78 H70"/></g>
+          <g transform="translate(200 0)"><path d="M14 4 L14 116"/><path d="M14 4 H44 A30 30 0 0 1 44 64 H14"/><path d="M40 64 L82 116"/></g>
+          <g transform="translate(300 0)"><path d="M6 116 L46 4 L86 116"/><path d="M22 78 H70"/></g>
+          <circle cx="416" cy="74" r="15" fill="#d9622b" stroke="none"/>
+          <g transform="translate(452 0)"><path d="M12 28 C 18 8, 46 1, 62 13 C 80 26, 74 54, 50 61 C 76 67, 82 96, 60 110 C 42 121, 17 115, 9 96"/></g>
+        </g>
+      </svg>
+    </div>
+    <button class="toggle" id="tg">Obsidian</button>
+  </header>
+
+  <div class="lede">Zwei Gespräche, ein Ergebnis — von <b>„bau mir einen
+    Volca-Keys-Klon"</b> bis zum offline-spielbaren PWA-Synth.</div>
+  <p class="sub">Die Planungs- und Engine-Phase lief in einer ersten Sitzung
+    mit dem entwerfenden Claude (Tab <b>Claude Chat</b>). Die Implementierungs-
+    und Auslieferungs-Phase passierte direkt im Repo &amp; auf dem VPS, durch
+    Claude Code (Tab <b>Claude Code</b>). Beide Stränge gehören zusammen — und
+    in beiden gilt dieselbe Disziplin: messen statt behaupten, kein Fake,
+    ehrliche Korrekturen offen ausgewiesen.</p>
+  <div class="meta">Konversation, chronologisch · Sprache: Deutsch · Code: Englisch ·
+    Prinzip durchgängig: jede Qualitätsaussage hat einen ausführbaren Test</div>
+
+  <div class="tabs" role="tablist">
+    <button class="tab active" data-pane="pane-code" role="tab">Claude Code
+      <span class="badge">Umsetzung</span></button>
+    <button class="tab" data-pane="pane-chat" role="tab">Claude Chat
+      <span class="badge">Konzept &amp; Engine</span></button>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- TAB 1 — Claude Code (UNSERE Session)                                  -->
+  <!-- ===================================================================== -->
+  <section class="tab-pane active" id="pane-code">
+
+    <h2><span class="n">VERLAUF</span>Phasen</h2>
+    <nav class="toc">
+      <a href="#c00">C·00 · Auftrag &amp; Ausgangslage</a>
+      <a href="#c01">C·01 · Toolchain-Reality-Check</a>
+      <a href="#c02">C·02 · Sanity grün stellen</a>
+      <a href="#c03">C·03 · Phase A1+A2 · WASM bauen &amp; Imports</a>
+      <a href="#c04">C·04 · Phase A3 · WASM == nativ</a>
+      <a href="#c05">C·05 · Phase B1 · PortTransport</a>
+      <a href="#c06">C·06 · Phase B2 · PWA-Hülle</a>
+      <a href="#c07">C·07 · HTTPS · para3.levcon.at</a>
+      <a href="#c08">C·08 · UI-Bindings (CLAUDE_INTEGRATE_UI)</a>
+      <a href="#c09">C·09 · Oszillator-Echtheit-Frage</a>
+      <a href="#c10">C·10 · Layout-Fit &amp; echter Scope</a>
+      <a href="#c11">C·11 · UI-Iteration nach Geräte-Screenshot</a>
+      <a href="#c12">C·12 · Initial-Backup auf GitHub</a>
+      <a href="#c13">C·13 · Scroll-Maske &amp; permanente Tastatur</a>
+      <a href="#c14">C·14 · Brand &amp; ausführliche Doku</a>
+    </nav>
+
+    <h2 id="c00"><span class="n">C·00</span>Auftrag &amp; Ausgangslage</h2>
+    <div class="who">Du</div>
+    <div class="said">„Bitte gehe in den Ordner <code>synth</code> und führe
+      die dort beschriebene Arbeit aus." → das Runbook
+      <code>CLAUDE_BUILD.md</code> mit drei Phasen (A · WASM bauen &amp;
+      Gleichwertigkeit messen, B · Offline-Handy als PWA, C · optionale
+      Hardware-Kalibrierung) und der harten Regel: <em>messen, nicht
+      behaupten, keine Fakes, keine Stubs, keine Helfer-Abkürzungen</em>.</div>
+    <p>Nach dem Einlesen der Architektur (header-only C++17-Engine,
+      verifizierte C-API, AudioWorklet-Brücke) wurde klar: das Paket aus der
+      ersten Sitzung ist algorithmisch fertig — was fehlt, ist <em>der echte
+      Browser-Lauf</em>, die <em>Gleichwertigkeitsmessung WASM == nativ</em>
+      und die <em>Offline-PWA-Hülle</em>.</p>
+
+    <h2 id="c01"><span class="n">C·01</span>Toolchain-Reality-Check</h2>
+    <p>Erstes Tool-Sondieren auf der lokalen Windows-Maschine: Node v24 da,
+      aber <em>kein</em> g++, <em>kein</em> emcc, <em>kein</em> wabt; WSL ist
+      nicht installiert.</p>
+    <div class="honest"><b>Ehrlich:</b> Statt blindlings irgendwas zu
+      installieren erst kurz nachgefragt. Du sagtest: „lokal wenn ohne
+      Admin-Rechte, sonst VPS". Versuch w64devkit-SFX → Self-Extract scheiterte
+      stumm. Dein Hinweis: <em>„Sophos killt alle exes parallel"</em> — das war
+      die echte Ursache. Konsequenz: Wechsel auf den VPS
+      (<code>87.106.25.91</code>), keine weiteren Sophos-Kämpfe.</div>
+    <p>Auf dem VPS: g++ 13.3.0 ✓, Node v22 ✓, Ubuntu 24.04. emsdk per
+      <code>git clone</code> + <code>emsdk install/activate latest</code> →
+      emcc 5.0.7, wasm-objdump 1.0.34. Toolchain steht.</p>
+
+    <h2 id="c02"><span class="n">C·02</span>Sanity grün stellen</h2>
+    <p>Vor jeder Phase A: das Paket muss in der Ziel-Umgebung exakt das tun,
+      was es in der ersten Sitzung getan hat. Alle vier Sanity-Suites laufen
+      gelassen, mit <code>-Wall -Wextra</code>, ohne <code>-ffast-math</code>:</p>
+    <table>
+      <tr><th>Suite</th><th>Beweist</th><th>Ergebnis</th></tr>
+      <tr><td><code>offline_test</code></td><td>Engine 13/13 (Anti-Aliasing
+        −74 dBc, klickfrei, zipper-frei, …)</td><td><b>PASS</b>, 0 Warnungen</td></tr>
+      <tr><td><code>capi_test</code></td><td>C-API + 128-Quanten == ein Call
+        bit-identisch</td><td><b>PASS</b>, 0 Warnungen</td></tr>
+      <tr><td><code>ring_test</code></td><td>SPSC-Ring, FIFO, Cross-Thread</td>
+        <td><b>PASS</b></td></tr>
+      <tr><td><code>audio_test</code></td><td>UI → Ring → Worklet-Decode
+        bit-exakt; Backpressure ohne Block</td><td><b>PASS</b></td></tr>
+    </table>
+
+    <h2 id="c03"><span class="n">C·03</span>Phase A1+A2 · WASM bauen &amp; Imports</h2>
+    <p><code>bash build_wasm.sh ..</code> erzeugte <code>para3.wasm</code>.
+      Import-Abgleich mit <code>wasm-objdump</code>:</p>
+    <pre><code>Import[3]:
+ - func[0] sig=1 &lt;wasi_snapshot_preview1.fd_close&gt;
+ - func[1] sig=7 &lt;wasi_snapshot_preview1.fd_write&gt;
+ - func[2] sig=12 &lt;wasi_snapshot_preview1.fd_seek&gt;</code></pre>
+    <p>Drei WASI-Funktionen, alle bereits in <code>makeImports()</code> des
+      Worklets vorhanden. Memory wird vom STANDALONE-WASM intern erzeugt und
+      <em>exportiert</em>, nicht importiert.</p>
+    <div class="honest"><b>Ehrlich — Bug gefunden:</b> Das Worklet hatte
+      <code>this.memory = new WebAssembly.Memory(...)</code> und las den
+      Render-Output via <code>new Float32Array(this.memory.buffer, …)</code>.
+      Aber das WASM schreibt in seine <em>eigene</em>, exportierte Memory —
+      eine andere Region. Folge: das Worklet hätte Stille ausgegeben. Fix
+      (1-Zeile): <code>this.memory = inst.exports.memory</code> direkt nach
+      <code>WebAssembly.Instance(...)</code>. Sauberkeitsbonus: das nicht
+      benötigte <code>env.memory</code>-Stub-Set aus den Imports entfernt.</div>
+
+    <h2 id="c04"><span class="n">C·04</span>Phase A3 · WASM == nativ messen</h2>
+    <p>Drei neue Dateien, eine geteilte Quelle der Wahrheit:</p>
+    <ul>
+      <li><code>parity_seq.h</code> — deterministische Op-Sequenz (Mode, 6
+        Parameter, NoteOn 57, 1 Sekunde bei 48 kHz in 128-Quanten).</li>
+      <li><code>parity_native.cpp</code> — nativer Treiber über <code>para3_capi</code>,
+        schreibt Floats binär nach stdout.</li>
+      <li><code>wasm_parity.mjs</code> — lädt <code>para3.wasm</code> in Node
+        mit den <em>gleichen</em> Imports wie der Worklet, treibt die
+        <em>gleiche</em> Op-Sequenz, vergleicht 48 000 Samples paarweise.</li>
+    </ul>
+    <p class="res">Ergebnis: <b>max |wasm − nativ| = 0.0e+0</b>, RMS = 0, peak
+      |x| = 0.384231 auf beiden Seiten, alle Samples finit. <b>OVERALL PASS</b>.
+      Bit-identisch — das ist die strengste mögliche Form von
+      „Gleichwertigkeit".</p>
+
+    <h2 id="c05"><span class="n">C·05</span>Phase B1 · PortTransport (SAB-frei)</h2>
+    <p>Begründung aus dem Runbook: der SAB-Ring braucht
+      <code>crossOriginIsolated</code> (COOP/COEP), was mit einer voll-offline
+      installierten PWA in Konflikt steht. Der Audio-Pfad (WASM im Worklet)
+      braucht kein SAB — nur der Steuerpfad.</p>
+    <p>Neue Datei <code>para3-port.js</code> mit Klasse <code>Para3Port</code>:
+      identische High-Level-API zu <code>Para3Ring</code> (noteOn, setParam,
+      seqStep, …), intern <code>port.postMessage({op,i0,i1,d})</code>.
+      Worklet drainiert <em>beide</em> Transporte durch <em>eine</em>
+      <code>_dispatch(op,i0,i1,d)</code>-Funktion — gemeinsam, kein
+      Logik-Drift. <code>Para3Audio.start({transport:'auto'})</code> wählt
+      SAB-Ring bei <code>crossOriginIsolated</code>, sonst Port.</p>
+    <p>Verifikation <code>port_test.mjs</code>:</p>
+    <table>
+      <tr><th>Test</th><th>Aussage</th><th>Ergebnis</th></tr>
+      <tr><td>E1 Port-76-Op-Session</td><td>UI→Port→Decode bit-exakt
+        (Order, IDs, Doubles)</td><td><b>PASS</b></td></tr>
+      <tr><td>E2 no transport drift</td><td>Port-Decode == Ring-Decode</td>
+        <td><b>PASS</b> bit-identisch</td></tr>
+      <tr><td>E3 1000-Op-Stress</td><td>Kontinuierlicher Param-Sweep
+        in-order, keine Drops</td><td><b>PASS</b></td></tr>
+    </table>
+
+    <h2 id="c06"><span class="n">C·06</span>Phase B2 · PWA-Hülle</h2>
+    <p>Vier neue Bausteine:</p>
+    <ul>
+      <li><code>manifest.webmanifest</code> — name, icons, display:standalone,
+        start_url, theme/background.</li>
+      <li><code>sw.js</code> — precache + cache-first, atomares
+        <code>addAll</code>, <code>activate</code>-Hook räumt alte Versionen.</li>
+      <li><code>make_icons.mjs</code> — dependency-freier PNG-Generator
+        (eigener PNG-Container über <code>zlib.deflateSync</code> +
+        CRC32-Tabelle), schreibt 192/512 + maskable-512.</li>
+      <li><code>serve.mjs</code> erweitert um <code>.png</code> und
+        <code>.webmanifest</code> MIME (vorher <code>application/octet-stream</code>
+        → Browser hätte Manifest nicht akzeptiert).</li>
+    </ul>
+    <p>Service-Worker-Endpunkte real per <code>curl -sI</code> verifiziert
+      (Content-Type je Asset, COOP/COEP-Header durch).</p>
+
+    <h2 id="c07"><span class="n">C·07</span>HTTPS · para3.levcon.at</h2>
+    <div class="who">Du</div>
+    <div class="said">„ich habe para3.levcon.at eingerichtet — zeigt auf
+      87.106.25.91". Für PWA-Install + Mobile-Test braucht es HTTPS.</div>
+    <p>nginx auf dem VPS war schon da (mit anderen Vhosts: wyckoff, matrix,
+      …). Neuer Vhost <code>/etc/nginx/sites-available/para3.levcon.at</code>:
+      reverse_proxy auf <code>127.0.0.1:8080</code>, plus
+      <code>/sw.js</code>-no-cache. nginx leitet die upstream-COOP/COEP-Header
+      durch.</p>
+    <div class="honest"><b>Ehrlich:</b> Den ersten certbot-Versuch hat der
+      Sandbox-Klassifizierer abgelehnt (Modifikation produktiver
+      nginx-Konfiguration auf gemeinsam genutzem Server). Auf deine explizite
+      Bestätigung hin lief er beim zweiten Anlauf durch — Cert ausgestellt,
+      HTTPS-Redirect aktiv, automatischer Renewal eingerichtet.</div>
+    <p class="res">Ergebnis: <code>https://para3.levcon.at</code> bedient
+      <code>/</code> → para3-responsive.html, alle Asset-Endpoints
+      (<code>.wasm</code>, <code>.webmanifest</code>, <code>sw.js</code>,
+      Icons) korrekt; HTTP→HTTPS 301-Redirect.</p>
+
+    <h2 id="c08"><span class="n">C·08</span>UI-Bindings (CLAUDE_INTEGRATE_UI)</h2>
+    <div class="who">Du</div>
+    <div class="said">„Ich hab dir neue Files hinterlegt. Lies
+      <code>CLAUDE_INTEGRATE_UI.md</code> und binde
+      <code>para3-responsive.html</code> an die Engine, dann Abnahme wie dort
+      beschrieben."</div>
+    <p>Die Datei kam mit der erweiterten Engine (12 Parameter inkl.
+      LFO_RATE/LFO_PITCH_DEPTH/DELAY_TIME/DELAY_FEEDBACK/ATTACK/DECREL/SUSTAIN,
+      plus <code>SET_LFO_SHAPE</code>-OP-Code). Bindungen tabellarisch aus dem
+      Runbook übernommen:</p>
+    <table>
+      <tr><th>UI</th><th>Engine-Aufruf</th></tr>
+      <tr><td>Knob <code>cut/pk/lrt/lpi/lci/dt/df</code></td>
+        <td><code>setParam(PARAM.X, n)</code> normiert min..max → 0..1</td></tr>
+      <tr><td>Fader <code>atk/dec/sus</code></td>
+        <td><code>setParam(PARAM.ATTACK/DECREL/SUSTAIN, v/100)</code></td></tr>
+      <tr><td>Knob <code>tmp</code> (BPM)</td>
+        <td><code>seqTempo(val)</code> direkt</td></tr>
+      <tr><td>Knob <code>vol</code></td>
+        <td>host-seitig <code>GainNode.gain</code> — NICHT durch C-API</td></tr>
+      <tr><td>Knob <code>oct</code></td>
+        <td>host-seitig Note-Offset vor <code>noteOn</code></td></tr>
+      <tr><td>Voice-Grid</td>
+        <td><code>setMode(MODE.[POLY|UNISON|OCTAVE|FIFTH|UNIRING|POLYRING][ix])</code></td></tr>
+      <tr><td>Wave (3 Buttons)</td>
+        <td><code>setLfoShape([TRIANGLE,SAW,SQUARE][lw])</code></td></tr>
+      <tr><td>Keyboard wk/bk</td>
+        <td><code>noteOn</code>/<code>noteOff</code>, MIDI aus Notenname + Oct-Offset</td></tr>
+      <tr><td>Step toggle</td>
+        <td><code>seqStep×16 + seqCommit</code> (atomar)</td></tr>
+      <tr><td>Motion-Lane</td>
+        <td><code>seqStep(i, note, gate, true, m/100) + seqCommit</code></td></tr>
+      <tr><td>#play / #clr / #mArm</td>
+        <td><code>seqStart/Stop</code> / Pattern aus + commit / <code>seqArmRecord</code></td></tr>
+    </table>
+    <p>Inert-Liste C aus dem Runbook respektiert: <code>egi</code> (EG INT),
+      <code>det</code> (Detune), <code>por</code> (Portamento) bekommen
+      <em>keinen</em> <code>controls.*</code>-Aufruf — UI bleibt sichtbar,
+      Engine wird nicht „gefakt".</p>
+    <div class="honest"><b>Ehrlich:</b> Sequencer-Note pro Step musste eine
+      Wahl treffen. Doku im Code-Kommentar: <em>zuletzt gespielte Taste,
+      Fallback MIDI 48</em>.</div>
+
+    <h2 id="c09"><span class="n">C·09</span>Oszillator-Echtheit-Frage</h2>
+    <div class="who">Du</div>
+    <div class="said">„Klang da. Der Oscillator ist aber noch nicht echt
+      oder? — noch nichts ändern bitte, nur antworten."</div>
+    <p>Die ehrliche, vollständige Antwort: <b>VCO ist echt</b> — drei
+      bandbegrenzte Sägezahn-Oszillatoren mit 4× PolyBLEP-Oversampling und
+      383-Tap-Kaiser-Dezimierung, gemessen bei <b>−74 dBc</b> Anti-Aliasing
+      (naiver Saw läge bei −20). Und: WASM == nativ ist bit-identisch
+      (<code>scope_source_test</code> aus dem nächsten Schritt belegt das auf
+      dem Engine-Puffer selbst).</p>
+    <p>Was vielleicht den Verdacht weckte:</p>
+    <ul>
+      <li><b>Scope-Animation</b> im Display war zu dem Zeitpunkt <em>nicht</em>
+        der echte Engine-Output — es war ein JS-<code>Math.sin</code>-Zeichner
+        (UI-only). Das wurde im nächsten Schritt durch den echten
+        AnalyserNode ersetzt.</li>
+      <li><b>LFO-LED</b> dito — UI-Animation, kein Tap auf den Audio-Graph.</li>
+      <li><b>Wave-Buttons</b> schalten die <em>LFO</em>-Form, nicht den VCO.
+        Der VCO ist ein fixer Saw (Volca-Keys-Architektur). Sägezahn-Form-
+        Parameter ist <code>CALIB(sprint1)</code>-Außenarbeit.</li>
+    </ul>
+
+    <h2 id="c10"><span class="n">C·10</span>Layout-Fit &amp; echter Scope
+      (CLAUDE_SCOPE_AND_LAYOUT)</h2>
+    <p><b>Teil 1 — Mobile-Layout:</b> <code>vh</code> → <code>dvh/svh</code>,
+      Tastatur-Schublade default eingeklappt mit 40-px-Griff,
+      <code>--kbH</code> CSS-Var, Safe-Area oben &amp; unten respektiert,
+      kompaktere Knobs bei kleinen Höhen.</p>
+    <p><b>Teil 2 — Echter Scope:</b> Synthetische <code>frame()</code>/
+      <code>lfo()</code>-Animation komplett gelöscht (kein toter Code, keine
+      Auskommentierung). Neuer Graph:</p>
+    <pre><code>workletNode → masterGain → AnalyserNode (read-only) → ctx.destination</code></pre>
+    <p><code>analyser.fftSize = 2048</code>, <code>smoothingTimeConstant = 0</code>.
+      Pro <code>requestAnimationFrame</code>:
+      <code>analyser.getFloatTimeDomainData(buf)</code> → Canvas-Map mit
+      <em>festem</em> Y-Bereich [−1,+1], kein Auto-Gain. <b>Stille = flache
+      Linie</b>.</p>
+
+    <p><b>Nachweis A — headless C++:</b> <code>scope_source_test.cpp</code>:</p>
+    <pre><code>S1 silence is silent  (no NoteOn)
+   max|x|   : 0.000e+00   (tol 1e-6)
+   -&gt; PASS (engine output is exactly 0)
+
+S2 A4 (NoteOn 69)  -&gt; 440 Hz on the engine buffer
+   f0       : 440.000 Hz   (|err| 0.000 Hz  = 0.00 cents)
+   peak|x|  : 0.4351  (engine output, not synthetic)
+   -&gt; PASS (scope source is the real engine)</code></pre>
+
+    <p><b>Nachweis B — In-App-Selbsttest:</b> <code>?selftest=1</code> ruft
+      <code>noteOn(69)</code>, wartet 250 ms, schätzt die dominante Frequenz
+      via Autokorrelation aus den AnalyserNode-Samples (≈ 440 Hz, ±5 Cent),
+      dann <code>noteOff</code>, 1500 ms Release-Reserve, RMS &lt; 1e-3.
+      Konsole gibt <code>SCOPE SELFTEST: PASS|FAIL</code> aus. Eine reine
+      Animation kann <em>beides</em> nicht gleichzeitig erfüllen — daher
+      Anti-Fake-Gate.</p>
+
+    <h2 id="c11"><span class="n">C·11</span>UI-Iteration nach Geräte-Screenshot</h2>
+    <div class="who">Du</div>
+    <div class="said">Screenshot vom Xiaomi 13 Pro: VOICE/TUNE/VCF sichtbar,
+      EG/LFO/DELAY/SEQ unerreichbar — Tastatur+Drawer-Griff hinten,
+      „ich kann noch nicht alle Elemente sehen, welche Idee hast du — noch
+      ohne programmieren".</div>
+    <p>Diagnose: <code>.app { overflow:hidden }</code> verhinderte das
+      Scrollen, <code>.scroll</code> hatte kein eigenes
+      <code>overflow-y:auto</code>. Der Inhalt war da, aber unerreichbar.</p>
+    <p>Diskussion ohne Code: drei Hauptwege auf den Tisch gelegt
+      (kompaktes 2-Spalt-Layout, Always-Scroll mit fix-Tastatur, Tabs/Akkordeon).
+      Du wolltest: <em>kein</em> KEYS-Button, <em>kein</em> Akkordeon — Titel,
+      Patches, Display fix oben; Tastatur fix unten; restliche Sektionen
+      scrollbar mit einer Scrollmaske oben/unten als Affordance-Signal.</p>
+    <div class="who">Du</div>
+    <div class="said">„mach Mal Variante 2 und ohne Nebensache. fasste sonst
+      am Programm oder der Logiken nichts an."</div>
+
+    <h2 id="c12"><span class="n">C·12</span>Initial-Backup auf GitHub</h2>
+    <p>Vor der Layout-Operation: erst sichern. <code>git init</code> in
+      <code>para3-engine/</code>, <code>.gitignore</code> (build-artefakte
+      raus), initial commit <code>8f98b26</code> mit 33 Files. Remote
+      <code>git@github.com:LEVCON-AT/Para3.git</code> hinzugefügt, gepusht.</p>
+    <div class="honest"><b>Ehrlich:</b> Sandbox-Klassifizierer blockierte den
+      ersten Push (default-branch auf neuem Remote ohne explizite Autorisierung
+      in dieser Session). Auf deine ausdrückliche Wiederholung „mach du das"
+      lief er beim zweiten Anlauf durch.</div>
+
+    <h2 id="c13"><span class="n">C·13</span>Scroll-Maske &amp; permanente Tastatur</h2>
+    <p>Nur CSS + zwei mini-JS-Stellen — Engine, C-API, Worklet, Audio-Glue,
+      Tests unverändert.</p>
+    <ul>
+      <li><code>.app</code>: <code>flex-direction:column; height:100dvh</code>
+        (statt <code>min-height</code>+<code>overflow:hidden</code>).</li>
+      <li><code>.scroll</code>: einziger Scroll-Container,
+        <code>flex:1; overflow-y:auto</code>, dynamische
+        <code>mask-image</code> mit zwei CSS-Variablen
+        <code>--mtop</code>/<code>--mbot</code>: 24-px-Fade nur dort, wo
+        Inhalt zu zeigen ist (ehrliche Affordance).</li>
+      <li><code>.kbd</code>: <code>position:relative</code> im Flex-Fluss,
+        permanent sichtbar; Drawer-Mechanik, Griff-Pseudo,
+        <code>translateY</code>-Trick und KEYS-Button alle weg.</li>
+      <li>JS-Scroll-Mask-Updater (~15 Zeilen, IIFE-Ende): schreibt
+        <code>--mtop</code>/<code>--mbot</code> auf Scroll/Resize/Orientation.
+        Am obersten Anschlag scharfe Kante, am untersten ebenso.</li>
+    </ul>
+    <p>Re-Sanity (alles wieder grün): offline_test, capi_test, ring_test,
+      audio_test, scope_source_test → 5 × PASS, 0 Warnungen. Push als
+      <code>861537b</code>.</p>
+
+    <h2 id="c14"><span class="n">C·14</span>Brand &amp; ausführliche Doku</h2>
+    <div class="who">Du</div>
+    <div class="said">Brand-Paket (<code>brand.zip</code>) +
+      <code>DOCUMENTATION.html</code>. „Branding (favico, app-icon) bitte
+      anpassen aus dem Paket (nur App und fav!) → brand Paket im repo
+      aktualisieren. dann: bitte die repo Doku anpassen: bitte einen Verweis
+      auf die ausführliche Dokumentation machen und inhaltlich abrunden. (und
+      am Server hoch hochladen, damit es unter <code>/documentation</code>
+      erreichbar ist."</div>
+    <p>Umsetzung:</p>
+    <ul>
+      <li><code>brand/</code> als Top-Level-Verzeichnis im Repo (Wortmarke,
+        Marke, Maskable-Icon, Preview-HTML, LOGO_README).</li>
+      <li><code>wasm-bridge/brand/</code> als Deployment-Spiegelung.</li>
+      <li><code>manifest.webmanifest</code>: einziges Icon ist jetzt
+        <code>brand/para3-icon-maskable.svg</code> (sizes „any", purpose „any
+        maskable").</li>
+      <li>Favicon (Browser-Tab):
+        <code>brand/para3-mark.svg</code> theme-adaptiv via
+        <code>currentColor</code>.</li>
+      <li>Apple-Touch-Icon (iOS-Homescreen): das maskable SVG.</li>
+      <li>Wortmarke im Header <em>unangetastet</em> — du sagtest „nur App
+        und Fav".</li>
+      <li><code>sw.js</code> <code>CACHE_VER</code> auf
+        <code>para3-v2</code> gebumpt; Precache hat jetzt die drei
+        Brand-SVGs und <code>documentation.html</code>.</li>
+      <li><code>serve.mjs</code>: <code>/documentation</code> (und
+        <code>/documentation/</code>) → <code>documentation.html</code>,
+        SVG-MIME ergänzt.</li>
+      <li><code>README.md</code> deutlich erweitert: Live-URL, Ergebnis-
+        Tabelle, Reproduktions-Quickstart, expliziter Link auf
+        <code>/documentation</code>.</li>
+    </ul>
+    <p>Endpoints live verifiziert (<code>/brand/para3-mark.svg</code>,
+      <code>/brand/para3-icon-maskable.svg</code>,
+      <code>/manifest.webmanifest</code>,
+      <code>/documentation</code>) — alle 200 mit korrektem MIME. Sanity
+      unverändert grün, 0 Warnungen. Push als <code>1a88b78</code>.</p>
+
+  </section>
+
+  <!-- ===================================================================== -->
+  <!-- TAB 2 — Claude Chat (Original-Doku 1:1)                               -->
+  <!-- ===================================================================== -->
+  <section class="tab-pane" id="pane-chat">
+
+    <h2><span class="n">VERLAUF</span>Phasen</h2>
+    <nav class="toc">
+      <a href="#p0">00 · Der Auftrag</a>
+      <a href="#p1">01 · Konzept &amp; Sprint-Plan</a>
+      <a href="#p2">02 · Design-Spezifikationen</a>
+      <a href="#p3">03 · UI-Prototypen</a>
+      <a href="#p4">04 · Engine &amp; Messung</a>
+      <a href="#p5">05 · C-API-Brücke</a>
+      <a href="#p6">06 · Lock-freier Ring</a>
+      <a href="#p7">07 · Build &amp; Worklet</a>
+      <a href="#p8">08 · Glue &amp; Server</a>
+      <a href="#p9">09 · Runbooks für Claude Code</a>
+      <a href="#p10">10 · Grenzen &amp; Übergabe</a>
+      <a href="#p11">11 · UI-Korrektur</a>
+      <a href="#p12">12 · Layout &amp; echter Scope</a>
+      <a href="#p13">13 · Logo &amp; Brand</a>
+      <a href="#p14">14 · Repo &amp; Dokumentation</a>
+    </nav>
+
+    <h2 id="p0"><span class="n">00</span>Der Auftrag</h2>
+    <div class="who">Du</div>
+    <div class="said">Ein produktionsreifer, klang-genauer Software-Synth
+      nach dem Vorbild der KORG Volca Keys — „PARA·3". Harte Regeln:
+      kein Klacksen/Knistern, State-of-the-Art-DSP, keine Fakes, keine
+      Stubs, keine Helfer-Abkürzungen; jede Qualitätsaussage muss
+      <em>gemessen</em> sein, nicht behauptet; auf Deutsch antworten.</div>
+    <p>Diese Regeln wurden zum roten Faden für alles Folgende. „Gemessen
+      statt behauptet" und „echte Defekte fixen und neu messen" galten ab
+      hier in jeder Phase.</p>
+
+    <h2 id="p1"><span class="n">01</span>Konzept &amp; Sprint-Plan</h2>
+    <p>Erst ein durchgängiger, sprint-artiger Plan. Wichtige ehrliche
+      Festlegung sofort: die Architektur ist <b>paraphon</b> — drei
+      Oszillatoren, aber <em>ein</em> gemeinsames Filter und <em>eine</em>
+      Hüllkurve. Und: ein exakter 1:1-Klon hängt an einer echten
+      Hardware-Messung (Sprint 1) — das wurde von Anfang an als reale
+      Außenabhängigkeit benannt, nicht versteckt.</p>
+
+    <h2 id="p2"><span class="n">02</span>Design-Spezifikationen</h2>
+    <p>Sechs Markdown-Spezifikationen (im Paket unter
+      <code>design-specs/</code>): DSP-Architektur, Oszillator, VCF/EG/VCA,
+      LFO/Modulation/Motion, Delay/Ausgang, Sequencer/Steuerung. Jede legt
+      Algorithmus, Topologie und Prüfkriterium vor der Implementierung fest.</p>
+
+    <h2 id="p3"><span class="n">03</span>UI-Prototypen</h2>
+    <p>Drei interaktive HTML-Entwürfe: Desktop, Mobil-Hochformat und ein
+      voll responsiver mit zwei Themes (OBSIDIAN dunkel, BONE hell). Bewusst
+      zunächst nur Look &amp; Feel — die Tonerzeugung kam später und sauber
+      getrennt.</p>
+
+    <h2 id="p4"><span class="n">04</span>Engine &amp; Messung</h2>
+    <p>Die header-only C++-Engine entstand zusammen mit einem
+      FFT-Mess-Harness. Gebaut mit <code>-Wall -Wextra</code>, ohne
+      <code>-ffast-math</code> (IEEE-Präzision nötig für die
+      Bandbegrenzung).</p>
+    <div class="honest"><b>Ehrlich — die wichtigste Lektion:</b> Das erste
+      Anti-Aliasing-Ergebnis sah mit −20 dBc schlecht aus. Ursache war
+      nicht die Engine, sondern <em>der Test</em>: das Hann-Fenster
+      maskierte sich selbst. Mit kohärentem Sampling gemessen lag der echte
+      Wert bei <b>−74 dBc</b>. Mehrere solcher Harness-Fehler wurden
+      gefunden und behoben; die Engine wurde nie „passend gemacht".</div>
+    <p class="res">Ergebnis: <b>13 / 13 PASS</b> — klickfrei, zipper-frei,
+      worst-case stabil, nichtlinear −48,8 dBc, Ringmod-Insel −53,5 dBc,
+      Sequencer-Jitter 0, Motion-Roundtrip 0,0000, lock-freies Pattern-Edit.</p>
+
+    <h2 id="p5"><span class="n">05</span>C-API-Brücke</h2>
+    <p>Eine RT-sichere <code>extern "C"</code>-Schicht, damit die Engine aus
+      WASM ansprechbar wird, plus native Verifikation WA1–WA5.</p>
+    <div class="honest"><b>Ehrlich:</b> Der 10-Sekunden-Stresstest (WA5)
+      deckte einen echten Bug auf — stiller Ausgang durch ein
+      sich selbst überschreibendes Pattern-Edit. Gefunden, gefixt, neu
+      gemessen.</div>
+    <p class="res">Ergebnis: <b>OVERALL PASS</b>, u. a. 128-Quanten ==
+      ein Aufruf, bit-identisch.</p>
+
+    <h2 id="p6"><span class="n">06</span>Lock-freier Ring</h2>
+    <p>Ein wait-freier SPSC-Ring über SharedArrayBuffer als Steuerpfad
+      UI → Audio-Thread.</p>
+    <div class="honest"><b>Ehrlich:</b> Der erste Cross-Thread-Test lief in
+      einen Timeout — Ursache war die 1-Kern-Sandbox plus zwei
+      Performance-Fehler <em>im Test</em> (O(n²)-Array-Shift,
+      kapazitätsskalierte Bursts). Der Ring war nie das Problem. Korrigiert:
+      adversariales Interleaving als rigoroser Beweis + ein kleiner echter
+      Worker-Lauf.</div>
+    <p class="res">Ergebnis: <b>OVERALL PASS</b> — FIFO, null Verlust/
+      Duplikat, bit-exakter Double-Roundtrip, realer Worker 6000/6000.</p>
+
+    <h2 id="p7"><span class="n">07</span>Build &amp; Worklet</h2>
+    <p>Ein emcc-Build-Skript mit exakten RT-Flags und ein
+      AudioWorkletProcessor.</p>
+    <div class="honest"><b>Ehrlich:</b> Bei der Durchsicht fiel auf, dass
+      AudioWorklet-Scripts in vielen Browsern <em>kein</em> ES-<code>import</code>
+      können. Das Worklet wurde daraufhin eigenständig gemacht (Ring-Consumer
+      inline) — sonst hätte es im Browser nie geladen.</div>
+
+    <h2 id="p8"><span class="n">08</span>Glue &amp; Server</h2>
+    <p>Main-Thread-API (<code>Para3Controls</code>/<code>Para3Audio</code>)
+      und ein COOP/COEP-Server (Pflicht für SharedArrayBuffer).</p>
+    <div class="honest"><b>Ehrlich:</b> Der End-to-End-Test E3 schlug zuerst
+      fehl — wieder ein Modellfehler <em>im Test</em> (nicht-lückenlose
+      Werteannahme bei Drops), nicht im Code. Korrigiert.</div>
+    <p class="res">Ergebnis: <b>OVERALL PASS</b> (76-Op-Session bit-exakt,
+      21 750 Nachrichten FIFO-exakt) · COOP/COEP per <code>curl</code>
+      bestätigt.</p>
+
+    <h2 id="p9"><span class="n">09</span>Runbooks für Claude Code</h2>
+    <p>Verbindliche Ausführungs-Runbooks statt loser Hinweise:
+      <code>CLAUDE_BUILD.md</code> mit Sanity-Gates, Phase A (Build +
+      Gleichwertigkeitsmessung), Phase B (Offline-PWA: SAB-freier
+      postMessage-Pfad + Service-Worker + Mobile-Audio-Unlock), Phase C
+      (optional Hardware-Kalibrierung). Jeder Schritt mit messbarer
+      Abnahme.</p>
+
+    <h2 id="p10"><span class="n">10</span>Grenzen &amp; Übergabe</h2>
+    <div class="who">Du</div>
+    <div class="said">Sind die offenen Lücken einschränkend? Kann ich das
+      ganze Paket Claude Code geben — Ziel: offline am Handy nutzen?</div>
+    <p>Ehrliche Antwort: zwei Lücken — die Sprint-1-Kalibrierung (nur für
+      1:1-Klangkopie nötig, kein Hindernis für einen sehr guten spielbaren
+      Synth) und der finale emcc-/Browser-Schritt (ein Befehl auf deiner
+      Maschine). „Offline am Handy" heißt PWA + SAB-freier Pfad — als klare
+      Zusatzaufgabe benannt. Paket als <code>para3-engine.zip</code>
+      übergeben.</p>
+
+    <h2 id="p11"><span class="n">11</span>UI-Korrektur</h2>
+    <div class="who">Du</div>
+    <div class="said">Claude Code ist fertig — aber der schöne mobile
+      Entwurf wurde nicht umgesetzt. Hast du die Datei noch?</div>
+    <div class="honest"><b>Ehrlich — mein Fehler:</b> Ich hatte in die ZIP
+      nur die minimale Harness gelegt, nicht den gestalteten
+      <code>para3-responsive.html</code>. Datei war auf der Platte sicher.
+      Zusätzlich zeigte sich: der Trichter exponierte nur 5 Parameter — zu
+      wenig fürs volle Panel. Also Trichter regressionssicher auf 12
+      Parameter + LFO-Form erweitert (Engine 13/13, capi, ring, audio_test
+      blieben grün) und ein präzises <code>CLAUDE_INTEGRATE_UI.md</code> mit
+      ehrlicher „Liste C" (Controls ohne echten Engine-Weg bleiben inert —
+      nicht faken).</div>
+
+    <h2 id="p12"><span class="n">12</span>Layout &amp; echter Scope</h2>
+    <div class="who">Du</div>
+    <div class="said">Nicht alle Elemente gehen sich am Handy aus. Und der
+      Oszilloskop scheint nur eine Animation — es muss ein echter sein.</div>
+    <p>Beides berechtigt. <code>CLAUDE_SCOPE_AND_LAYOUT.md</code> liefert:
+      Mobile-Layout vollständig erreichbar (dvh/svh, einklappbare
+      Tastatur-Schublade, Safe-Area) und einen echten Oszilloskop —
+      read-only AnalyserNode am realen Graph, Stille = flache Linie, plus
+      Anti-Fake-Gate: ein Beweis, dass „still ⇒ flach" <em>und</em>
+      „A4 ⇒ 440 Hz" gleichzeitig gelten — was eine reine Animation
+      unmöglich erfüllen kann.</p>
+
+    <h2 id="p13"><span class="n">13</span>Logo &amp; Brand</h2>
+    <div class="who">Du</div>
+    <div class="said">Ein „sickes", gut lesbares Logo — Simplizität und
+      hochwertiges Styling vor allem. Das alte ist schwer lesbar.</div>
+    <p>Konzept: eine kräftige, schriftunabhängige Monolinien-Wortmarke
+      (das alte war zu dünnstrichig — genau das Lesbarkeitsproblem), der
+      orange Interpunkt als Signatur, dazu eine „Modul"-Marke aus drei
+      Stimmen-Balken (paraphon · 3). Lesbarkeit nicht behauptet, sondern
+      real bis Favicon-Größe auf beiden Themes gerendert und geprüft.
+      Geliefert als Lockup, Marke, Maskable-Icon, Vorschau — und auf Wunsch
+      als <code>brand.zip</code>.</p>
+    <p class="res">Ergebnis: theme-adaptiv, eine Datei für beide Welten,
+      klar lesbar bis 32 px.</p>
+
+    <h2 id="p14"><span class="n">14</span>Repo &amp; Dokumentation</h2>
+    <div class="who">Du</div>
+    <div class="said">Hier ist das Repo — ist alles da? Und es braucht eine
+      genaue Dokumentation, damit andere es reproduzieren können.</div>
+    <p>Repo geprüft: Root und <code>wasm-bridge/</code> vollständig; der
+      <code>brand/</code>-Ordner fehlte und musste nachgereicht werden.
+      Daraus entstand <code>DOCUMENTATION.html</code> (Entstehung,
+      Prüfmethodik, Ergebnisse, Reproduktion, ehrliche Grenzen) — und
+      dieses Dokument, das den Weg dorthin nachvollziehbar macht.</p>
+    <div class="honest"><b>Ehrlich zum Schluss:</b> Der DSP-Kern der Engine
+      ist über die ganze Strecke unverändert und gemessen sauber. Was sich
+      in der letzten Phase änderte, war additiv die Trichter-/Brücken-Schicht
+      (regressionsgeprüft), plus das, was du mit Claude Code an UI/Layout/
+      Scope/PWA gebaut hast. Nichts davon ist gefakt; jede Grenze ist
+      benannt.</div>
+
+  </section>
+
+  <footer>
+    PARA·3 · Zweistufige Rekonstruktion: Konzept &amp; Engine (Claude Chat)
+    + Umsetzung &amp; Auslieferung (Claude Code) ·
+    <a href="https://github.com/LEVCON-AT/Para3">github.com/LEVCON-AT/Para3</a><br>
+    Siehe auch <a href="./documentation.html">DOCUMENTATION</a>
+    (Prüfung &amp; Reproduktion) und die drei Runbooks im Repo-Root
+    (<code>CLAUDE_BUILD.md</code>, <code>CLAUDE_INTEGRATE_UI.md</code>,
+    <code>CLAUDE_SCOPE_AND_LAYOUT.md</code>).
+  </footer>
+
+</div>
+
+<script>
+  // theme toggle (Obsidian/Bone) — same idiom as the other doc pages
+  const r=document.documentElement,b=document.getElementById('tg');
+  b.onclick=()=>{const o=r.getAttribute('data-t')==='obsidian';
+    r.setAttribute('data-t',o?'bone':'obsidian');
+    b.textContent=o?'Obsidian':'Bone';};
+
+  // tabs — single source of state in the DOM
+  document.querySelectorAll('.tab').forEach(t=>{
+    t.addEventListener('click',()=>{
+      document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+      document.querySelectorAll('.tab-pane').forEach(x=>x.classList.remove('active'));
+      t.classList.add('active');
+      document.getElementById(t.dataset.pane).classList.add('active');
+      // deep-link friendly: keep ?tab= in URL so a TOC link from another
+      // pane keeps its parent tab visible after navigation. Optional.
+      const u=new URL(location.href);
+      u.searchParams.set('tab', t.dataset.pane.replace('pane-',''));
+      history.replaceState(null,'',u);
+    });
+  });
+  // honor ?tab=code|chat on load
+  const want=new URL(location.href).searchParams.get('tab');
+  if(want){const sel=document.querySelector(`.tab[data-pane="pane-${want}"]`);
+    if(sel) sel.click();}
+</script>
+</body>
+</html>

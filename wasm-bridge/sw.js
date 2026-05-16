@@ -14,12 +14,13 @@
 //  the worklet and needs no SAB.
 // =============================================================================
 
-const CACHE_VER  = 'para3-v2';
+const CACHE_VER  = 'para3-v3';
 const PRECACHE   = [
   './',
   './index.html',
   './para3-responsive.html',
   './documentation.html',
+  './conversation.html',
   './para3-audio.js',
   './para3-ring.js',
   './para3-port.js',

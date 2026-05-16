@@ -34,9 +34,11 @@ const server = createServer(async (req, res) => {
 
   let p = decodeURIComponent((req.url || '/').split('?')[0]);
   // Production UI at /, the long-form documentation at /documentation (without
-  // .html), index.html stays accessible as /index.html for the minimal harness.
+  // .html), the conversation log at /conversation, index.html stays accessible
+  // as /index.html for the minimal harness.
   if (p === '/') p = '/para3-responsive.html';
   else if (p === '/documentation' || p === '/documentation/') p = '/documentation.html';
+  else if (p === '/conversation'  || p === '/conversation/')  p = '/conversation.html';
   const safe = normalize(p).replace(/^(\.\.[/\\])+/, '');
   const file = join(ROOT, safe);
   try {
