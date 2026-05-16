@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PARA·3 — Wie dieses Tool entstand & wie du es reproduzierst</title>
+<style>
+  :root{
+    --accent:#d9622b;
+    --bg:#efe7d6; --ink:#2a2724; --soft:#6b6354;
+    --card:#f4eede; --line:rgba(42,39,36,.14); --code:#e7dfca;
+  }
+  html[data-t="obsidian"]{
+    --bg:#15171c; --ink:#e8e6df; --soft:#9aa0ad;
+    --card:#1d1f25; --line:rgba(232,230,223,.13); --code:#0f1115;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{background:var(--bg);color:var(--ink);
+    font:15px/1.65 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased;transition:background .3s,color .3s}
+  .wrap{max-width:880px;margin:0 auto;padding:clamp(28px,5vw,72px)}
+  header{display:flex;align-items:center;justify-content:space-between;
+    gap:20px;flex-wrap:wrap;margin-bottom:14px}
+  .logo svg{height:48px;width:auto;display:block;color:var(--ink)}
+  .toggle{font:600 11px/1 ui-monospace,monospace;letter-spacing:.18em;
+    text-transform:uppercase;color:var(--soft);background:none;
+    border:1px solid var(--line);border-radius:999px;padding:9px 16px;
+    cursor:pointer;transition:.2s}
+  .toggle:hover{border-color:var(--accent);color:var(--ink)}
+  .lede{font-size:clamp(20px,3vw,27px);line-height:1.4;font-weight:600;
+    letter-spacing:-.01em;margin:34px 0 10px;max-width:24ch}
+  .lede b{color:var(--accent)}
+  .sub{color:var(--soft);font-size:16px;max-width:62ch;margin-bottom:8px}
+  .meta{color:var(--soft);font:600 11px/1.5 ui-monospace,monospace;
+    letter-spacing:.16em;text-transform:uppercase;margin-top:30px;
+    padding-top:18px;border-top:1px solid var(--line)}
+  h2{font-size:clamp(20px,2.6vw,25px);letter-spacing:-.01em;
+    margin:64px 0 6px;font-weight:700}
+  h2 .n{color:var(--accent);font:700 13px/1 ui-monospace,monospace;
+    letter-spacing:.1em;display:block;margin-bottom:10px}
+  h3{font-size:16px;margin:30px 0 6px;font-weight:700}
+  p{margin:12px 0;max-width:68ch}
+  ul{margin:12px 0 12px 2px;list-style:none}
+  li{position:relative;padding-left:22px;margin:7px 0;max-width:66ch}
+  li::before{content:"";position:absolute;left:2px;top:.62em;width:6px;
+    height:6px;border-radius:50%;background:var(--accent)}
+  code{font:13px/1.5 ui-monospace,"SF Mono",monospace;background:var(--code);
+    padding:.12em .42em;border-radius:5px}
+  pre{background:var(--code);border:1px solid var(--line);border-radius:12px;
+    padding:18px 20px;overflow:auto;margin:16px 0;font-size:13px;
+    line-height:1.7}
+  pre code{background:none;padding:0}
+  .card{background:var(--card);border:1px solid var(--line);
+    border-radius:16px;padding:24px 26px;margin:18px 0}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:620px){.grid{grid-template-columns:1fr}}
+  table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
+  th,td{text-align:left;padding:11px 12px;border-bottom:1px solid var(--line);
+    vertical-align:top}
+  th{font:700 11px/1.4 ui-monospace,monospace;letter-spacing:.13em;
+    text-transform:uppercase;color:var(--soft)}
+  td b{color:var(--accent)}
+  .pill{display:inline-block;font:700 11px/1 ui-monospace,monospace;
+    letter-spacing:.08em;color:var(--accent);border:1px solid var(--accent);
+    border-radius:999px;padding:5px 11px;margin:2px 4px 2px 0}
+  .honest{border-left:3px solid var(--accent);padding:4px 0 4px 20px;
+    margin:18px 0;color:var(--ink)}
+  .honest b{color:var(--accent)}
+  footer{margin-top:80px;padding-top:24px;border-top:1px solid var(--line);
+    color:var(--soft);font-size:13px}
+  a{color:var(--accent);text-decoration:none;border-bottom:1px solid transparent}
+  a:hover{border-color:var(--accent)}
+  .toc{columns:2;font-size:14px;margin:20px 0}
+  @media(max-width:620px){.toc{columns:1}}
+  .toc a{color:var(--ink);display:block;padding:4px 0;border:none}
+  .toc a:hover{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="logo" aria-label="PARA·3">
+      <svg viewBox="0 0 760 180" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <g transform="translate(20 25)">
+          <rect width="130" height="130" rx="32" fill="currentColor" opacity=".06"/>
+          <rect x="1" y="1" width="128" height="128" rx="31" stroke="currentColor" stroke-opacity=".30" stroke-width="2"/>
+          <rect x="30" y="36" width="70" height="15" rx="7.5" fill="#d9622b"/>
+          <rect x="30" y="60" width="54" height="15" rx="7.5" fill="currentColor" opacity=".92"/>
+          <rect x="30" y="84" width="38" height="15" rx="7.5" fill="currentColor" opacity=".55"/>
+        </g>
+        <g transform="translate(196 30)" stroke="currentColor" stroke-width="28" stroke-linecap="round" stroke-linejoin="round">
+          <g transform="translate(0 0)"><path d="M14 4 L14 116"/><path d="M14 4 H44 A30 30 0 0 1 44 64 H14"/></g>
+          <g transform="translate(96 0)"><path d="M6 116 L46 4 L86 116"/><path d="M22 78 H70"/></g>
+          <g transform="translate(200 0)"><path d="M14 4 L14 116"/><path d="M14 4 H44 A30 30 0 0 1 44 64 H14"/><path d="M40 64 L82 116"/></g>
+          <g transform="translate(300 0)"><path d="M6 116 L46 4 L86 116"/><path d="M22 78 H70"/></g>
+          <circle cx="416" cy="74" r="15" fill="#d9622b" stroke="none"/>
+          <g transform="translate(452 0)"><path d="M12 28 C 18 8, 46 1, 62 13 C 80 26, 74 54, 50 61 C 76 67, 82 96, 60 110 C 42 121, 17 115, 9 96"/></g>
+        </g>
+      </svg>
+    </div>
+    <button class="toggle" id="tg">Obsidian</button>
+  </header>
+
+  <div class="lede">Ein paraphoner Synth, bei dem <b>jede
+    Qualitätsaussage einen ausführbaren Test hat</b>.</div>
+  <p class="sub">PARA·3 ist ein sound-genauer Software-Synth der KORG-Volca-
+    Keys-Klasse: header-only C++-DSP plus eine verifizierte WASM/
+    AudioWorklet-Brücke, gebaut, um offline am Handy als PWA zu laufen.
+    Diese Seite dokumentiert ehrlich, wie das Tool entstand, womit und auf
+    welcher Basis geprüft wurde, was herauskam — und wie du es selbst
+    reproduzierst.</p>
+  <div class="meta">Entstanden in einer Sitzung · Methode: Konversation →
+    Engine → Messung → Brücke → UI · Prinzip: messen statt behaupten,
+    kein Fake</div>
+
+  <h2><span class="n">INHALT</span>Übersicht</h2>
+  <nav class="toc">
+    <a href="#was">1 · Was PARA·3 ist</a>
+    <a href="#wie">2 · Wie es entstand</a>
+    <a href="#pruef">3 · Prüfmethodik & Basis</a>
+    <a href="#ergebnis">4 · Ergebnisse</a>
+    <a href="#claude">5 · Was an Claude Code ging</a>
+    <a href="#repro">6 · Selbst reproduzieren</a>
+    <a href="#grenzen">7 · Ehrliche Grenzen</a>
+  </nav>
+
+  <h2 id="was"><span class="n">01</span>Was PARA·3 ist</h2>
+  <p>Die KORG Volca Keys ist <b>paraphon</b>: drei Sägezahn-Oszillatoren →
+    Mischer → <em>ein</em> gemeinsames Filter → <em>eine</em> gemeinsame
+    Hüllkurve/VCA → digitales Delay. Sechs Voice-Modi verteilen die
+    Oszillatoren neu (Poly, Unison, Octave, Fifth, Uni-Ring, Poly-Ring),
+    LFO moduliert Pitch und Cutoff, ein 16-Step-Sequencer mit Motion-
+    Aufnahme rundet es ab. PARA·3 bildet genau diese Architektur nach.</p>
+  <p>Technischer Kern: bandbegrenzte Oszillatoren (PolyBLEP, 4× Oversampling,
+    Kaiser-FIR-Dezimierung), ein nichtlineares ZDF-Leiterfilter (TPT,
+    tanh-begrenzte Rückkopplung) mit eigener 2×-Oversampling-Insel, eine
+    8×-Insel für den Ringmodulator, ein zipper-freier Parameter-Trichter,
+    Denormal-Schutz, und ein lock-freier, doppelt gepufferter Pattern-
+    Speicher. Header-only C++17, framework-agnostisch.</p>
+
+  <h2 id="wie"><span class="n">02</span>Wie es entstand</h2>
+  <p>Das Tool wurde sprint-artig in einer durchgehenden Sitzung gebaut.
+    Jeder Schritt produzierte ausführbaren Code <em>und</em> seinen Beweis,
+    bevor der nächste begann:</p>
+  <ul>
+    <li>Architektur &amp; sechs Design-Spezifikationen (paraphoner
+      Signalweg, Oszillator, Filter/EG/VCA, LFO/Motion, Delay, Sequencer).</li>
+    <li>DSP-Engine (<code>Para3Engine.hpp</code>) + Mess-Harness
+      (<code>offline_test.cpp</code>, FFT-basiert).</li>
+    <li>C-API-Brücke (RT-sicher, <code>extern "C"</code>) + native
+      Verifikation.</li>
+    <li>Lock-freier SPSC-Ring über SharedArrayBuffer + Steuerprotokoll.</li>
+    <li>emcc-Build-Skript, eigenständiger AudioWorkletProcessor.</li>
+    <li>Main-Thread-Glue, COOP/COEP-Server, Steuer-API.</li>
+    <li>Parameter-Trichter auf das volle Panel erweitert (regressionsgeprüft).</li>
+    <li>Anbindung des gestalteten UI, Mobile-Layout, echter Oszilloskop,
+      Logo.</li>
+  </ul>
+  <div class="honest"><b>Ehrlich:</b> Während des Baus wurden mehrere Fehler
+    <em>in den Mess-Harnessen</em> gefunden und behoben (z. B. Hann-Fenster-
+    Selbstmaskierung → kohärentes Sampling; O(n²)-Array-Shift im Ringtest;
+    eine nicht-lückenlose Werteannahme bei Backpressure). Die Engine selbst
+    wurde nie „passend gemacht" — gefundene echte Defekte wurden gefixt und
+    neu gemessen. Genau das ist der Punkt der Methode.</div>
+
+  <h2 id="pruef"><span class="n">03</span>Prüfmethodik &amp; auf welcher Basis</h2>
+  <p>Kein „klingt gut genug". Jede Behauptung ist ein Test mit klarem
+    Kriterium und reproduzierbarer Basis:</p>
+  <div class="grid">
+    <div class="card"><h3>DSP-Messung</h3><p>g++ <code>-O2 -std=c++17
+      -Wall -Wextra -msse2</code>, <em>kein</em> <code>-ffast-math</code>
+      (IEEE-Präzision). FFT-Analyse mit kohärentem Sampling, damit
+      Anti-Aliasing nicht durch Fenster-Leckage geschönt wird.</p></div>
+    <div class="card"><h3>Nebenläufigkeit</h3><p>Node 22 mit echten
+      Worker-Threads + Atomics. Adversariales Interleaving gegen ein
+      Referenzmodell plus ein realer Cross-Thread-Lauf.</p></div>
+    <div class="card"><h3>Brücken-Treue</h3><p>Beweis, dass die
+      128-Sample-Quanten des AudioWorklets bit-identisch zu einem
+      Einzelaufruf sind, und dass der Steuerpfad bit-exakt dekodiert.</p></div>
+    <div class="card"><h3>Server / Logo</h3><p>COOP/COEP-Header real per
+      <code>curl</code> bestätigt. Logo bis Favicon-Größe real gerendert
+      und auf Lesbarkeit beider Themes geprüft.</p></div>
+  </div>
+
+  <h2 id="ergebnis"><span class="n">04</span>Ergebnisse</h2>
+  <table>
+    <tr><th>Suite</th><th>Was bewiesen wird</th><th>Ergebnis</th></tr>
+    <tr><td>Engine <code>offline_test</code></td>
+      <td>Anti-Aliasing <b>−74 dBc</b> (naiv −20), nichtlinear −48,8 (1× −32),
+      Ringmod-Insel −53,5; klickfrei; zipper-frei; worst-case stabil;
+      Sequencer-Jitter 0; Motion-Roundtrip 0,0000; lock-freies Pattern-Edit</td>
+      <td><b>13 / 13 PASS</b>, 0 Warnungen</td></tr>
+    <tr><td>C-API <code>capi_test</code></td>
+      <td>Gate klickfrei; Trichter durch die C-Grenze; <b>128-Quanten ==
+      ein Call, bit-identisch</b>; Sequencer sample-genau; 10 s Stress</td>
+      <td><b>OVERALL PASS</b> (ein echter Stille-Bug von WA5 gefunden &amp;
+      gefixt)</td></tr>
+    <tr><td>Ring <code>ring_test</code></td>
+      <td>FIFO, null Verlust/Duplikat, bit-exakter Double-Roundtrip,
+      Full/Empty, schwerer Wrap; realer Cross-Thread-Worker 6000/6000</td>
+      <td><b>OVERALL PASS</b></td></tr>
+    <tr><td>Steuerpfad <code>audio_test</code></td>
+      <td>76-Op-Session UI→Ring→Worklet bit-exakt; Backpressure ohne
+      Blockieren; 21 750 Nachrichten = 19 995 FIFO-exakt + 1 755 Drop,
+      exakte Buchhaltung</td>
+      <td><b>OVERALL PASS</b></td></tr>
+    <tr><td>Server <code>serve.mjs</code></td>
+      <td><code>COOP: same-origin</code>, <code>COEP: require-corp</code>,
+      <code>.wasm → application/wasm</code></td>
+      <td><b>per curl bestätigt</b></td></tr>
+    <tr><td>Panel-Erweiterung</td>
+      <td>Voller Front-Panel-Trichter (Cutoff…Sustain + LFO-Form), danach
+      komplette Regression</td>
+      <td><b>alle Suites weiter PASS</b></td></tr>
+  </table>
+  <p>Erweitert um den vollen Parameter-Trichter ohne Regression — alle
+    obigen Suites blieben grün, 0 Warnungen.</p>
+
+  <h2 id="claude"><span class="n">05</span>Was genau an Claude Code übergeben wurde</h2>
+  <p>Nicht loser Text, sondern verbindliche Runbooks mit messbaren
+    Abnahmekriterien und derselben „kein Fake"-Disziplin:</p>
+  <ul>
+    <li><code>README.md</code> — Orientierung &amp; Lese-Reihenfolge.</li>
+    <li><code>CLAUDE_BUILD.md</code> — Sanity-Gates; <b>Phase A</b> WASM
+      bauen + Gleichwertigkeit messen (kompiliertes WASM == native C-API,
+      Sample-für-Sample); <b>Phase B</b> Offline-Handy: SAB-freier
+      postMessage-Steuerpfad + PWA (Service-Worker) + Mobile-Audio-Unlock;
+      <b>Phase C</b> optional Sprint-1-Hardware-Kalibrierung.</li>
+    <li><code>CLAUDE_INTEGRATE_UI.md</code> — exakte Tabelle
+      Regler→Engine-Aufruf, plus ehrliche „Liste C": Controls ohne echten
+      Engine-Weg (EG INT, Detune, Portamento, Motion-Ziele ≠ Cutoff)
+      bleiben sichtbar, aber inert — <em>nicht</em> faken.</li>
+    <li><code>CLAUDE_SCOPE_AND_LAYOUT.md</code> — Mobile-Layout vollständig
+      erreichbar (dvh/svh, einklappbare Tastatur-Schublade, Safe-Area) und
+      ein <b>echter</b> Oszilloskop: read-only AnalyserNode am realen
+      Graph, Stille = flache Linie, plus headless- und In-App-Anti-Fake-
+      Gate (still ⇒ flach <em>und</em> A4 ⇒ 440 Hz).</li>
+    <li><code>wasm-bridge/</code> — die geprüfte Brücke + gestaltetes UI;
+      <code>brand/</code> — das Logo-Set.</li>
+  </ul>
+
+  <h2 id="repro"><span class="n">06</span>So reproduzierst du es exakt</h2>
+  <p>Voraussetzungen: Node ≥ 18, g++ ≥ 12, <b>Emscripten (emsdk)</b>,
+    optional <code>wabt</code>; ein modernes Android-/iOS-Gerät für die
+    Offline-Abnahme.</p>
+  <pre><code>git clone https://github.com/LEVCON-AT/Para3
+cd Para3
+
+# 1 — Sanity (muss grün sein, 0 Warnungen)
+g++ -O2 -std=c++17 -Wall -Wextra -msse2 offline_test.cpp -o /tmp/e && /tmp/e
+cd wasm-bridge
+g++ -O2 -std=c++17 -Wall -Wextra -msse2 -I.. para3_capi.cpp capi_test.cpp -o /tmp/c && /tmp/c
+node ring_test.mjs
+node audio_test.mjs</code></pre>
+  <p>Dann das Projekt in Claude Code öffnen und ihm die Runbooks der Reihe
+    nach geben:</p>
+  <ul>
+    <li>„Lies <code>CLAUDE_BUILD.md</code> und arbeite es ab" → Build +
+      Gleichwertigkeit + Offline-PWA.</li>
+    <li>„Lies <code>CLAUDE_INTEGRATE_UI.md</code>" → den Entwurf
+      <code>wasm-bridge/para3-responsive.html</code> an die Engine binden.</li>
+    <li>„Lies <code>CLAUDE_SCOPE_AND_LAYOUT.md</code>" → Layout-Fit +
+      echter Oszilloskop.</li>
+  </ul>
+  <p>Abnahme des Ziels: installierte PWA, <b>Flugmodus an</b>, startet und
+    spielt knackfrei; jeder gemappte Regler wirkt hörbar; Scope-Selbsttest
+    <code>PASS</code>; alle Sanity-Tests grün.</p>
+
+  <h2 id="grenzen"><span class="n">07</span>Ehrliche Grenzen</h2>
+  <div class="honest">
+    <p><b>Sprint-1-Kalibrierung.</b> Einige Konstanten (im Code als
+      <code>// CALIB(sprint1)</code> markiert) bestimmen die <em>exakte</em>
+      Klangkopie eines bestimmten physischen Volca-Keys-Geräts. Die
+      Algorithmen sind final und gemessen sauber; die Defaults sind
+      musikalisch gültig. Für „großartiger, spielbarer Offline-Synth"
+      ist das <em>kein</em> Hindernis — für „1:1 nicht unterscheidbar"
+      braucht es eine echte Hardware-Messung (Außenarbeit, kein Code).</p>
+    <p><b>Finaler Build.</b> Der eigentliche <code>emcc</code>-Lauf und der
+      Browser-/Gerätetest passieren auf deiner Maschine — ein dokumentierter
+      Befehl. Alle Logik davor ist real gemessen. Der mobile Audio-Stack
+      (besonders iOS-Safari mit AudioWorklet/AnalyserNode) ist erfahrungs-
+      gemäß die fummeligste Stelle; dafür sind die Gerätetests bewusst als
+      harte Abnahme formuliert.</p>
+  </div>
+
+  <footer>
+    PARA·3 · Dokumentation der Entstehung und Verifikation ·
+    <a href="https://github.com/LEVCON-AT/Para3">github.com/LEVCON-AT/Para3</a><br>
+    Prinzip durchgängig: jede Qualitätsaussage hat einen ausführbaren
+    Test. Nichts hier ist gefakt; ehrliche Grenzen sind benannt.
+  </footer>
+
+</div>
+<script>
+  const r=document.documentElement,b=document.getElementById('tg');
+  b.onclick=()=>{const o=r.getAttribute('data-t')==='obsidian';
+    r.setAttribute('data-t',o?'bone':'obsidian');
+    b.textContent=o?'Obsidian':'Bone';};
+</script>
+</body>
+</html>

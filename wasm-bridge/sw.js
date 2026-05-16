@@ -14,20 +14,21 @@
 //  the worklet and needs no SAB.
 // =============================================================================
 
-const CACHE_VER  = 'para3-v1';
+const CACHE_VER  = 'para3-v2';
 const PRECACHE   = [
   './',
   './index.html',
   './para3-responsive.html',
+  './documentation.html',
   './para3-audio.js',
   './para3-ring.js',
   './para3-port.js',
   './para3-worklet.js',
   './para3.wasm',
   './manifest.webmanifest',
-  './icon-192.png',
-  './icon-512.png',
-  './icon-maskable-512.png',
+  './brand/para3-mark.svg',
+  './brand/para3-icon-maskable.svg',
+  './brand/para3-logo.svg',
 ];
 
 self.addEventListener('install', (e) => {

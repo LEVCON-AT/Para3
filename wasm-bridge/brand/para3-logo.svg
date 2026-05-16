@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 180" role="img"
+     aria-label="PARA·3" fill="none">
+  <title>PARA·3</title>
+
+  <!-- ===== mark: machined module, three paraphonic voices ===== -->
+  <g transform="translate(20 25)">
+    <rect x="0" y="0" width="130" height="130" rx="32"
+          fill="currentColor" opacity="0.06"/>
+    <rect x="1" y="1" width="128" height="128" rx="31"
+          stroke="currentColor" stroke-opacity="0.30" stroke-width="2"/>
+    <rect x="30" y="36"  width="70" height="15" rx="7.5" fill="#d9622b"/>
+    <rect x="30" y="60"  width="54" height="15" rx="7.5"
+          fill="currentColor" opacity="0.92"/>
+    <rect x="30" y="84"  width="38" height="15" rx="7.5"
+          fill="currentColor" opacity="0.55"/>
+  </g>
+
+  <!-- ===== wordmark: hand-built heavy monoline (no font dependency) ===== -->
+  <g transform="translate(196 30)" stroke="currentColor" stroke-width="28"
+     stroke-linecap="round" stroke-linejoin="round">
+    <!-- P -->
+    <g transform="translate(0 0)">
+      <path d="M14 4 L14 116"/>
+      <path d="M14 4 H44 A30 30 0 0 1 44 64 H14"/>
+    </g>
+    <!-- A -->
+    <g transform="translate(96 0)">
+      <path d="M6 116 L46 4 L86 116"/>
+      <path d="M22 78 H70"/>
+    </g>
+    <!-- R -->
+    <g transform="translate(200 0)">
+      <path d="M14 4 L14 116"/>
+      <path d="M14 4 H44 A30 30 0 0 1 44 64 H14"/>
+      <path d="M40 64 L82 116"/>
+    </g>
+    <!-- A -->
+    <g transform="translate(300 0)">
+      <path d="M6 116 L46 4 L86 116"/>
+      <path d="M22 78 H70"/>
+    </g>
+    <!-- interpunct — brand signature -->
+    <circle cx="416" cy="74" r="15" fill="#d9622b" stroke="none"/>
+    <!-- 3 -->
+    <g transform="translate(452 0)">
+      <path d="M12 28 C 18 8, 46 1, 62 13 C 80 26, 74 54, 50 61
+               C 76 67, 82 96, 60 110 C 42 121, 17 115, 9 96"/>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img"
+     aria-label="PARA·3">
+  <title>PARA·3</title>
+  <!-- full-bleed ground so the launcher mask can crop any shape safely -->
+  <rect width="512" height="512" fill="#15171c"/>
+  <!-- voices kept inside the maskable safe zone (centred ~62%) -->
+  <g transform="translate(146 168)">
+    <rect x="0"  y="0"   width="220" height="40" rx="20" fill="#d9622b"/>
+    <rect x="0"  y="68"  width="168" height="40" rx="20" fill="#e8e6df"/>
+    <rect x="0"  y="136" width="116" height="40" rx="20"
+          fill="#e8e6df" opacity="0.55"/>
+  </g>
+</svg>

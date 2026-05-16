@@ -15,12 +15,15 @@ const ROOT = process.argv[2] || '.';
 const PORT = parseInt(process.argv[3] || '8080', 10);
 
 const MIME = {
-  '.html': 'text/html; charset=utf-8',
-  '.js':   'text/javascript; charset=utf-8',
-  '.mjs':  'text/javascript; charset=utf-8',
-  '.wasm': 'application/wasm',
-  '.json': 'application/json',
-  '.css':  'text/css; charset=utf-8',
+  '.html':         'text/html; charset=utf-8',
+  '.js':           'text/javascript; charset=utf-8',
+  '.mjs':          'text/javascript; charset=utf-8',
+  '.wasm':         'application/wasm',
+  '.json':         'application/json',
+  '.css':          'text/css; charset=utf-8',
+  '.png':          'image/png',
+  '.svg':          'image/svg+xml',
+  '.webmanifest':  'application/manifest+json',
 };
 
 const server = createServer(async (req, res) => {
@@ -30,7 +33,10 @@ const server = createServer(async (req, res) => {
   res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
 
   let p = decodeURIComponent((req.url || '/').split('?')[0]);
-  if (p === '/') p = '/index.html';
+  // Production UI at /, the long-form documentation at /documentation (without
+  // .html), index.html stays accessible as /index.html for the minimal harness.
+  if (p === '/') p = '/para3-responsive.html';
+  else if (p === '/documentation' || p === '/documentation/') p = '/documentation.html';
   const safe = normalize(p).replace(/^(\.\.[/\\])+/, '');
   const file = join(ROOT, safe);
   try {
