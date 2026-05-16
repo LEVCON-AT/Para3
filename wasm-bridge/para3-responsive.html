@@ -24,8 +24,9 @@ body{
 }
 
 .app{
-  width:100%;max-width:440px;min-height:100svh;min-height:100dvh;
-  position:relative;overflow:hidden;
+  width:100%;max-width:440px;height:100svh;height:100dvh;
+  position:relative;
+  display:flex;flex-direction:column;
   --bg1:#1b1c23;--bg2:#0a0a0c;--bg3:#060608;
   --card1:#23242b;--card2:#15161c;
   --metal1:#46484f;--metal2:#1d1e24;--metal3:#0f1014;
@@ -33,9 +34,6 @@ body{
   --ink:#cdd0d9;--ink-dim:#7d8090;--line:#000;
   --keyw1:#dad9d4;--keyw2:#a9a8a2;--grain:overlay;--gop:.05;
   --soft:0 6px 16px -10px #000;
-  /* keyboard drawer height the scrollable area must clear. JS keeps this in
-     sync with .kbd visible height (40 px collapsed grip → 116/128 open). */
-  --kbH: 40px;
   background:radial-gradient(120% 60% at 50% 0%,var(--bg1),var(--bg2) 55%,var(--bg3));
   color:var(--ink);transition:background .4s,color .4s}
 .app[data-theme="bone"]{
@@ -92,9 +90,31 @@ body{
 .dUnit{font-size:12px;color:#8a4a1e;margin-left:5px}
 #scope{width:100%;height:40px;display:block;margin-top:7px;position:relative;z-index:1}
 
-/* scroll area must clear the (collapsible) keyboard drawer AND the home indicator */
-.scroll{padding:0 14px;
-  padding-bottom: calc(var(--kbH) + env(safe-area-inset-bottom) + 12px);}
+/* .scroll is the ONLY scrollable region. Fixed top (bar/patch/disp) and fixed
+   bottom (.kbd) live above/below it in the flex column. The mask uses two CSS
+   variables (--mtop / --mbot) updated by JS on scroll: a soft 24 px fade only
+   appears at an edge if there is more content to reveal in that direction.
+   Variante 2 aus der Diskussion. */
+.scroll{
+  flex:1; min-height:0;
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  -webkit-overflow-scrolling:touch;
+  padding:0 14px 12px;
+  scrollbar-width:none;
+  --mtop:0; --mbot:1;
+  -webkit-mask-image: linear-gradient(to bottom,
+    transparent 0,
+    #000 calc(var(--mtop) * 24px),
+    #000 calc(100% - var(--mbot) * 24px),
+    transparent 100%);
+          mask-image: linear-gradient(to bottom,
+    transparent 0,
+    #000 calc(var(--mtop) * 24px),
+    #000 calc(100% - var(--mbot) * 24px),
+    transparent 100%);
+}
+.scroll::-webkit-scrollbar{display:none}
 .sec{background:linear-gradient(180deg,var(--card1),var(--card2));border-radius:14px;
   padding:13px 14px 15px;margin-bottom:12px;
   box-shadow:0 1px 0 rgba(255,255,255,.05) inset,var(--soft)}
@@ -189,28 +209,11 @@ body{
 .mb{align-self:end;border-radius:2px;background:var(--accent-dim);min-height:2px;transition:height .04s}
 .mb.cur{background:var(--accent);box-shadow:0 0 8px color-mix(in srgb,var(--accent) 80%,transparent)}
 
-/* ===== KEYBOARD DRAWER (collapsible in portrait & landscape) ============== */
-.kbd{position:fixed;left:0;right:0;bottom:0;max-width:440px;margin:0 auto;height:116px;display:flex;
+/* ===== KEYBOARD (always visible at the bottom of the flex column) ======== */
+.kbd{position:relative;width:100%;height:116px;display:flex;
   z-index:60;background:#000;box-shadow:0 -8px 22px -10px #000;
-  /* default state: collapsed → only the 40 px grip pokes above bottom edge.
-     --kbH (on .app) tracks this same height for the scroll padding-bottom. */
-  transform: translateY(calc(100% - 40px));
-  transition: transform .28s ease;
   padding-bottom: env(safe-area-inset-bottom);
 }
-.kbd.open{ transform: translateY(0); }
-/* grip handle (the 40 px sliver visible when collapsed). Sits ABOVE the
-   keys, on top — gives the user a clear tap-target even with a closed drawer. */
-.kbd::before{
-  content:"⌨ KEYS";
-  position:absolute; left:0; right:0; top:-1px; height:24px;
-  display:flex; align-items:center; justify-content:center;
-  font-family:'Chakra Petch'; font-size:10px; font-weight:700; letter-spacing:2px;
-  color:#fff; background:linear-gradient(180deg,var(--accent2),var(--accent));
-  pointer-events:none;
-  border-radius:8px 8px 0 0;
-}
-.kbd.open::before{ content:"⌨ HIDE"; }
 .wk{flex:1;background:linear-gradient(180deg,var(--keyw1),var(--keyw2));border-right:1px solid #2a2a28;
   position:relative;cursor:pointer;transition:.06s}
 .wk:last-child{border-right:none}
@@ -221,18 +224,13 @@ body{
   box-shadow:0 4px 6px -2px #000,0 0 0 1px #000;transition:.06s}
 .bk.dn{background:linear-gradient(180deg,var(--accent),var(--accent-dim));
   box-shadow:0 0 18px color-mix(in srgb,var(--accent) 70%,transparent)}
-.kbtn{position:fixed;z-index:70;right:14px;bottom:calc(14px + env(safe-area-inset-bottom));
-  font-family:'Chakra Petch';font-size:11px;font-weight:700;letter-spacing:1.5px;border:none;
-  padding:11px 15px;border-radius:11px;color:#fff;cursor:pointer;
-  background:linear-gradient(180deg,var(--accent2),var(--accent));
-  box-shadow:0 8px 20px -6px rgba(0,0,0,.7),0 0 16px color-mix(in srgb,var(--accent) 50%,transparent)}
+.kbtn{display:none}
 
 /* ===== LANDSCAPE ===== */
 @media (orientation:landscape){
   .app{max-width:100%}
   .scroll{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;
-    align-items:start;padding:0 14px;
-    padding-bottom: calc(var(--kbH) + env(safe-area-inset-bottom) + 16px);}
+    align-items:start;padding:0 14px 16px;}
   .sec{margin-bottom:0}
   .sec.full{grid-column:1/-1}
   .disp{margin:0 14px 12px}
@@ -628,8 +626,9 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
     kbtn.textContent = open ? '⌨ HIDE' : '⌨ KEYS';
   }
   kbtn.onclick = () => setKbOpen(!kbd.classList.contains('open'));
-  // initial state: collapsed on both orientations (matches CSS default).
-  setKbOpen(false);
+  // Keyboard is always visible now (it lives in the flex column); the .open
+  // class is set on init so the keyDown path in pointerdown is not gated.
+  setKbOpen(true);
   window.addEventListener('orientationchange',
     () => setKbOpen(kbd.classList.contains('open')));
 
@@ -839,6 +838,39 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
   }
   // Expose for ad-hoc DevTools triggering: window.__para3Selftest()
   window.__para3Selftest = scopeSelftest;
+
+  // -------------------------------------------------------------------------
+  //  SCROLL MASK (Variante 2: dynamisch). The .scroll element has a CSS mask
+  //  driven by --mtop / --mbot. We map each variable to the *amount* of edge
+  //  fade visible (0 = sharp edge, 1 = full 24 px fade). The mask only fades
+  //  an edge when there is content to reveal in that direction — it is an
+  //  honest affordance signal.
+  // -------------------------------------------------------------------------
+  const scrollEl = document.querySelector('.scroll');
+  function updateScrollMask(){
+    if (!scrollEl) return;
+    const max = scrollEl.scrollHeight - scrollEl.clientHeight;
+    if (max <= 1) {
+      scrollEl.style.setProperty('--mtop', '0');
+      scrollEl.style.setProperty('--mbot', '0');
+      return;
+    }
+    const top = scrollEl.scrollTop;
+    // small ramp (12 px of scroll) reaches full fade — feels responsive.
+    const mtop = Math.min(1, Math.max(0, top / 12));
+    const mbot = Math.min(1, Math.max(0, (max - top) / 12));
+    scrollEl.style.setProperty('--mtop', mtop.toFixed(3));
+    scrollEl.style.setProperty('--mbot', mbot.toFixed(3));
+  }
+  if (scrollEl) {
+    scrollEl.addEventListener('scroll', updateScrollMask, { passive: true });
+    window.addEventListener('resize', updateScrollMask);
+    window.addEventListener('orientationchange',
+      () => setTimeout(updateScrollMask, 220));
+    // initial paint after layout settles
+    requestAnimationFrame(updateScrollMask);
+    requestAnimationFrame(updateScrollMask);   // belt + braces for first frame
+  }
 
 })();
 </script>
