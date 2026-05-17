@@ -620,9 +620,11 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
   laneEl.addEventListener('pointerdown',e=>{mdrag=true;laneEl.setPointerCapture(e.pointerId);paint(e);});
   laneEl.addEventListener('pointermove',e=>{if(mdrag)paint(e);});
   laneEl.addEventListener('pointerup',()=>mdrag=false);laneEl.addEventListener('pointercancel',()=>mdrag=false);
-  drawLane();
 
+  // E3 — tgtId state lives BEFORE the first drawLane() call (the function
+  // reads tgtId from the closure; calling it before initialisation is TDZ).
   let motionArm=false,tgtId='cut',tgtName='CUTOFF';
+  drawLane();
   const mArm=document.getElementById('mArm'),mTgt=document.getElementById('mTgt');
   mArm.onclick=()=>{
     // Per E3 spec line 80–83: #mArm is a GLOBAL arm indicator only. The engine
