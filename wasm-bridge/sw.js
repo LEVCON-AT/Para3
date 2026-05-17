@@ -14,7 +14,7 @@
 //  the worklet and needs no SAB.
 // =============================================================================
 
-const CACHE_VER  = 'para3-v8';  // U-sprints code-quality polish (named consts, JS/CSS aligned)
+const CACHE_VER  = 'para3-v9';  // U4 layout symmetry + step-sequencer compaction
 const PRECACHE   = [
   './',
   './index.html',

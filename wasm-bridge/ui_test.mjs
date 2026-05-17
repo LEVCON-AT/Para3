@@ -121,8 +121,9 @@ const html = readFileSync(join(REPO, 'wasm-bridge/para3-responsive.html'), 'utf8
     // Desktop wide
     { re: /@media\s*\(min-width:\s*1600px\)[\s\S]*?\.app\s*\{[^}]*max-width:\s*1480px/, label: 'desktop-wide ≥1600 → max-width:1480px' },
     { re: /@media\s*\(min-width:\s*1600px\)[\s\S]*?grid-template-columns:\s*repeat\(4\s*,\s*1fr\)/, label: 'desktop-wide → 4-col grid' },
-    // Sequencer (.sec.full) must span all columns in every multi-col media
-    { re: /\.sec\.full\s*\{[^}]*grid-column:\s*1\s*\/\s*-1/, label: '.sec.full spans full row in grid layout' },
+    // Sequencer (.sec.full) must occupy the full-width "seq" area in every
+    // multi-col media. U4 replaced grid-column:1/-1 with grid-area:seq.
+    { re: /\.sec\.full\s*\{\s*grid-area:\s*seq\s*\}/, label: '.sec.full → grid-area:seq' },
   ];
   const failed = checks.filter(c => !c.re.test(css));
   const pass = failed.length === 0;
@@ -233,6 +234,53 @@ const html = readFileSync(join(REPO, 'wasm-bridge/para3-responsive.html'), 'utf8
     console.log(`      FAIL: m=${b.m} got=${midiToName(b.m)} want=${b.want}`);
   console.log(`   -> ${pass ? 'PASS' : 'FAIL'}`);
   if (!pass) fails++;
+}
+
+// ----- (b4) U4 LAYOUT SYMMETRY + SEQ COMPACTION ---------------------------
+{
+  // (i) Each section gets a grid-area name. We require all 7.
+  const sectionAreas = ['vco', 'osc', 'vcf', 'eg', 'lfo', 'dly', 'seq'];
+  const inlineSec = sectionAreas.filter(a =>
+    !new RegExp(`style="grid-area:${a}"`).test(html));
+  // (ii) grid-template-areas declarations per breakpoint. We collapse
+  //      whitespace so the grep tolerates indentation.
+  const css = html.replace(/\s+/g, ' ');
+  const templates = [
+    { label: '2-col (mobile-landscape / tablet-portrait) areas: 4-short paired + eg/lfo + seq',
+      re: /grid-template-areas:\s*"vco\s+osc"\s*"vcf\s+dly"\s*"eg\s+lfo"\s*"seq\s+seq"/ },
+    { label: '3-col (tablet-landscape / desktop) areas: 3-short row + eg/lfo/dly row + seq',
+      re: /grid-template-areas:\s*"vco\s+osc\s+vcf"\s*"eg\s+lfo\s+dly"\s*"seq\s+seq\s+seq"/ },
+    { label: '4-col (wide desktop) areas: 4-short row + eg×2 lfo×2 + seq×4',
+      re: /grid-template-areas:\s*"vco\s+osc\s+vcf\s+dly"\s*"eg\s+eg\s+lfo\s+lfo"\s*"seq\s+seq\s+seq\s+seq"/ },
+  ];
+  const tmplFailed = templates.filter(t => !t.re.test(css));
+  // (iii) Step sequencer compaction at ≥720: 16×1 grid, lane shorter.
+  const seqComp = [
+    { label: 'seq steps: 16-col grid at ≥720',
+      re: /@media\s*\(min-width:\s*720px\)[\s\S]*?\.sec-seq\s+\.steps\s*\{[^}]*grid-template-columns:\s*repeat\(16/ },
+    { label: 'seq lane: compact 42px height at ≥720',
+      re: /@media\s*\(min-width:\s*720px\)[\s\S]*?\.sec-seq\s+\.lane\s*\{[^}]*height:\s*42px/ },
+  ];
+  const compFailed = seqComp.filter(c => !c.re.test(css));
+  // (iv) Mobile portrait (no media query) must NOT carry grid-template-areas
+  //      — phone portrait stays single-column flex/block (user constraint).
+  // We count actual CSS declarations "grid-template-areas:" (with colon, so
+  // mentions in comments don't count). We expect exactly 4 declarations:
+  // mobile-landscape, tablet-portrait, desktop-3col, wide-desktop-4col.
+  const areaDecls = (html.match(/grid-template-areas\s*:/g) || []).length;
+  const mobilePortraitClean = areaDecls === 4;
+
+  const failed = inlineSec.length + tmplFailed.length + compFailed.length + (mobilePortraitClean ? 0 : 1);
+  console.log(`\nU-B4: U4 layout-symmetry + seq compaction markers`);
+  console.log(`   grid-area inline tags : ${sectionAreas.length - inlineSec.length}/${sectionAreas.length}` +
+              (inlineSec.length ? `   missing: ${inlineSec.join(',')}` : ''));
+  console.log(`   grid-template-areas   : ${templates.length - tmplFailed.length}/${templates.length}`);
+  if (tmplFailed.length) for (const t of tmplFailed) console.log(`      MISSING: ${t.label}`);
+  console.log(`   seq compaction        : ${seqComp.length - compFailed.length}/${seqComp.length}`);
+  if (compFailed.length) for (const c of compFailed) console.log(`      MISSING: ${c.label}`);
+  console.log(`   mobile-portrait clean : ${mobilePortraitClean ? 'yes (areas only in @media)' : 'NO (leaked to default block)'}`);
+  console.log(`   -> ${failed === 0 ? 'PASS' : 'FAIL'}`);
+  if (failed) fails++;
 }
 
 // ----- (c) PURE-FUNCTION UNIT TEST ---------------------------------------

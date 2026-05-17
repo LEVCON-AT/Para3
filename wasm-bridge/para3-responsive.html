@@ -246,53 +246,97 @@ body{
   display:none}
 
 /* ===== MOBILE LANDSCAPE (small viewport, ~iPhone/Android landscape) =======
-   U2: limit the historical "fill the screen" rule to viewports below the
-   tablet break (1024). Above that we want the centred-on-page tablet/desktop
-   layout, not 100%-stretched-across-a-monitor. */
+   U2/U4: limit the historical "fill the screen" rule to viewports below the
+   tablet break (1024). U4 adds grid-template-areas so the section order is
+   layout-driven, not DOM-driven (DOM still goes vco/osc/vcf/eg/lfo/dly/seq).
+   2-col layout: 4 short sections paired, then the eg/lfo "tall pair", seq. */
 @media (orientation:landscape) and (max-width:1023px){
   .app{max-width:100%}
   .scroll{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;
+    grid-template-areas:
+      "vco osc"
+      "vcf dly"
+      "eg  lfo"
+      "seq seq";
     align-items:start;padding:0 14px 16px;}
   .sec{margin-bottom:0}
-  .sec.full{grid-column:1/-1}
+  .sec.full{grid-area:seq}                              /* legacy fallback */
   .disp{margin:0 14px 12px}
   .kbd{max-width:100%;height:128px}
 }
 
-/* ===== TABLET PORTRAIT (iPad mini portrait and up, both narrow tablets) ===
-   U2: centred 760-wide app, 2-col scroll grid, sequencer spans both. Keys
-   stay flex:1 distributed — number of keys is the U1 responsibility. */
+/* ===== TABLET PORTRAIT (iPad mini portrait and up, narrow tablets) ========
+   U4: same 2-col area-template as mobile landscape — visual consistency
+   across "2-col viewports". Sequencer compacted (see .sec-seq overrides). */
 @media (min-width:720px) and (orientation:portrait){
   .app{max-width:760px}
   .scroll{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;
+    grid-template-areas:
+      "vco osc"
+      "vcf dly"
+      "eg  lfo"
+      "seq seq";
     align-items:start;padding:0 18px 18px;}
   .sec{margin-bottom:0}
-  .sec.full{grid-column:1/-1}
+  .sec.full{grid-area:seq}
   .disp{margin:0 18px 14px}
   .kbd{height:140px}
 }
 
-/* ===== TABLET LANDSCAPE + DESKTOP (1024–1599, both orientations) =========
-   U2: 1200-wide centred app, 3-col scroll grid. The viewport is wide enough
-   that sections sit comfortably side-by-side without being cramped. */
+/* ===== TABLET LANDSCAPE + DESKTOP (1024–1599) =============================
+   U4: 3-col layout. Row 1 = 3 short knob sections (VCO/OSC/VCF, identical
+   height). Row 2 = the EG/LFO "tall pair" plus DELAY (DELAY is short, but
+   row 2 stretches to the tall pair, so DELAY has extra padding — that's
+   the visual symmetry trade-off; the alternative is splitting eg/lfo across
+   rows, which the user explicitly does NOT want). */
 @media (min-width:1024px){
   .app{max-width:1200px}
   .scroll{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;
-    align-items:start;padding:0 22px 20px;}
-  .sec{margin-bottom:0}
-  .sec.full{grid-column:1/-1}
+    grid-template-areas:
+      "vco osc vcf"
+      "eg  lfo dly"
+      "seq seq seq";
+    /* align-items: stretch so the row that pairs the tall (eg/lfo) with the
+       short (dly) levels out — DELAY gets extra padding inside its card,
+       which reads as intentional "breathing room" not a sizing bug. */
+    align-items:stretch;padding:0 22px 20px;}
+  .sec{margin-bottom:0;display:flex;flex-direction:column}
+  .sec.full{grid-area:seq}
   .disp{margin:0 22px 16px}
   .kbd{height:152px}
 }
 
-/* ===== DESKTOP WIDE (≥1600 — 27" monitors and up) =========================
-   U2: 1480-wide centred app, 4-col scroll. Capped on purpose: above ~1500
-   the knobs would start looking comically large and the rhythm of the UI
-   would suffer. The remaining margin is breathing room to the browser edge. */
+/* ===== DESKTOP WIDE (≥1600) ===============================================
+   U4: 4-col layout. Row 1 = all four short sections side-by-side (perfect
+   row, all same height). Row 2 = the EG/LFO tall pair, each spanning two
+   columns so they don't look squished beside the bigger short row. */
 @media (min-width:1600px){
   .app{max-width:1480px}
-  .scroll{grid-template-columns:repeat(4,1fr);padding:0 28px 24px;gap:18px}
+  .scroll{grid-template-columns:repeat(4,1fr);padding:0 28px 24px;gap:18px;
+    grid-template-areas:
+      "vco osc vcf dly"
+      "eg  eg  lfo lfo"
+      "seq seq seq seq";}
   .kbd{height:164px}
+}
+
+/* ===== U4 STEP-SEQUENCER COMPACTION (tablet+ only — mobile portrait keeps
+   the touch-friendly 8×2 grid). At wider viewports we get a real 16×1
+   "Volca-style" single line of steps with a thinner motion lane underneath. */
+@media (min-width:720px){
+  .sec-seq .steps{grid-template-columns:repeat(16,1fr);gap:5px}
+  .sec-seq .step{aspect-ratio:1/1.35;border-radius:5px}
+  .sec-seq .step::after{top:5px;width:7px;height:7px}
+  .sec-seq .step .n{font-size:7px;bottom:3px}
+  .sec-seq .lane{height:42px;gap:2px}
+  .sec-seq .mhead{margin:11px 0 7px}
+  .sec-seq .seqhead{margin-bottom:8px}
+}
+@media (min-width:1024px){
+  .sec-seq .lane{height:48px}
+}
+@media (min-width:1600px){
+  .sec-seq .lane{height:56px}
 }
 
 /* ===== SMALL SCREENS (height < 720) — tighten knob cells, keep 3-col grid ===*/
@@ -353,27 +397,27 @@ body{
   </div>
 
   <div class="scroll">
-    <div class="sec"><h2>VCO · <b>VOICE</b></h2>
+    <div class="sec sec-vco" style="grid-area:vco"><h2>VCO · <b>VOICE</b></h2>
       <div class="vgrid" id="voice">
         <button class="on">Poly</button><button>Unison</button><button>Octave</button>
         <button>Fifth</button><button>Uni Ring</button><button>Poly Ring</button></div></div>
 
-    <div class="sec"><h2>OSC · <b>TUNE</b></h2><div class="grid3">
+    <div class="sec sec-osc" style="grid-area:osc"><h2>OSC · <b>TUNE</b></h2><div class="grid3">
       <div class="knob" data-min="-2" data-max="2" data-val="0" data-unit="oct" data-name="OCTAVE" data-k="oct"></div>
       <div class="knob" data-min="0" data-max="100" data-val="22" data-unit="" data-name="DETUNE" data-k="det"></div>
       <div class="knob" data-min="0" data-max="100" data-val="0" data-unit="" data-name="PORTAMENTO" data-k="por"></div></div></div>
 
-    <div class="sec"><h2>V<b>CF</b></h2><div class="grid3">
+    <div class="sec sec-vcf" style="grid-area:vcf"><h2>V<b>CF</b></h2><div class="grid3">
       <div class="knob" data-min="0" data-max="100" data-val="64" data-unit="" data-name="CUTOFF" data-k="cut"></div>
       <div class="knob" data-min="0" data-max="100" data-val="35" data-unit="" data-name="PEAK" data-k="pk"></div>
       <div class="knob" data-min="-100" data-max="100" data-val="20" data-unit="" data-name="EG INT" data-k="egi"></div></div></div>
 
-    <div class="sec"><h2>E<b>G</b></h2><div class="fwrap" id="faders">
+    <div class="sec sec-eg" style="grid-area:eg"><h2>E<b>G</b></h2><div class="fwrap" id="faders">
       <div class="fader" data-val="14" data-name="ATTACK" data-k="atk"><div class="slot"><div class="sfill"></div><div class="grip"></div></div><label>Atk</label></div>
       <div class="fader" data-val="55" data-name="DECAY/REL" data-k="dec"><div class="slot"><div class="sfill"></div><div class="grip"></div></div><label>Dec</label></div>
       <div class="fader" data-val="70" data-name="SUSTAIN" data-k="sus"><div class="slot"><div class="sfill"></div><div class="grip"></div></div><label>Sus</label></div></div></div>
 
-    <div class="sec"><h2>L<b>FO</b></h2><div class="grid3">
+    <div class="sec sec-lfo" style="grid-area:lfo"><h2>L<b>FO</b></h2><div class="grid3">
       <div class="knob" data-min="0" data-max="100" data-val="30" data-unit="" data-name="LFO RATE" data-k="lrt"></div>
       <div class="knob" data-min="0" data-max="100" data-val="0" data-unit="" data-name="PITCH INT" data-k="lpi"></div>
       <div class="knob" data-min="0" data-max="100" data-val="40" data-unit="" data-name="CUTOFF INT" data-k="lci"></div></div>
@@ -387,14 +431,14 @@ body{
              sees the three shape buttons via the explicit lsync.contains-check. -->
         <button id="lsync" title="LFO TRIGGER SYNC (E1.2 KORG-parity)" style="width:auto;padding:0 10px;font:600 11px/1 ui-sans-serif,system-ui;letter-spacing:.06em">SYNC</button></div></div>
 
-    <div class="sec"><h2>DELAY · <b>MASTER</b></h2>
+    <div class="sec sec-dly" style="grid-area:dly"><h2>DELAY · <b>MASTER</b></h2>
       <div class="grid3" style="grid-template-columns:repeat(4,1fr)">
       <div class="knob" data-min="0" data-max="100" data-val="38" data-unit="" data-name="DLY TIME" data-k="dt"></div>
       <div class="knob" data-min="0" data-max="100" data-val="46" data-unit="" data-name="FEEDBACK" data-k="df"></div>
       <div class="knob" data-min="0" data-max="100" data-val="78" data-unit="" data-name="VOLUME" data-k="vol"></div>
       <div class="knob" data-min="50" data-max="240" data-val="120" data-unit="BPM" data-name="TEMPO" data-k="tmp"></div></div></div>
 
-    <div class="sec full"><div class="seqhead"><h2>STEP <b>SEQ</b> · 16</h2>
+    <div class="sec full sec-seq" style="grid-area:seq"><div class="seqhead"><h2>STEP <b>SEQ</b> · 16</h2>
       <div class="tg"><button class="tbtn" id="play">▶</button><button class="tbtn" id="clr">CLR</button></div></div>
       <!-- E4 KORG-parity sequencer behaviours; engine T19–T22.
            E5 FLUX-Modus: separate mode (no step grid, event-based). -->
