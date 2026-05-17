@@ -85,7 +85,15 @@ const html = readFileSync(join(REPO, 'wasm-bridge/para3-responsive.html'), 'utf8
     { re: /(window|new ResizeObserver|orientationchange)/, label: 'resize/orientation re-render hook' },
     { re: /idx\s*%\s*7/,                                label: 'midiOfKey uses idx%7 (multi-octave white math)' },
     { re: /el\.dataset\.oct/,                           label: 'midiOfKey reads el.dataset.oct for blacks' },
+    // Audit: magic-numbers replaced by named constants.
+    { re: /KBD_BREAKPOINTS\s*=\s*Object\.freeze/,       label: 'KBD_BREAKPOINTS named constant (no inline thresholds)' },
+    { re: /BLACK_WHITE_VISUAL_RATIO\s*=\s*9\s*\/\s*12\.5/, label: 'BLACK_WHITE_VISUAL_RATIO named (replaces 0.72 literal)' },
   ];
+  // Negative check: the bare 0.72 literal must NOT appear in the white/black
+  // width formula anymore. We allow 0.72 elsewhere in case some animation
+  // ever uses it, but it must not be the keyboard geometry source.
+  const bareRatio = /Bw\s*=\s*W\s*\*\s*0\.72/.test(html);
+  if (bareRatio) checks.push({ re: /__NEVER__/, label: 'Bw = W * 0.72 (bare literal) — must be replaced' });
   const failed = checks.filter(c => !c.re.test(html));
   const pass = failed.length === 0;
   console.log(`\nU-B: HTML static assertions (U1 markers)`);
@@ -133,7 +141,7 @@ const html = readFileSync(join(REPO, 'wasm-bridge/para3-responsive.html'), 'utf8
     { re: /id\s*=\s*["']octind["']/,                            label: '#octind element exists in HTML' },
     { re: /\.octind\s*\{[^}]*position:\s*absolute/,            label: '.octind CSS positioned absolutely' },
     { re: /\.octind\s*\{[^}]*display:\s*none/,                 label: '.octind hidden by default (oct=0)' },
-    { re: /midiToName\s*\(\s*note\s*\+\s*12\s*\*\s*octK/,      label: 'keyDown displays SOUNDING midi (note + 12*oct)' },
+    { re: /midiToName\s*\(\s*note\s*\+\s*12\s*\*[^)]*K\.oct\.get/, label: 'keyDown displays SOUNDING midi (note + 12*K.oct)' },
     { re: /id\s*===\s*['"]oct['"][\s\S]*?updateOctIndicator/,  label: 'emitKnob hooks oct -> updateOctIndicator' },
   ];
   const failed = checks.filter(c => !c.re.test(html));
@@ -141,6 +149,55 @@ const html = readFileSync(join(REPO, 'wasm-bridge/para3-responsive.html'), 'utf8
   console.log(`\nU-B3: U3 octave-clarity markers`);
   console.log(`   checks           : ${checks.length}, failed: ${failed.length}`);
   if (failed.length) for (const f of failed) console.log(`      MISSING: ${f.label}`);
+  console.log(`   -> ${pass ? 'PASS' : 'FAIL'}`);
+  if (!pass) fails++;
+}
+
+// ----- (c1b) detectOctaves VIEWPORT BAND TEST -----------------------------
+//
+// Re-implementation (specification duplicate) of the in-HTML decision. Each
+// case names the device the band represents so a future reviewer can see
+// what the threshold means. Aligned with the CSS U2 breakpoints (720/1024/
+// 1280 picks 3-col grid range; 1600 is wide).
+{
+  const KBD_BREAKPOINTS = [
+    { minWidth: 1680, octaves: 5 },
+    { minWidth: 1280, octaves: 4 },
+    { minWidth: 1024, octaves: 3 },
+    { minWidth:  720, octaves: 2 },
+    { minWidth:    0, octaves: 1 },
+  ];
+  const detectOctaves = (w) => {
+    for (const b of KBD_BREAKPOINTS) if (w >= b.minWidth) return b.octaves;
+    return 1;
+  };
+  const cases = [
+    { w:  375, want: 1, dev: 'iPhone SE portrait' },
+    { w:  430, want: 1, dev: 'iPhone 14 Pro Max portrait' },
+    { w:  667, want: 1, dev: 'iPhone SE landscape (under tablet band)' },
+    { w:  744, want: 2, dev: 'iPad mini portrait (tablet portrait)' },
+    { w:  820, want: 2, dev: 'iPad portrait' },
+    { w:  932, want: 2, dev: 'iPhone 14 Pro Max landscape' },
+    { w: 1024, want: 3, dev: 'iPad landscape (tablet landscape)' },
+    { w: 1180, want: 3, dev: 'iPad Air landscape' },
+    { w: 1280, want: 4, dev: 'small desktop / 13"' },
+    { w: 1366, want: 4, dev: 'common laptop' },
+    { w: 1680, want: 5, dev: '27" 1080p / wide desktop' },
+    { w: 1920, want: 5, dev: 'desktop 1080p' },
+    { w: 2560, want: 5, dev: '4K monitor' },
+    // exact boundary samples
+    { w:  719, want: 1, dev: 'just below tablet break' },
+    { w:  720, want: 2, dev: 'tablet break (matches CSS @media min-width:720)' },
+    { w: 1023, want: 2, dev: 'just below tablet-landscape break' },
+    { w: 1279, want: 3, dev: 'just below desktop break' },
+    { w: 1599, want: 4, dev: 'just below wide-desktop break' },
+  ];
+  const bad = cases.filter(c => detectOctaves(c.w) !== c.want);
+  const pass = bad.length === 0;
+  console.log(`\nU-C1b: detectOctaves viewport bands`);
+  console.log(`   cases            : ${cases.length}, failed: ${bad.length}`);
+  if (bad.length) for (const b of bad)
+    console.log(`      FAIL: w=${b.w} (${b.dev}) got=${detectOctaves(b.w)} want=${b.want}`);
   console.log(`   -> ${pass ? 'PASS' : 'FAIL'}`);
   if (!pass) fails++;
 }

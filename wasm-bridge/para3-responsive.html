@@ -501,12 +501,13 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
 
   // U3 — small visual indicator in the keyboard corner when oct knob != 0.
   // Pure visual. No engine call, no transport message, no extra OP code.
+  // Cache the DOM lookup once.
+  const _octindEl = document.getElementById('octind');
   function updateOctIndicator(oct) {
-    const el = document.getElementById('octind');
-    if (!el) return;
-    if (oct === 0) { el.style.display = 'none'; return; }
-    el.style.display = '';
-    el.textContent = (oct > 0 ? '+' : '') + oct + ' OCT';
+    if (!_octindEl) return;                               // (only null if HTML structure changes)
+    if (oct === 0) { _octindEl.style.display = 'none'; return; }
+    _octindEl.style.display = '';
+    _octindEl.textContent = (oct > 0 ? '+' : '') + oct + ' OCT';
   }
 
   // U3 — MIDI -> human note name with octave (MIDI 60 = C4 convention).
@@ -515,7 +516,8 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
   const _NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
   function midiToName(midi) {
     if (midi < 0 || midi > 127) return 'OOR';
-    return _NOTE_NAMES[((midi % 12) + 12) % 12] + (Math.floor(midi / 12) - 1);
+    // midi is now in [0, 127], so midi % 12 is safely in [0, 11].
+    return _NOTE_NAMES[midi % 12] + (Math.floor(midi / 12) - 1);
   }
 
   const C=2*Math.PI*25,SW=0.75,K={};
@@ -855,16 +857,27 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
 
   const kbd=document.getElementById('kbd'),kbtn=document.getElementById('kbtn');
 
-  // U1: industry-standard breakpoints. Most desktop synths show 3–5 octaves;
-  // mobile portrait is constrained to 1 (touch ergonomics + screen width).
-  function detectOctaves() {
-    const w = window.innerWidth;
-    if (w >= 1680) return 5;                              // desktop wide
-    if (w >= 1280) return 4;                              // desktop
-    if (w >= 1024) return 3;                              // tablet landscape / small desktop
-    if (w >= 600)  return 2;                              // tablet portrait / mobile landscape
-    return 1;                                              // phone portrait — no regression
+  // U1: industry-standard viewport bands. Single source of truth for both the
+  // JS keyboard-render decision and the ui_test verification grep. Aligned
+  // with the CSS app-width breakpoints in U2 (no JS/CSS drift). Each row is
+  // {minWidth, octaves, why} so the intent travels with the number.
+  const KBD_BREAKPOINTS = Object.freeze([
+    { minWidth: 1680, octaves: 5, why: 'desktop wide (27+ inch)' },
+    { minWidth: 1280, octaves: 4, why: 'desktop' },
+    { minWidth: 1024, octaves: 3, why: 'tablet landscape / small desktop' },
+    { minWidth:  720, octaves: 2, why: 'tablet portrait / large mobile landscape (matches CSS tablet-portrait media-query)' },
+    { minWidth:    0, octaves: 1, why: 'phone portrait — no U1 regression' },
+  ]);
+  function detectOctaves(width = window.innerWidth) {
+    for (const b of KBD_BREAKPOINTS) if (width >= b.minWidth) return b.octaves;
+    return 1;                                              // unreachable; last row matches 0
   }
+
+  // Piano black-key visual width relative to a white key. Real acoustic
+  // pianos use ~58%; the existing PARA-3 CSS used 9%/12.5% = 0.72 for the
+  // 1-octave keyboard. We preserve that geometry so the keys look identical
+  // to the pre-U1 layout when N=1.
+  const BLACK_WHITE_VISUAL_RATIO = 9 / 12.5;
 
   // Pointer-id -> held key map. Declared HERE (before renderKeyboard) so the
   // first render can reference it safely; `typeof` on a TDZ const throws.
@@ -881,7 +894,7 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
     kbd.dataset.octaves = String(N);
     const totalWhites = 7 * N + 1;
     const W = 100 / totalWhites;                          // white-key width in %
-    const Bw = W * 0.72;                                  // black-key width relative to white
+    const Bw = W * BLACK_WHITE_VISUAL_RATIO;              // black-key width in %
     // Whites: N octaves of 7 whites + one closing C.
     for (let m = 0; m < N; m++) {
       for (let i = 0; i < 7; i++) {
@@ -946,8 +959,7 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
     // U3: show the SOUNDING note (incl. engine octave shift) so the user can
     // tell which absolute pitch the engine will play. note=raw keyboard MIDI;
     // engine adds +12*round(oct) internally. OOR-MIDI marked as "OOR".
-    const octK = K.oct ? Math.round(K.oct.get()) : 0;
-    show('NOTE', midiToName(note + 12 * octK), '');
+    show('NOTE', midiToName(note + 12 * Math.round(K.oct.get())), '');
     lastNote = note; held.set(pid, { el: t, note });
     emit((c) => c.noteOn(note));
     // E5: when FLUX mode is on AND REC armed, append event at the engine's

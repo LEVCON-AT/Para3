@@ -14,7 +14,7 @@
 //  the worklet and needs no SAB.
 // =============================================================================
 
-const CACHE_VER  = 'para3-v7';  // U1+U2+U3 UI sprints (multi-oct kbd, layout, oct clarity)
+const CACHE_VER  = 'para3-v8';  // U-sprints code-quality polish (named consts, JS/CSS aligned)
 const PRECACHE   = [
   './',
   './index.html',
