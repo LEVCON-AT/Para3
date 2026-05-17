@@ -28,6 +28,12 @@ body{
   width:100%;max-width:440px;height:100svh;height:100dvh;
   position:relative;
   display:flex;flex-direction:column;
+  /* U6 — theme-aware lift-off colours. Dark theme: cold drop shadow on the
+     near-black body. Bone theme: warm tobacco-tinted shadow so the cream
+     card doesn't look stamped onto pure black. The shadow values themselves
+     live in the tablet+ media-queries (no shadow on mobile portrait). */
+  --app-shadow:0,0,0;
+  --app-edge:rgba(255,255,255,.04);
   --bg1:#1b1c23;--bg2:#0a0a0c;--bg3:#060608;
   --card1:#23242b;--card2:#15161c;
   --metal1:#46484f;--metal2:#1d1e24;--metal3:#0f1014;
@@ -45,6 +51,9 @@ body{
   --ink:#2c271f;--ink-dim:#897e66;--line:#bdb39a;
   --keyw1:#fcfaf3;--keyw2:#d8cfba;--grain:multiply;--gop:.04;
   --soft:0 6px 16px -12px rgba(80,60,30,.5);
+  /* Warm tobacco shadow + parchment highlight for the bone-on-black card. */
+  --app-shadow:60,40,20;
+  --app-edge:rgba(255,238,210,.22);
   background:radial-gradient(120% 60% at 50% 0%,var(--bg1),var(--bg2) 55%,var(--bg3))}
 .app::after{content:"";position:absolute;inset:0;pointer-events:none;z-index:999;
   opacity:var(--gop);mix-blend-mode:var(--grain);
@@ -138,7 +147,15 @@ body{
   transform:translateX(-50%);transform-origin:50% 22px;
   box-shadow:0 0 7px 1px color-mix(in srgb,var(--accent) 80%,transparent)}
 .knob label{font-size:9px;letter-spacing:1px;color:var(--ink-dim);text-transform:uppercase;font-weight:500;text-align:center}
-.knob.tgt .cap{box-shadow:0 0 0 2px var(--accent),0 3px 6px -2px #000}
+/* U5 — motion-target indicator. Subtler than the original 2px solid cap
+   ring: a 1px outline + soft glow on the whole control (knob OR fader), so
+   any motion-fähig target reads as "armed" without the plump halo. Only
+   visible while motionArm is true (set/cleared by setTarget / mArm). */
+.knob.tgt,.fader.tgt{
+  outline:1px solid color-mix(in srgb,var(--accent) 65%,transparent);
+  outline-offset:3px;
+  border-radius:8px;
+  box-shadow:0 0 14px -3px color-mix(in srgb,var(--accent) 45%,transparent)}
 /* inert controls (no engine path; UI feedback only) — subtle visual cue */
 .knob.inert .cap{opacity:.6}
 
@@ -269,7 +286,13 @@ body{
    U4: same 2-col area-template as mobile landscape — visual consistency
    across "2-col viewports". Sequencer compacted (see .sec-seq overrides). */
 @media (min-width:720px) and (orientation:portrait){
-  .app{max-width:760px}
+  .app{max-width:760px;
+    /* U6 — lift off the pure-black body. Shadow + 1px highlight outline,
+       both theme-aware via --app-shadow / --app-edge (dark = cold, bone
+       = warm). */
+    box-shadow:0 24px 60px -20px rgba(var(--app-shadow),.7),
+               0 0 0 1px var(--app-edge);
+    border-radius:18px}
   .scroll{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;
     grid-template-areas:
       "vco osc"
@@ -290,7 +313,10 @@ body{
    the visual symmetry trade-off; the alternative is splitting eg/lfo across
    rows, which the user explicitly does NOT want). */
 @media (min-width:1024px){
-  .app{max-width:1200px}
+  .app{max-width:1200px;
+    box-shadow:0 32px 80px -22px rgba(var(--app-shadow),.78),
+               0 0 0 1px var(--app-edge);
+    border-radius:22px}
   .scroll{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;
     grid-template-areas:
       "vco osc vcf"
@@ -311,7 +337,11 @@ body{
    row, all same height). Row 2 = the EG/LFO tall pair, each spanning two
    columns so they don't look squished beside the bigger short row. */
 @media (min-width:1600px){
-  .app{max-width:1480px}
+  /* Slight expansion from 1480 → 1560 so the 4-col knobs breathe on big
+     monitors without going to "comically large" territory. */
+  .app{max-width:1560px;
+    box-shadow:0 40px 100px -24px rgba(var(--app-shadow),.82),
+               0 0 0 1px var(--app-edge)}
   .scroll{grid-template-columns:repeat(4,1fr);padding:0 28px 24px;gap:18px;
     grid-template-areas:
       "vco osc vcf dly"
@@ -507,6 +537,10 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
     app.dataset.theme=b.dataset.t;});
 
   // ---- knob-id → engine PARAM (only ids with a real engine path) ----------
+  // U5: vol is now a regular PARAM entry (engine spec: PARA3_P_VOLUME=15 is
+  // motion-fähig). Pulling vol into KNOB_PARAM makes isMotionCapable() see it
+  // without a special branch — one funnel for everything that is a normalised
+  // PARAM.* write.
   const KNOB_PARAM = {
     cut: PARAM.CUTOFF,
     pk:  PARAM.RESONANCE,
@@ -522,9 +556,11 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
     // zipper), value=0 is the bit-identical no-op baseline (Engine T16/T17).
     det: PARAM.DETUNE,
     por: PARAM.PORTAMENTO,
+    // E6.1 / U5: VOLUME is just a PARAM. The host masterGain was removed in
+    // E6, so this is the only path — and it makes vol a valid motion target.
+    vol: PARAM.VOLUME,
   };
   // tmp -> seqTempo(BPM)        (NOT setParam — bpm, not a normalised param)
-  // vol -> PARAM.VOLUME via the engine (E6.1; replaces host-side masterGain)
   // oct -> setOctave(int) via the engine (E6.2; replaces midiOfKey +oct*12)
   // INERT_KNOBS is kept as the doc anchor; after E1+E2+E6 it is empty. If any
   // entry ever returns here, the UI WILL render it greyed (see .inert class)
@@ -535,7 +571,6 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
     const n = (val - min) / (max - min);
     if (id in KNOB_PARAM) emit((c) => c.setParam(KNOB_PARAM[id], n));
     else if (id === 'tmp') emit((c) => c.seqTempo(val));
-    else if (id === 'vol') emit((c) => c.setParam(PARAM.VOLUME, n));   // E6.1
     else if (id === 'oct') {
       const o = Math.round(val);
       emit((c) => c.setOctave(o));                                      // E6.2
@@ -608,12 +643,21 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
     function R(){const H=slot.clientHeight-18,y=9+(H*(1-val/100));
       fill.style.height=(slot.clientHeight-9-y)+'px';grip.style.bottom=(slot.clientHeight-y-10)+'px';}
     R();
-    F[id]={get:()=>val,set:v=>{val=Math.max(0,Math.min(100,v));R();emitFader(id,val);}};
+    // U5: F entries carry name/el so the motion-target system (setTarget,
+    // .tgt visualisation, motionByTgt lane lookup) treats them like knobs.
+    F[id]={get:()=>val,set:v=>{val=Math.max(0,Math.min(100,v));R();emitFader(id,val);},
+           name,el:f};
     let dg=false;
     function S(e){const r=slot.getBoundingClientRect();
       val=Math.max(0,Math.min(100,(1-(e.clientY-r.top-9)/(r.height-18))*100));R();
       show(name,Math.round(val),'');emitFader(id,val);}
-    slot.addEventListener('pointerdown',e=>{dg=true;slot.setPointerCapture(e.pointerId);S(e);});
+    slot.addEventListener('pointerdown',e=>{
+      // U5: under motion-arm a slot tap picks the fader as the target lane
+      // (mirrors the knob dial.pointerdown behaviour). All three fader ids
+      // (atk/dec/sus) are motion-fähig per engine spec (ATTACK/DECREL/SUSTAIN).
+      if (motionArm) { setTarget(id); return; }
+      dg=true;slot.setPointerCapture(e.pointerId);S(e);
+    });
     slot.addEventListener('pointermove',e=>{if(dg)S(e);});
     slot.addEventListener('pointerup',()=>dg=false);slot.addEventListener('pointercancel',()=>dg=false);
   });
@@ -662,8 +706,21 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
     if (!motionByTgt[id]) motionByTgt[id] = newLane();
     return motionByTgt[id];
   }
+  // U5: any control that writes a normalised PARAM.* through the funnel can
+  // be a motion target (knobs in KNOB_PARAM, faders in FADER_PARAM). PEAK
+  // (RESONANCE) is the only PARA3_P_* the engine refuses; 'oct' and 'tmp'
+  // aren't even normalised params (setOctave / seqTempo), so they cannot
+  // be motion targets at all.
+  function motionParamId(id) {
+    if (id in KNOB_PARAM)  return KNOB_PARAM[id];
+    if (id in FADER_PARAM) return FADER_PARAM[id];
+    return undefined;
+  }
+  function motionEntry(id) { return K[id] || F[id]; }     // {name, el, …}
+  function motionTargets() { return [...Object.values(K), ...Object.values(F)]; }
   function isMotionCapable(id) {
-    return (id in KNOB_PARAM) && KNOB_PARAM[id] !== PARAM.RESONANCE;
+    const pid = motionParamId(id);
+    return pid !== undefined && pid !== PARAM.RESONANCE;
   }
 
   function flushPattern() {
@@ -680,7 +737,7 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
       // independent and seqCommit publishes them atomically together.
       for (const id of Object.keys(motionByTgt)) {
         if (!isMotionCapable(id)) continue;            // mirror engine reject
-        const pid = KNOB_PARAM[id], lane = motionByTgt[id];
+        const pid = motionParamId(id), lane = motionByTgt[id];
         for (let i = 0; i < 16; i++) c.seqMotion(pid, i, lane[i] / 100);
       }
       c.seqCommit();
@@ -725,7 +782,7 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
   let mdrag=false;
   function paint(e){
     if (!isMotionCapable(tgtId)) return;            // hard reject mirrors engine
-    const lane=laneFor(tgtId), pid=KNOB_PARAM[tgtId];
+    const lane=laneFor(tgtId), pid=motionParamId(tgtId);
     const r=laneEl.getBoundingClientRect();
     let i=Math.max(0,Math.min(15,Math.floor((e.clientX-r.left)/r.width*16)));
     let v=Math.max(0,Math.min(100,(1-(e.clientY-r.top-7)/(r.height-14))*100));
@@ -750,9 +807,9 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
       return;
     }
     motionArm=!motionArm;mArm.classList.toggle('on',motionArm);
-    Object.values(K).forEach(o=>o.el.classList.remove('tgt'));
-    if(motionArm)K[tgtId].el.classList.add('tgt');
-    emit((c) => c.seqMotionRec(KNOB_PARAM[tgtId], motionArm));
+    motionTargets().forEach(o=>o.el.classList.remove('tgt'));
+    if(motionArm) motionEntry(tgtId).el.classList.add('tgt');
+    emit((c) => c.seqMotionRec(motionParamId(tgtId), motionArm));
   };
 
   // E3 SMOOTH toggle (global per-pattern).
@@ -822,13 +879,16 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
 
   function setTarget(id){
     // Engine rejects PEAK; UI mirrors that hard, not silently (spec §E3.4).
+    // OCT/TMP also rejected here — they're not normalised PARAMs.
     if (!isMotionCapable(id)) {
-      const nm = K[id] ? K[id].name : id.toUpperCase();
-      show('MOTION TARGET', nm, '— nicht motion-faehig');
+      const e = motionEntry(id);
+      show('MOTION TARGET', e ? e.name : id.toUpperCase(), '— nicht motion-faehig');
       return;
     }
-    tgtId=id;tgtName=K[id].name;mTgt.textContent=tgtName;
-    Object.values(K).forEach(o=>o.el.classList.remove('tgt'));K[id].el.classList.add('tgt');
+    const e = motionEntry(id);
+    tgtId=id; tgtName=e.name; mTgt.textContent=tgtName;
+    motionTargets().forEach(o=>o.el.classList.remove('tgt'));
+    if (motionArm) e.el.classList.add('tgt');         // ring only while armed
     drawLane();                                       // switch lane visual
     show('MOTION TARGET',tgtName,'');
   }

@@ -494,6 +494,13 @@ public:
             if (held_[r] != note) held_[w++] = held_[r];
         count_ = w;
     }
+    // B1-fix: panic clear of the held stack. RT-safe (single integer write,
+    // no malloc, no loops over external state). Used by ParaEngine::setOctave
+    // to keep the noteOn/noteOff "same shift" invariant from breaking when
+    // the user shifts the octave while a voice is gated (sequencer or live
+    // keyboard). Without this, alloc_.noteOff(note + NEW_shift) would miss
+    // its target and the voice would stay gated forever.
+    void allNotesOff() noexcept { count_ = 0; }
     bool anyHeld() const noexcept { return count_ > 0; }
 
     // Fills target semitone for 3 oscillators + per-osc active flag.
@@ -764,7 +771,20 @@ public:
     void setMetro(bool on)            noexcept { metroOn_ = on; }         // E4.4 (delay bypass)
     void metroTrigger(bool accent)    noexcept { metro_.trigger(accent); }// E4.4
     void setVolume(double g)          noexcept { vol_.setTarget(g); }     // E6.1 (smoothed)
-    void setOctave(int oct)           noexcept { octShift_ = oct * 12; }  // E6.2 semitones
+    // B1-fix: panic any held voice and release the envelope BEFORE changing
+    // the shift. The matched-pair invariant (same octShift on noteOn and the
+    // corresponding noteOff) breaks if the shift moves mid-gate — without the
+    // panic, the noteOff would miss its target in alloc_ and the voice would
+    // run forever (observed: keyboard with held key + oct knob; sequencer
+    // with seqStart + oct knob → "spur läuft weiter selbst nach seqStop").
+    // The release is click-free: env_.gateOff just sets Release state, the
+    // existing envelope decay handles the audible part.
+    void setOctave(int oct)           noexcept {
+        alloc_.allNotesOff();
+        env_.gateOff();
+        gateHeld_ = false;
+        octShift_ = oct * 12;                                                 // E6.2 semitones
+    }
     void setDetune(double semis)      noexcept { detune_.setTarget(semis); } // E2.1 (smoothed)
     void setPortamento(double tauSec) noexcept {                            // E2.2 Modell A
         portTau_ = tauSec;

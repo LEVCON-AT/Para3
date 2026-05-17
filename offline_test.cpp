@@ -1634,6 +1634,77 @@ int main() {
         if(!pass) ++failures;
     }
 
+    // ---- T27  setOctave during gate must NOT leave a stuck voice ---------
+    //
+    // Bug B1 (reported 2026-05-18): user pressed Play / held a key, then
+    // moved the OCTAVE knob; one voice ran forever and did not stop on
+    // seqStop / keyUp.
+    //
+    // Root cause: ParaEngine::noteOff applies the CURRENT octShift_ (not the
+    // shift used at the matching noteOn). If the shift moves between a gated
+    // noteOn and its noteOff, alloc_.noteOff misses its target → alloc still
+    // has the held entry → env_.gateOff is gated behind anyHeld()==false →
+    // envelope stays open.
+    //
+    // Engine fix: setOctave panics — alloc_.allNotesOff + env_.gateOff before
+    // changing octShift_. Side effect: the user hears the in-flight note
+    // release when changing octave during playback (intended, click-free).
+    //
+    // This test reproduces the exact scenario and pins the tail RMS so a
+    // regression would surface immediately.
+    {
+        const double sr_ = sr; using PE = para3::ParaEngine;
+        PE e; e.prepare(sr_, 4096);
+        e.setParamNorm(PE::Param::Cutoff,   0.80);
+        e.setParamNorm(PE::Param::Sustain,  1.00);
+        e.setParamNorm(PE::Param::Attack,   0.00);
+        e.setParamNorm(PE::Param::DecRel,   0.05);   // short release
+        e.setParamNorm(PE::Param::Volume,   1.00);
+
+        // 1. Note on, settle a bit so the voice is fully going.
+        e.noteOn(60);
+        std::vector<float> warm(2000); e.process(warm.data(), (int)warm.size());
+
+        // 2. Change octave mid-gate. WITHOUT B1 fix: alloc still holds 60 and
+        //    env stays open; WITH the fix the panic flushes both.
+        e.setOctave(1);
+
+        // 3. Send the "matching" noteOff. Pre-fix path: alloc_.noteOff(72) is
+        //    a no-op (alloc still has 60), anyHeld() returns true, gateOff
+        //    not called → forever sound. Post-fix: alloc is already empty,
+        //    anyHeld() returns false, env_.gateOff is idempotent on Idle.
+        e.noteOff(60);
+
+        // 4. Render a full second and measure the LAST 100 ms RMS. With a
+        //    correct release the tail must be effectively silent.
+        const int Ntail = (int)sr_;
+        std::vector<float> tail(Ntail);
+        e.process(tail.data(), Ntail);
+
+        const int wnd = (int)(sr_ * 0.1);             // last 100 ms
+        double sumSq = 0.0; double peak = 0.0;
+        for (int i = Ntail - wnd; i < Ntail; ++i) {
+            sumSq += (double)tail[i] * (double)tail[i];
+            peak  = std::max(peak, (double)std::fabs(tail[i]));
+        }
+        const double rms = std::sqrt(sumSq / wnd);
+
+        // Threshold: well below audible — generous bound so the test stays
+        // robust to any incidental delay-tail residue from earlier processing.
+        const double TAIL_RMS_MAX = 1e-4;             // ~ -80 dBFS
+        const double TAIL_PK_MAX  = 1e-3;             // ~ -60 dBFS peak
+
+        const bool pass = rms < TAIL_RMS_MAX && peak < TAIL_PK_MAX
+                       && std::isfinite(rms);
+
+        std::printf("\nT27 setOctave during gate  (stuck-voice regression, B1)\n");
+        std::printf("   tail RMS  (last 100 ms) : %.3e  (max %.0e)\n", rms,  TAIL_RMS_MAX);
+        std::printf("   tail peak (last 100 ms) : %.3e  (max %.0e)\n", peak, TAIL_PK_MAX);
+        std::printf("   -> %s  (no voice runs past noteOff after setOctave)\n",
+                    pass ? "PASS" : "FAIL");
+        if (!pass) ++failures;
+    }
+
     std::printf("\n==================================================\n");
     std::printf("%s  (%d failure%s)\n",
                 failures ? "OVERALL: FAIL" : "OVERALL: PASS",

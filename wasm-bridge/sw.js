@@ -14,7 +14,7 @@
 //  the worklet and needs no SAB.
 // =============================================================================
 
-const CACHE_VER  = 'para3-v9';  // U4 layout symmetry + step-sequencer compaction
+const CACHE_VER  = 'para3-v10'; // U5+U6+B1: motion-fix, desktop lift-off, octave-during-play fix
 const PRECACHE   = [
   './',
   './index.html',

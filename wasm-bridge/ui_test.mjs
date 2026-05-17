@@ -33,8 +33,12 @@ const REPO = join(__dirname, '..');
 // --- baseline of untouched files (md5; captured immediately after the worklet
 // memory fix landed, i.e. just before the U-sprints begin) ---------------
 const md5_baseline = {
-  'Para3Engine.hpp':                          '66f5bb13786431c23db8302b723e5931',
-  'offline_test.cpp':                         'acffddfc9384818033b1c13b036d658b',
+  // B1 update: setOctave now panics (allNotesOff + gateOff) before changing
+  // octShift_, plus ParaAllocator::allNotesOff added (RT-safe), plus the T27
+  // regression test for the stuck-voice scenario. Baseline rebumped to the
+  // post-B1 hashes; the OTHER 15 engine/bridge files stay frozen.
+  'Para3Engine.hpp':                          '88ea2a6fd9d69e4abcc7fa580915fd96',
+  'offline_test.cpp':                         'b8eef2672ae7f6de7459b99d7f368937',
   'wasm-bridge/para3_capi.h':                 'f3ab5d6b0ae2c0258b12caa044cfa616',
   'wasm-bridge/para3_capi.cpp':               'dc44ae231c060427e07f3cbdbaf9a3f7',
   'wasm-bridge/capi_test.cpp':                '867d8965127af1015ca1b56ac5b2b417',
@@ -119,7 +123,7 @@ const html = readFileSync(join(REPO, 'wasm-bridge/para3-responsive.html'), 'utf8
     { re: /@media\s*\(min-width:\s*1024px\)[\s\S]*?\.app\s*\{[^}]*max-width:\s*1200px/, label: 'tablet-landscape/desktop ≥1024 → max-width:1200px' },
     { re: /@media\s*\(min-width:\s*1024px\)[\s\S]*?\.scroll\s*\{[^}]*grid-template-columns:\s*repeat\(3\s*,\s*1fr\)/, label: 'tablet-landscape/desktop → 3-col grid' },
     // Desktop wide
-    { re: /@media\s*\(min-width:\s*1600px\)[\s\S]*?\.app\s*\{[^}]*max-width:\s*1480px/, label: 'desktop-wide ≥1600 → max-width:1480px' },
+    { re: /@media\s*\(min-width:\s*1600px\)[\s\S]*?\.app\s*\{[^}]*max-width:\s*1560px/, label: 'desktop-wide ≥1600 → max-width:1560px (U6 expansion)' },
     { re: /@media\s*\(min-width:\s*1600px\)[\s\S]*?grid-template-columns:\s*repeat\(4\s*,\s*1fr\)/, label: 'desktop-wide → 4-col grid' },
     // Sequencer (.sec.full) must occupy the full-width "seq" area in every
     // multi-col media. U4 replaced grid-column:1/-1 with grid-area:seq.
@@ -281,6 +285,92 @@ const html = readFileSync(join(REPO, 'wasm-bridge/para3-responsive.html'), 'utf8
   console.log(`   mobile-portrait clean : ${mobilePortraitClean ? 'yes (areas only in @media)' : 'NO (leaked to default block)'}`);
   console.log(`   -> ${failed === 0 ? 'PASS' : 'FAIL'}`);
   if (failed) fails++;
+}
+
+// ----- (b5) U5 MOTION-CAPABILITY AUDIT ------------------------------------
+{
+  // Mirror of the in-HTML motionParamId / isMotionCapable. Each UI control's
+  // id is checked against the engine's "motion-fähig" rule: all PARA3_P_*
+  // except RESONANCE; oct/tmp are not normalised PARAMs so they can never be
+  // motion targets. The cases enumerate every interactable control in the
+  // HTML and pin its expected motion-capability.
+  const PARAM_RES = 1, PARAM_VOL = 15;
+  const KNOB_PARAM = {
+    cut:0, pk:PARAM_RES, lrt:5, lpi:6, lci:3, dt:7, df:8,
+    egi:12, det:13, por:14, vol:PARAM_VOL,
+  };
+  const FADER_PARAM = { atk:9, dec:10, sus:11 };
+  const NON_PARAM = ['oct', 'tmp'];               // engine-shaped controls, NOT normalised PARAMs
+
+  const motionParamId = (id) => KNOB_PARAM[id] ?? FADER_PARAM[id];
+  const isMotionCapable = (id) => {
+    const pid = motionParamId(id);
+    return pid !== undefined && pid !== PARAM_RES;
+  };
+
+  const cases = [
+    // knobs that SHOULD be motion targets (U5 fixes vol; engine spec confirms)
+    ...['cut','lrt','lpi','lci','dt','df','egi','det','por','vol'].map(id =>
+       ({ id, want: true, why: 'normalised PARAM, not RESONANCE' })),
+    // faders — all three are motion-fähig per engine (ATTACK/DECREL/SUSTAIN)
+    ...['atk','dec','sus'].map(id =>
+       ({ id, want: true, why: 'fader writes PARAM through funnel' })),
+    // hard rejects — three only, with their reasons
+    { id: 'pk',  want: false, why: 'engine rejects RESONANCE (Volca semantics)' },
+    { id: 'oct', want: false, why: 'setOctave is int, not a normalised PARAM' },
+    { id: 'tmp', want: false, why: 'seqTempo is BPM, not a normalised PARAM' },
+  ];
+  const bad = cases.filter(c => isMotionCapable(c.id) !== c.want);
+  // Plus: the HTML must contain the U5 markers (named refactors, fader hook).
+  const htmlChecks = [
+    { re: /vol:\s*PARAM\.VOLUME/,                                   label: 'KNOB_PARAM.vol = PARAM.VOLUME (was special-cased in emitKnob)' },
+    { re: /function\s+motionParamId\s*\(/,                          label: 'motionParamId helper (knobs + faders)' },
+    { re: /function\s+motionEntry\s*\(/,                            label: 'motionEntry helper' },
+    { re: /function\s+motionTargets\s*\(/,                          label: 'motionTargets iterator over K and F' },
+    { re: /if\s*\(\s*motionArm\s*\)\s*\{\s*setTarget\s*\(\s*id\s*\)/, label: 'fader slot pointerdown hooks setTarget when armed' },
+    { re: /F\[id\]\s*=\s*\{[\s\S]*?name\s*,\s*el\s*:\s*f\s*\}/,     label: 'F entries carry name+el for setTarget lookup' },
+    { re: /\.knob\.tgt\s*,\s*\.fader\.tgt\s*\{/,                    label: '.tgt CSS applies to both knobs AND faders' },
+  ];
+  const htmlBad = htmlChecks.filter(c => !c.re.test(html));
+  const pass = bad.length === 0 && htmlBad.length === 0;
+  console.log(`\nU-B5: U5 motion-capability audit`);
+  console.log(`   isMotionCapable: ${cases.length - bad.length}/${cases.length} match`);
+  if (bad.length) for (const b of bad)
+    console.log(`      FAIL: id=${b.id} want=${b.want} got=${isMotionCapable(b.id)}  (${b.why})`);
+  console.log(`   HTML markers   : ${htmlChecks.length - htmlBad.length}/${htmlChecks.length}`);
+  if (htmlBad.length) for (const c of htmlBad) console.log(`      MISSING: ${c.label}`);
+  console.log(`   -> ${pass ? 'PASS' : 'FAIL'}`);
+  if (!pass) fails++;
+}
+
+// ----- (b6) U6 DESKTOP LIFT-OFF SHADOW + EDGE -----------------------------
+{
+  // The app must carry a box-shadow + 1px outline at every tablet+ breakpoint
+  // and the colours must be theme-driven (so bone theme isn't a cream block on
+  // pure black). Mobile portrait must STILL not carry box-shadow.
+  const css = html.replace(/\s+/g, ' ');
+  const checks = [
+    { re: /--app-shadow\s*:\s*0\s*,\s*0\s*,\s*0/,           label: 'dark theme: --app-shadow defined (rgb 0,0,0)' },
+    { re: /\[data-theme="bone"\][\s\S]*?--app-shadow\s*:\s*60\s*,\s*40\s*,\s*20/, label: 'bone theme: warm --app-shadow override' },
+    { re: /\[data-theme="bone"\][\s\S]*?--app-edge\s*:\s*rgba\(255\s*,\s*238\s*,\s*210/, label: 'bone theme: parchment --app-edge' },
+    { re: /@media\s*\(min-width:\s*720px\)\s*and\s*\(orientation:\s*portrait\)[\s\S]*?box-shadow:[^;]*rgba\(var\(--app-shadow\)/, label: 'tablet-portrait box-shadow uses var(--app-shadow)' },
+    { re: /@media\s*\(min-width:\s*1024px\)[\s\S]*?box-shadow:[^;]*rgba\(var\(--app-shadow\)/, label: 'desktop (≥1024) box-shadow uses var(--app-shadow)' },
+    { re: /@media\s*\(min-width:\s*1600px\)[\s\S]*?box-shadow:[^;]*rgba\(var\(--app-shadow\)/, label: 'wide desktop (≥1600) box-shadow uses var(--app-shadow)' },
+    { re: /@media\s*\(min-width:\s*1600px\)[\s\S]*?max-width:\s*1560px/, label: 'wide desktop expanded 1480→1560 max-width' },
+  ];
+  // Negative: mobile portrait .app block must NOT carry box-shadow (mobile is
+  // the base; shadow only kicks in at tablet+). Match the FIRST .app{...}
+  // rule and stop at its first '}' so we don't consume sibling selectors.
+  const m = html.match(/\.app\s*\{[^}]*\}/);
+  const mobileHasShadow = m && /box-shadow:/.test(m[0]);
+  const failed = checks.filter(c => !c.re.test(css));
+  const pass = failed.length === 0 && !mobileHasShadow;
+  console.log(`\nU-B6: U6 desktop lift-off (shadow + edge + bone-theme glow)`);
+  console.log(`   checks               : ${checks.length - failed.length}/${checks.length}`);
+  if (failed.length) for (const f of failed) console.log(`      MISSING: ${f.label}`);
+  console.log(`   mobile-portrait clean: ${mobileHasShadow ? 'NO (box-shadow leaked into default .app)' : 'yes (no shadow on mobile)'}`);
+  console.log(`   -> ${pass ? 'PASS' : 'FAIL'}`);
+  if (!pass) fails++;
 }
 
 // ----- (c) PURE-FUNCTION UNIT TEST ---------------------------------------
