@@ -67,9 +67,16 @@ class Para3Processor extends AudioWorkletProcessor {
     this._f64 = new Float64Array(1);
     this._fi  = new Int32Array(this._f64.buffer);
 
-    this.memory = new WebAssembly.Memory({ initial: 512 }); // 512*64KiB = 32 MiB
-    const inst = new WebAssembly.Instance(o.wasmModule, makeImports(this.memory));
+    // STANDALONE_WASM=1: the wasm module EXPORTS its own memory and does not
+    // import one. We still pass a placeholder Memory to makeImports() because
+    // env.memory is the standard shape, but after instantiation we MUST use
+    // exports.memory — otherwise our heap views read an empty, unused buffer
+    // (silent engine, flat scope). scope_source_test would catch this natively;
+    // browser-side the symptom is "tap to start works, but no audio".
+    const placeholderMem = new WebAssembly.Memory({ initial: 512 });
+    const inst = new WebAssembly.Instance(o.wasmModule, makeImports(placeholderMem));
     this.x = inst.exports;
+    this.memory = this.x.memory || placeholderMem;
 
     this.p = this.x.para3_create(o.sampleRate, (o.maxBlock | 0) || 128);
     this.bufPtr = this.x.malloc(128 * 4);

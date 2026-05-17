@@ -14,7 +14,7 @@
 //  the worklet and needs no SAB.
 // =============================================================================
 
-const CACHE_VER  = 'para3-v5';  // E3 TDZ fix (drawLane before tgtId init)
+const CACHE_VER  = 'para3-v6';  // worklet memory fix (STANDALONE_WASM exports memory)
 const PRECACHE   = [
   './',
   './index.html',
