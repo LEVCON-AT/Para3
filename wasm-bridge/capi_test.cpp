@@ -193,6 +193,70 @@ int main() {
         if (!pass) ++failures;
     }
 
+    // ---- WA6  full E1-E6 surface sweep via the C-API (bridge proof) -------
+    {
+        Para3* p = para3_create(sr, Q);
+        bool finite = true; double peak = 0.0;
+        std::vector<float> buf(Q);
+        auto pump=[&](int blocks){
+            for(int b=0;b<blocks;++b){ para3_render(p,buf.data(),Q);
+                for(int k=0;k<Q;++k){ float v=buf[k];
+                    if(!std::isfinite(v)) finite=false;
+                    peak=std::max(peak,(double)std::fabs(v)); } } };
+
+        para3_note_on(p, 48);
+        // E1/E2/E6 new params through the unified funnel
+        for(int s=0;s<=20;++s){ const double n=s/20.0;
+            para3_set_param(p, PARA3_P_EG_CUT_DEPTH, n);
+            para3_set_param(p, PARA3_P_DETUNE,       n);
+            para3_set_param(p, PARA3_P_PORTAMENTO,   n);
+            para3_set_param(p, PARA3_P_VOLUME, 0.3+0.7*n);
+            pump(1); }
+        para3_set_lfo_sync(p, 1); para3_note_on(p, 50); pump(2);
+        para3_set_octave(p, 1);  para3_note_on(p, 52); pump(2);
+        para3_set_octave(p, -1); para3_note_on(p, 47); pump(2);
+
+        // E3 motion: lane commit + SMOOTH + PEAK refusal observable
+        double lane[16]; for(int i=0;i<16;++i) lane[i]=(double)i/15.0;
+        para3_seq_motion_lane_commit(p, PARA3_P_CUTOFF, lane);
+        para3_seq_motion_smooth(p, 1);
+        para3_seq_motion_set(p, PARA3_P_RESONANCE, 3, 0.9);   // must be refused
+        para3_seq_motion_set(p, PARA3_P_RESONANCE, 4, 0.9);   // refused
+        para3_seq_commit(p);
+        for(int s=0;s<16;++s) para3_seq_set_step(p,s,48,1,0,0.5);
+        para3_seq_commit(p);
+        para3_seq_set_tempo(p,140.0); para3_seq_start(p); pump(40);
+        const long rej = para3_seq_motion_rejects(p);
+
+        // E4 sequencer behaviours
+        para3_seq_step_trigger(p, 1); pump(20);
+        para3_seq_tempo_div(p, 2);    pump(20);
+        para3_seq_active_step(p, 5, 0); para3_seq_commit(p); pump(20);
+        para3_seq_metronome(p, 1);    pump(20);
+        para3_seq_metronome(p, 0);
+
+        // E5 flux: mode + record + overflow drop counter
+        para3_seq_flux_mode(p, 1);
+        para3_seq_flux_loop_len(p, 24000);
+        para3_seq_flux_rec(p, 1);
+        for(int i=0;i<400;++i){ para3_seq_flux_note(p, 48, (i&1)==0);
+                                pump(0); para3_render(p,buf.data(),8); }
+        para3_seq_flux_rec(p, 0);
+        para3_seq_flux_commit(p);
+        pump(30);
+        const long dropped = para3_seq_flux_dropped(p);
+
+        para3_destroy(p);
+        const bool pass = finite && peak>1e-4 && peak<8.0
+                          && rej >= 2 && dropped > 0;
+        std::printf("\nWA6 full E1-E6 C-API surface sweep\n");
+        std::printf("   finite %s  peak %.3f\n", finite?"yes":"NO", peak);
+        std::printf("   motion rejects (PEAK)   : %ld  (>=2)\n", rej);
+        std::printf("   flux dropped (overflow) : %ld  (>0, FLUX_CAP)\n", dropped);
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if (!pass) ++failures;
+    }
+
     std::printf("\n==================================================\n");
     std::printf("%s  (%d failure%s)\n",
                 failures ? "OVERALL: FAIL" : "OVERALL: PASS",

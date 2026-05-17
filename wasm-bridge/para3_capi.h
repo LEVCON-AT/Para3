@@ -37,7 +37,11 @@ enum {
     PARA3_P_DELAY_FEEDBACK = 8,
     PARA3_P_ATTACK = 9,
     PARA3_P_DECREL = 10,
-    PARA3_P_SUSTAIN = 11
+    PARA3_P_SUSTAIN = 11,
+    PARA3_P_EG_CUT_DEPTH = 12,      // E1.1 bipolar: norm 0.5 == 0 (centre)
+    PARA3_P_DETUNE = 13,            // E2.1 unipolar
+    PARA3_P_PORTAMENTO = 14,        // E2.2 unipolar, 0 = instant
+    PARA3_P_VOLUME = 15             // E6.1 unipolar, 1.0 = unity
 };
 // voice modes mirror ParaAllocator::Mode
 enum {
@@ -49,6 +53,8 @@ enum {
 void para3_set_param(Para3* p, int param_id, double norm01);
 void para3_set_mode (Para3* p, int mode);
 void para3_set_lfo_shape(Para3* p, int shape);  // 0 sine,1 tri,2 saw,3 square
+void para3_set_lfo_sync (Para3* p, int on);     // E1.2 LFO trigger sync (0/1)
+void para3_set_octave   (Para3* p, int oct);    // E6.2 octave shift (..-2..+2..)
 void para3_note_on  (Para3* p, int midi_note);
 void para3_note_off (Para3* p, int midi_note);
 
@@ -64,6 +70,28 @@ void para3_seq_set_step  (Para3* p, int idx, int note, int gate,
 void para3_seq_set_length(Para3* p, int length);
 void para3_seq_commit    (Para3* p);
 int  para3_seq_current_step(Para3* p);
+
+// E3 motion (ziel-parametric, lock-free; commit via para3_seq_commit)
+void para3_seq_motion_set        (Para3* p, int param_id, int step, double v01);
+void para3_seq_motion_lane_commit(Para3* p, int param_id, const double* v01_16);
+void para3_seq_motion_smooth     (Para3* p, int on);
+void para3_seq_motion_rec        (Para3* p, int param_id, int on);  // one-loop capture
+void para3_seq_motion_val        (Para3* p, int param_id, double v01);
+long para3_seq_motion_rejects    (Para3* p);                        // observability
+
+// E4 sequencer behaviours
+void para3_seq_step_trigger(Para3* p, int on);            // E4.1 force EG every step
+void para3_seq_tempo_div   (Para3* p, int div);           // E4.2 1, 2 or 4
+void para3_seq_active_step (Para3* p, int idx, int on);   // E4.3 enable/skip step
+void para3_seq_metronome   (Para3* p, int on);            // E4.4 metronome (delay bypass)
+
+// E5 FLUX (sample-accurate event sequence)
+void para3_seq_flux_mode     (Para3* p, int on);          // step-grid <-> flux (click-free)
+void para3_seq_flux_loop_len (Para3* p, unsigned int samples);
+void para3_seq_flux_rec      (Para3* p, int on);
+void para3_seq_flux_note     (Para3* p, int note, int on);// append at live cursor
+void para3_seq_flux_commit   (Para3* p);                  // stable-sort + publish
+long para3_seq_flux_dropped  (Para3* p);                  // observable overflow
 
 // MIDI from the host/keyboard, applied at the next rendered sample
 void para3_midi_cc      (Para3* p, int cc, double norm01);

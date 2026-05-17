@@ -38,6 +38,10 @@ static para3::ParaEngine::Param mapParam(int id) {
         case PARA3_P_ATTACK:           return P::Attack;
         case PARA3_P_DECREL:           return P::DecRel;
         case PARA3_P_SUSTAIN:          return P::Sustain;
+        case PARA3_P_EG_CUT_DEPTH:     return P::EgCutDepth;   // E1.1
+        case PARA3_P_DETUNE:           return P::Detune;       // E2.1
+        case PARA3_P_PORTAMENTO:       return P::Portamento;   // E2.2
+        case PARA3_P_VOLUME:           return P::Volume;       // E6.1
         default:                       return P::Cutoff;
     }
 }
@@ -66,6 +70,8 @@ void para3_set_lfo_shape(Para3* p, int s) {
 }
 void para3_note_on (Para3* p, int n)  { if (p) p->engine.noteOn(n);  }
 void para3_note_off(Para3* p, int n)  { if (p) p->engine.noteOff(n); }
+void para3_set_lfo_sync(Para3* p, int on) { if (p) p->engine.setLfoSync(on != 0); } // E1.2
+void para3_set_octave  (Para3* p, int oct){ if (p) p->engine.setOctave(oct); }       // E6.2
 
 void para3_seq_set_tempo (Para3* p, double bpm)  { if (p) p->ctrl.clock().setTempo(bpm,4); }
 void para3_seq_set_swing (Para3* p, double s)    { if (p) p->ctrl.clock().setSwing(s); }
@@ -88,6 +94,33 @@ void para3_seq_set_length(Para3* p, int len) {
 }
 void para3_seq_commit(Para3* p)        { if (p) p->ctrl.commitEdit(); }
 int  para3_seq_current_step(Para3* p)  { return p ? p->ctrl.currentStep() : -1; }
+
+void para3_seq_motion_set(Para3* p, int pid, int step, double v) {
+    if (p) p->ctrl.motionSet(pid, step, v);
+}
+void para3_seq_motion_lane_commit(Para3* p, int pid, const double* v16) {
+    if (p && v16) p->ctrl.motionLaneCommit(pid, v16);
+}
+void para3_seq_motion_smooth(Para3* p, int on) { if (p) p->ctrl.motionSmooth(on!=0); }
+void para3_seq_motion_rec(Para3* p, int pid, int on) {
+    if (p) p->ctrl.motionRec(pid, on!=0);
+}
+void para3_seq_motion_val(Para3* p, int pid, double v) {
+    if (p) p->ctrl.motionVal(pid, v);
+}
+long para3_seq_motion_rejects(Para3* p) { return p ? p->ctrl.motionRejects() : 0; }
+
+void para3_seq_step_trigger(Para3* p, int on)        { if (p) p->ctrl.setStepTrigger(on!=0); }
+void para3_seq_tempo_div   (Para3* p, int d)         { if (p) p->ctrl.setTempoDiv(d); }
+void para3_seq_active_step (Para3* p, int i, int on) { if (p) p->ctrl.setActiveStep(i, on!=0); }
+void para3_seq_metronome   (Para3* p, int on)        { if (p) p->ctrl.setMetro(on!=0); }
+
+void para3_seq_flux_mode    (Para3* p, int on)            { if (p) p->ctrl.setFluxMode(on!=0); }
+void para3_seq_flux_loop_len(Para3* p, unsigned int s)    { if (p) p->ctrl.fluxSetLoopLen(s); }
+void para3_seq_flux_rec     (Para3* p, int on)            { if (p) p->ctrl.fluxRec(on!=0); }
+void para3_seq_flux_note    (Para3* p, int n, int on)     { if (p) p->ctrl.fluxNote(n,on!=0); }
+void para3_seq_flux_commit  (Para3* p)                    { if (p) p->ctrl.fluxCommit(); }
+long para3_seq_flux_dropped (Para3* p) { return p ? p->ctrl.fluxDropped() : 0; }
 
 void para3_midi_cc(Para3* p, int cc, double n) { if (p) p->ctrl.midiCC(cc, n); }
 

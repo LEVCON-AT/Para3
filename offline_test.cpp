@@ -14,6 +14,8 @@
 #include <complex>
 #include <cstdio>
 #include <cmath>
+#include <set>
+#include <array>
 
 using cd = std::complex<double>;
 
@@ -749,6 +751,887 @@ int main() {
         std::printf("   -> %s (consistent snapshot, finite, continuous)\n",
                     pass ? "PASS" : "FAIL");
         if (!pass) ++failures;
+    }
+
+    // ---- T14  EG INT (EG -> cutoff), bipolar, neutral bit-identical --------
+    //  STFT spectral centroid must track the EG envelope (Pearson r). Negative
+    //  depth must invert it. Neutral (norm 0.5) must be BIT-IDENTICAL to the
+    //  untouched engine (proves the new path is truly inert when off). The
+    //  isolated EG->cutoff contribution (bPos - bNeutral) must be spike-free.
+    {
+        const double sr_ = sr;
+        const double naAtk = (30.0  - 1.5) / 1998.5;        // ~30 ms attack
+        const double naDec = (400.0 - 1.5) / 1998.5;        // ~400 ms decay
+        const double msA = para3::ParaEngine::taper(para3::ParaEngine::Param::Attack, naAtk);
+        const double msD = para3::ParaEngine::taper(para3::ParaEngine::Param::DecRel, naDec);
+        const int warm = 4000, N = 48000;                   // 1 s held-note capture
+        auto render = [&](double egNorm, bool touchEg, std::vector<float>& buf){
+            para3::ParaEngine e; e.prepare(sr_, 4096);
+            e.setParamNorm(para3::ParaEngine::Param::Cutoff,    0.50);
+            e.setParamNorm(para3::ParaEngine::Param::Resonance, 0.20);
+            e.setParamNorm(para3::ParaEngine::Param::Attack,    naAtk);
+            e.setParamNorm(para3::ParaEngine::Param::DecRel,    naDec);
+            e.setParamNorm(para3::ParaEngine::Param::Sustain,   0.50);
+            if (touchEg)
+                e.setParamNorm(para3::ParaEngine::Param::EgCutDepth, egNorm);
+            std::vector<float> w(warm);
+            e.process(w.data(), warm);                       // settle (note off)
+            e.noteOn(60);
+            buf.assign(N, 0.0f);
+            e.process(buf.data(), N);
+        };
+        std::vector<float> bPos, bNeg, bNeu, bBase;
+        render(0.85, true,  bPos);
+        render(0.15, true,  bNeg);
+        render(0.50, true,  bNeu);
+        render(0.00, false, bBase);                          // EgCutDepth untouched
+
+        std::vector<double> egRef(N);
+        { para3::AdsrEnvelope ref; ref.prepare(sr_);
+          ref.setAttackMs(msA); ref.setDecRelMs(msD); ref.setSustain(0.50);
+          ref.gateOn();
+          for (int i = 0; i < N; ++i) egRef[i] = ref.next(); }
+
+        const int W = 2048, H = 1024;
+        auto series = [&](const std::vector<float>& x, std::vector<double>& cen,
+                          std::vector<double>& egw){
+            cen.clear(); egw.clear();
+            for (int s = 2*H; s + W <= (int)x.size(); s += H) {  // skip onset/FIR
+                std::vector<cd> sp(W);
+                for (int i = 0; i < W; ++i) {
+                    const double wn = 0.5 - 0.5*std::cos(2.0*M_PI*i/(W-1));
+                    sp[i] = cd((double)x[s+i]*wn, 0.0);
+                }
+                fft(sp);
+                double num = 0.0, den = 0.0;
+                for (int k = 1; k < W/2; ++k) {
+                    const double m = std::abs(sp[k]);
+                    num += (k*sr_/W)*m; den += m;
+                }
+                cen.push_back(den > 1e-12 ? num/den : 0.0);
+                double e = 0.0; for (int i = 0; i < W; ++i) e += egRef[s+i];
+                egw.push_back(e / W);
+            }
+        };
+        auto pearson = [&](const std::vector<double>& a, const std::vector<double>& b){
+            const int n = (int)std::min(a.size(), b.size()); if (n < 4) return 0.0;
+            double ma=0, mb=0; for (int i=0;i<n;++i){ ma+=a[i]; mb+=b[i]; }
+            ma/=n; mb/=n; double sab=0,saa=0,sbb=0;
+            for (int i=0;i<n;++i){ const double da=a[i]-ma, db=b[i]-mb;
+                sab+=da*db; saa+=da*da; sbb+=db*db; }
+            return (saa>0&&sbb>0) ? sab/std::sqrt(saa*sbb) : 0.0;
+        };
+        std::vector<double> cP,eP,cN,eN;
+        series(bPos,cP,eP); series(bNeg,cN,eN);
+        const double rPos = pearson(cP,eP);
+        const double rNeg = pearson(cN,eN);
+
+        double neuMax = 0.0; bool finite = true;
+        for (int i = 0; i < N; ++i) {
+            neuMax = std::max(neuMax, (double)std::fabs(bNeu[i]-bBase[i]));
+            if (!std::isfinite(bPos[i])||!std::isfinite(bNeg[i])||
+                !std::isfinite(bNeu[i])) finite = false;
+        }
+        std::vector<float> d(N);
+        for (int i=0;i<N;++i) d[i] = bPos[i]-bNeu[i];
+        const double gD = maxAbsDelta(d, 1, N);
+        const double sD = maxAbsDelta(d, (int)(0.6*N), (int)(0.95*N));
+        const bool pass = finite && neuMax == 0.0 && rPos >= 0.9 && rNeg <= -0.9
+                          && (sD <= 0 ? gD < 1e-3 : gD <= sD*8.0);
+        std::printf("\nT14 EG INT  (EG->cutoff, bipolar, log domain)\n");
+        std::printf("   centroid~eg corr  +depth : %+.3f  (>= +0.90)\n", rPos);
+        std::printf("   centroid~eg corr  -depth : %+.3f  (<= -0.90)\n", rNeg);
+        std::printf("   neutral(0.5) vs untouched: max|d| = %.3e  (== 0)\n", neuMax);
+        std::printf("   EG-path |dx| glob/steady : %.5f / %.5f  (no spike)\n", gD, sD);
+        std::printf("   all-finite               : %s\n", finite ? "yes" : "NO");
+        std::printf("   -> %s\n", pass ? "PASS" : "FAIL");
+        if (!pass) ++failures;
+    }
+
+    // ---- T15  LFO trigger sync (phase reproducible, click-free) ------------
+    //  Sync ON: two note-ons reset the GLOBAL LFO to phi0 => the windowed-RMS
+    //  envelopes of both notes are phase-locked (high corr). Sync OFF with a
+    //  half-period gap => free-running => phases differ (low/neg corr). The
+    //  phase reset must not introduce an onset click beyond the steady sweep.
+    {
+        const double sr_  = sr;
+        const double nRate = 0.799;                          // ~6 Hz (taper)
+        const int warm = 5000, M = 24000;                    // 0.5 s capture
+        const double lfoHz = para3::ParaEngine::taper(
+            para3::ParaEngine::Param::LfoRate, nRate);
+        const int halfP = (int)std::round(0.5 * sr_ / lfoHz);
+        auto cap = [&](bool sync, int gap, std::vector<float>& A, std::vector<float>& B){
+            para3::ParaEngine e; e.prepare(sr_, 4096);
+            e.setLfoShape(para3::Lfo::Shape::Sine);
+            e.setParamNorm(para3::ParaEngine::Param::Cutoff,     0.50);
+            e.setParamNorm(para3::ParaEngine::Param::Resonance,  0.20);
+            e.setParamNorm(para3::ParaEngine::Param::LfoCutDepth,0.50);  // 2 oct
+            e.setParamNorm(para3::ParaEngine::Param::LfoRate,    nRate);
+            e.setParamNorm(para3::ParaEngine::Param::Attack,     0.0);   // 1.5 ms floor
+            e.setParamNorm(para3::ParaEngine::Param::DecRel,     0.9);
+            e.setParamNorm(para3::ParaEngine::Param::Sustain,    1.0);
+            e.setLfoSync(sync);
+            std::vector<float> w(warm); e.process(w.data(), warm);  // arbitrary LFO phase
+            e.noteOn(60);  A.assign(M,0.f); e.process(A.data(), M);
+            e.noteOff(60);
+            std::vector<float> g(gap); e.process(g.data(), gap);
+            e.noteOn(60);  B.assign(M,0.f); e.process(B.data(), M);
+        };
+        auto envRMS = [&](const std::vector<float>& x){
+            std::vector<double> v; const int Wr=512, Hr=256;
+            for (int s=0; s+Wr<=(int)x.size(); s+=Hr){ double e=0;
+                for (int i=0;i<Wr;++i) e += (double)x[s+i]*x[s+i];
+                v.push_back(std::sqrt(e/Wr)); }
+            return v;
+        };
+        auto pear = [&](const std::vector<double>& a, const std::vector<double>& b){
+            const int n=(int)std::min(a.size(),b.size()); const int s0=6;
+            if (n-s0 < 8) return 0.0;
+            double ma=0,mb=0; const int m=n-s0;
+            for (int i=s0;i<n;++i){ ma+=a[i]; mb+=b[i]; } ma/=m; mb/=m;
+            double sab=0,saa=0,sbb=0;
+            for (int i=s0;i<n;++i){ const double da=a[i]-ma, db=b[i]-mb;
+                sab+=da*db; saa+=da*da; sbb+=db*db; }
+            return (saa>0&&sbb>0)? sab/std::sqrt(saa*sbb):0.0;
+        };
+        std::vector<float> A1,B1,A2,B2;
+        cap(true,  halfP, A1,B1);
+        cap(false, halfP, A2,B2);
+        const double rOn  = pear(envRMS(A1), envRMS(B1));
+        const double rOff = pear(envRMS(A2), envRMS(B2));
+        bool finite=true; for (float v:A1) if (!std::isfinite(v)) finite=false;
+        const double gD = maxAbsDelta(A1, 1, (int)A1.size());
+        const double sD = maxAbsDelta(A1, (int)(0.5*M), (int)(0.95*M));
+        const bool pass = finite && rOn >= 0.95 && rOff <= 0.80
+                          && rOn > rOff + 0.15
+                          && (sD <= 0 ? gD < 1e-3 : gD <= sD*2.0);
+        std::printf("\nT15 LFO trigger sync  (global LFO, phase reset on noteOn)\n");
+        std::printf("   env corr  sync ON  (>=0.95): %+.3f\n", rOn);
+        std::printf("   env corr  sync OFF (<=0.80): %+.3f\n", rOff);
+        std::printf("   onset |dx| glob/steady     : %.5f / %.5f  (no click)\n", gD, sD);
+        std::printf("   all-finite                 : %s\n", finite ? "yes" : "NO");
+        std::printf("   -> %s\n", pass ? "PASS" : "FAIL");
+        if (!pass) ++failures;
+    }
+
+    // ---- T16  DETUNE (VCO spread): neutral bit-identical, beat rises, ------
+    //  anti-alias re-measured at the worst case (top note detuned UP).
+    {
+        const double sr_ = sr;
+        const int warm = 4000, N = 48000;
+        auto cap = [&](double dN, bool touch, std::vector<float>& b){
+            para3::ParaEngine e; e.prepare(sr_, 4096);
+            e.setMode(para3::ParaAllocator::Mode::Unison);
+            e.setParamNorm(para3::ParaEngine::Param::Cutoff,  0.70);
+            e.setParamNorm(para3::ParaEngine::Param::Sustain, 1.0);
+            e.setParamNorm(para3::ParaEngine::Param::Attack,  0.0);
+            e.setParamNorm(para3::ParaEngine::Param::DecRel,  0.9);
+            if (touch) e.setParamNorm(para3::ParaEngine::Param::Detune, dN);
+            std::vector<float> w(warm); e.process(w.data(), warm);
+            e.noteOn(60); b.assign(N,0.f); e.process(b.data(), N);
+        };
+        // beat frequency from the AC of the windowed-RMS envelope
+        auto beatHz = [&](const std::vector<float>& x){
+            const int Wr=256, Hr=128; std::vector<double> env;
+            for (int s=0;s+Wr<=(int)x.size();s+=Hr){ double e=0;
+                for(int i=0;i<Wr;++i) e+=(double)x[s+i]*x[s+i];
+                env.push_back(std::sqrt(e/Wr)); }
+            int M=1; while(M<(int)env.size()) M<<=1; M>>=1;
+            double mean=0; for(int i=0;i<M;++i) mean+=env[i]; mean/=M;
+            std::vector<cd> sp(M);
+            for(int i=0;i<M;++i){ const double wn=0.5-0.5*std::cos(2.0*M_PI*i/(M-1));
+                sp[i]=cd((env[i]-mean)*wn,0.0); }
+            fft(sp);
+            const double envFs = sr_/Hr; double best=0; int bk=0;
+            for(int k=1;k<M/2;++k){ const double m=std::abs(sp[k]);
+                if(m>best){best=m;bk=k;} }
+            return bk*envFs/M;
+        };
+        std::vector<float> b0,bN,b25,b50,b100;
+        cap(0.0,false,b0); cap(0.0,true,bN);
+        cap(0.25,true,b25); cap(0.50,true,b50); cap(1.0,true,b100);
+        double neuMax=0; bool finite=true;
+        for(int i=0;i<N;++i){ neuMax=std::max(neuMax,(double)std::fabs(bN[i]-b0[i]));
+            if(!std::isfinite(b100[i])) finite=false; }
+        const double f25=beatHz(b25), f50=beatHz(b50), f100=beatHz(b100);
+        const bool mono = (f25 < f50) && (f50 < f100);
+        // anti-alias re-measure: single oscillator at the top note detuned UP
+        double aliasDb;
+        {
+            const int Na=32768;
+            const double upCents = 50.0;                       // = kDetuneCentsMax
+            const double fHi = para3::semitonesToHz(96.0)
+                               * std::pow(2.0, upCents/1200.0);
+            const double binHz = sr_/Na;
+            const int k = (int)std::round(fHi/binHz);
+            const double f0 = k*binHz;
+            para3::Oscillator osc; osc.prepare(sr_);
+            std::vector<double> e(Na);
+            for(int i=0;i<8192;++i) osc.process(f0);
+            for(int i=0;i<Na;++i)  e[i]=osc.process(f0);
+            std::vector<cd> sp(Na);
+            for(int i=0;i<Na;++i) sp[i]=cd(e[i],0.0);
+            fft(sp);
+            double fund=0,al=0;
+            for(int b=1;b<Na/2;++b){ const double m=std::abs(sp[b]);
+                if(b%k==0) fund=std::max(fund,m); else al=std::max(al,m); }
+            aliasDb = 20.0*std::log10((al+1e-300)/(fund+1e-300));
+        }
+        const bool pass = finite && neuMax==0.0 && mono && aliasDb <= -55.0;
+        std::printf("\nT16 DETUNE  (VCO spread, log domain)\n");
+        std::printf("   neutral(0) vs untouched : max|d| = %.3e  (== 0)\n", neuMax);
+        std::printf("   beat Hz @ .25/.5/1.0    : %.2f / %.2f / %.2f  (rising)\n",
+                    f25,f50,f100);
+        std::printf("   alias @ top note +50c   : %.1f dBc  (<= -55, T1 gate)\n",
+                    aliasDb);
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if(!pass) ++failures;
+    }
+
+    // ---- T17  PORTAMENTO (Modell A one-pole): neutral bit-identical, -------
+    //  pitch glides 60->72 with the set time constant; fast glide alias-safe.
+    {
+        const double sr_ = sr;
+        const double pN = 0.4;                                 // TAU = 0.2 s
+        const double tau = para3::ParaEngine::taper(
+            para3::ParaEngine::Param::Portamento, pN);
+        const int warm=4000, A=6000, B=36000;
+        auto run = [&](double pn, bool touch, std::vector<float>& buf){
+            para3::ParaEngine e; e.prepare(sr_, 4096);
+            e.setMode(para3::ParaAllocator::Mode::Unison);
+            e.setParamNorm(para3::ParaEngine::Param::Cutoff,  0.70);
+            e.setParamNorm(para3::ParaEngine::Param::Sustain, 1.0);
+            e.setParamNorm(para3::ParaEngine::Param::Attack,  0.0);
+            e.setParamNorm(para3::ParaEngine::Param::DecRel,  0.9);
+            if (touch) e.setParamNorm(para3::ParaEngine::Param::Portamento, pn);
+            std::vector<float> w(warm); e.process(w.data(), warm);
+            e.noteOn(60); std::vector<float> a(A); e.process(a.data(), A);
+            e.noteOn(72);                                       // legato glide
+            buf.assign(B,0.f); e.process(buf.data(), B);
+        };
+        std::vector<float> g, base, neu;
+        run(pN, true,  g);
+        run(0.0,false, base); run(0.0,true, neu);
+        double neuMax=0; bool finite=true;
+        for(int i=0;i<B;++i){ neuMax=std::max(neuMax,(double)std::fabs(neu[i]-base[i]));
+            if(!std::isfinite(g[i])) finite=false; }
+        // dominant-bin pitch track with parabolic interpolation (sub-bin)
+        auto peakHz=[&](const float* x,int n){
+            int M=1; while(M< n) M<<=1; M>>=1; if(M<256) return 0.0;
+            std::vector<cd> sp(M);
+            for(int i=0;i<M;++i){ const double wn=0.5-0.5*std::cos(2.0*M_PI*i/(M-1));
+                sp[i]=cd((double)x[i]*wn,0.0); }
+            fft(sp); double best=0; int bk=1;
+            for(int k=1;k<M/2;++k){ const double m=std::abs(sp[k]);
+                if(m>best){best=m;bk=k;} }
+            double db=0.0;                                  // parabolic refine
+            if(bk>1 && bk<M/2-1){
+                const double a=std::abs(sp[bk-1]), b=std::abs(sp[bk]),
+                             c=std::abs(sp[bk+1]);
+                const double den=(a-2.0*b+c);
+                if(std::fabs(den)>1e-18) db=0.5*(a-c)/den;
+            }
+            return (bk+db)*sr_/M;
+        };
+        const double f60=para3::semitonesToHz(60.0);
+        const double f72=para3::semitonesToHz(72.0);
+        const int Wp=1024, Hp=512;
+        double tHit=-1; const double targ=f60+0.632*(f72-f60);
+        for(int s=0;s+Wp<=B;s+=Hp){
+            const double pk=peakHz(&g[s],Wp);
+            if(pk>=targ){ tHit=(s+Wp*0.5)/sr_; break; }
+        }
+        const double pkStart=peakHz(&g[0],Wp);               // ~start (glide barely moved)
+        const double pkEnd  =peakHz(&g[B-4096],4096);         // settled, fine resolution
+        const bool glideOK = tHit>0 && std::fabs(tHit-tau)/tau < 0.45
+                             && pkStart < (f60+f72)*0.5       // started low
+                             && pkStart < pkEnd               // and rose
+                             && std::fabs(pkEnd - f72) < 15.0; // settled at target
+        // fast 4-oct glide must stay alias-safe (band-limited core)
+        double hiRatio;
+        {
+            para3::ParaEngine e; e.prepare(sr_,4096);
+            e.setMode(para3::ParaAllocator::Mode::Unison);
+            e.setParamNorm(para3::ParaEngine::Param::Cutoff, 0.9);
+            e.setParamNorm(para3::ParaEngine::Param::Sustain,1.0);
+            e.setParamNorm(para3::ParaEngine::Param::Portamento, 0.05); // ~25 ms
+            std::vector<float> w(warm); e.process(w.data(),warm);
+            e.noteOn(36); std::vector<float> a(2000); e.process(a.data(),2000);
+            e.noteOn(84); std::vector<float> sw(4096); e.process(sw.data(),4096);
+            std::vector<cd> sp(4096);
+            for(int i=0;i<4096;++i){ const double wn=0.5-0.5*std::cos(2.0*M_PI*i/4095);
+                sp[i]=cd((double)sw[i]*wn,0.0); }
+            fft(sp);
+            double tot=0,hi=0; const int cut=(int)(0.45*4096);
+            for(int k=1;k<2048;++k){ const double m=std::abs(sp[k]);
+                tot+=m; if(k>=cut) hi+=m; }
+            hiRatio = hi/(tot+1e-300);
+        }
+        const bool pass = finite && neuMax==0.0 && glideOK && hiRatio < 0.02;
+        std::printf("\nT17 PORTAMENTO  (Modell A one-pole glide)\n");
+        std::printf("   neutral(0) vs untouched : max|d| = %.3e  (== 0)\n", neuMax);
+        std::printf("   glide 60->72  peak start/end: %.1f / %.1f Hz\n",
+                    pkStart, pkEnd);
+        std::printf("   63%% time  meas/TAU       : %.3f / %.3f s\n", tHit, tau);
+        std::printf("   fast-glide HF ratio     : %.4f  (< 0.02, alias-safe)\n",
+                    hiRatio);
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if(!pass) ++failures;
+    }
+
+    // ---- T18  Motion full: round-trip, PEAK refusal, SMOOTH, 1-loop -------
+    //  auto-off, multi-lane independence. Cutoff lane is observable via
+    //  observedCutoffHz() (same methodology as T12).
+    {
+        const double sr_ = sr;
+        using PE = para3::ParaEngine;
+        auto mkPat = [](){ para3::Pattern p;
+            for (int s=0;s<16;++s){ p.steps[s].gate=true; p.steps[s].note=48; }
+            return p; };
+
+        // (a) round-trip: programmed Cutoff lane via the ziel-parametric API
+        double worst=0.0; int checked=0; bool finite=true;
+        {
+            PE e; e.prepare(sr_,4096);
+            e.setAttackMs(3); e.setDecRelMs(2000); e.setSustain(1.0);
+            para3::Controller c; c.prepare(e, sr_);
+            c.bank().seedBoth(mkPat());
+            double lane[16]; for (int s=0;s<16;++s) lane[s]=(double)s/15.0;
+            c.motionLaneCommit(0, lane);                 // pid 0 = Cutoff
+            c.commitEdit();
+            c.clock().setTempo(60.0,4); c.clock().start();
+            const int total=12000*16*2; std::vector<float> one(1);
+            int prev=c.currentStep(); double last=e.observedCutoffHz();
+            for (int i=0;i<total;++i){
+                c.render(one.data(),1);
+                if(!std::isfinite(one[0])) finite=false;
+                const int cs=c.currentStep();
+                if(cs!=prev){
+                    if(prev>=0 && i>24000){
+                        const double want=PE::taper(PE::Param::Cutoff, lane[prev]);
+                        worst=std::max(worst,std::fabs(last-want)/want); ++checked;
+                    }
+                    prev=cs;
+                }
+                last=e.observedCutoffHz();
+            }
+        }
+        const bool rtOK = finite && checked>16 && worst<0.02;
+
+        // (b) PEAK refusal observable
+        long rej0, rej1;
+        {
+            PE e; e.prepare(sr_,4096); para3::Controller c; c.prepare(e,sr_);
+            rej0=c.motionRejects();
+            double v16[16]={0}; c.motionLaneCommit(1, v16);   // pid 1 = Resonance
+            c.motionSet(1, 3, 0.9);
+            rej1=c.motionRejects();
+        }
+        const bool peakRefused = (rej1 >= rej0+2);
+
+        // (c) SMOOTH on != off : within-step variation of observed cutoff
+        auto midStepDelta=[&](bool smooth){
+            PE e; e.prepare(sr_,4096);
+            e.setAttackMs(3); e.setDecRelMs(2000); e.setSustain(1.0);
+            para3::Controller c; c.prepare(e,sr_);
+            c.bank().seedBoth(mkPat());
+            double lane[16]; for(int s=0;s<16;++s) lane[s]=(s&1)?0.8:0.2;
+            c.motionLaneCommit(0,lane); c.commitEdit();
+            c.motionSmooth(smooth);
+            c.clock().setTempo(60.0,4); c.clock().start();
+            std::vector<float> one(1);
+            // advance to a mid-pattern step, then sample early vs late in a step
+            const int warm=12000*8; for(int i=0;i<warm;++i) c.render(one.data(),1);
+            for(int i=0;i<2000;++i) c.render(one.data(),1);   // settle into step
+            const double early=e.observedCutoffHz();
+            for(int i=0;i<8000;++i) c.render(one.data(),1);    // later in same step
+            const double late=e.observedCutoffHz();
+            return std::fabs(late-early);
+        };
+        const double dOff=midStepDelta(false), dOn=midStepDelta(true);
+        const bool smoothOK = dOn > dOff*4.0 + 5.0;          // on ramps, off flat
+
+        // (d) one-loop auto-deactivation: loop1 feed A, loop2 feed B; if
+        //     capture auto-stops after 1 loop, playback in loop2 reflects A.
+        bool autoOff=false;
+        {
+            PE e; e.prepare(sr_,4096);
+            e.setAttackMs(3); e.setDecRelMs(2000); e.setSustain(1.0);
+            para3::Controller c; c.prepare(e,sr_);
+            c.bank().seedBoth(mkPat());
+            c.clock().setTempo(60.0,4); c.clock().start();
+            const int S=12000; std::vector<float> one(1);
+            c.motionRec(0,true);                              // capture Cutoff
+            const double A=0.30, B=0.70;
+            // loop 1: feed A every sample
+            for(int i=0;i<S*16;++i){ c.motionVal(0,A); c.render(one.data(),1); }
+            // loop 2: feed B; if auto-off, lane keeps A -> observed ~ taper(A)
+            double obs=0; int cnt=0;
+            for(int i=0;i<S*16;++i){ c.motionVal(0,B); c.render(one.data(),1);
+                if(i>S && i<S*15){ obs+=e.observedCutoffHz(); ++cnt; } }
+            const double mean=obs/std::max(1,cnt);
+            const double wantA=PE::taper(PE::Param::Cutoff,A);
+            const double wantB=PE::taper(PE::Param::Cutoff,B);
+            autoOff = std::fabs(mean-wantA) < std::fabs(mean-wantB);
+        }
+
+        // (e) multi-lane independence: Cutoff round-trip identical with a
+        //     second (Drive) lane also present.
+        double worst2=0.0; int checked2=0;
+        {
+            PE e; e.prepare(sr_,4096);
+            e.setAttackMs(3); e.setDecRelMs(2000); e.setSustain(1.0);
+            para3::Controller c; c.prepare(e,sr_);
+            c.bank().seedBoth(mkPat());
+            double cl[16],dl[16];
+            for(int s=0;s<16;++s){ cl[s]=(double)s/15.0; dl[s]=1.0-(double)s/15.0; }
+            c.motionLaneCommit(0,cl); c.motionLaneCommit(2,dl);  // Cutoff + Drive
+            c.commitEdit();
+            c.clock().setTempo(60.0,4); c.clock().start();
+            const int total=12000*16*2; std::vector<float> one(1);
+            int prev=c.currentStep(); double last=e.observedCutoffHz();
+            for(int i=0;i<total;++i){ c.render(one.data(),1);
+                const int cs=c.currentStep();
+                if(cs!=prev){ if(prev>=0&&i>24000){
+                    const double want=PE::taper(PE::Param::Cutoff,cl[prev]);
+                    worst2=std::max(worst2,std::fabs(last-want)/want); ++checked2; }
+                    prev=cs; }
+                last=e.observedCutoffHz(); }
+        }
+        const bool multiOK = checked2>16 && worst2<0.02;
+
+        const bool pass = rtOK && peakRefused && smoothOK && autoOff && multiOK;
+        std::printf("\nT18 Motion full  (multi-lane, SMOOTH, 1-loop, refusal)\n");
+        std::printf("   round-trip worst err     : %.4f  (<2%%, %d steps)\n",
+                    worst, checked);
+        std::printf("   PEAK refused (rejects)   : %ld -> %ld  (%s)\n",
+                    rej0, rej1, peakRefused?"refused":"NOT");
+        std::printf("   SMOOTH within-step  off/on: %.1f / %.1f Hz\n", dOff, dOn);
+        std::printf("   1-loop auto-off (loop2~A): %s\n", autoOff?"yes":"NO");
+        std::printf("   multi-lane indep worst   : %.4f  (<2%%, %d)\n",
+                    worst2, checked2);
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if(!pass) ++failures;
+    }
+
+    // ---- T19  STEP TRIGGER: held note re-attacked every step --------------
+    {
+        const double sr_ = sr; using PE=para3::ParaEngine;
+        auto run=[&](bool st){
+            PE e; e.prepare(sr_,4096);
+            e.setParamNorm(PE::Param::Cutoff,0.7);
+            e.setParamNorm(PE::Param::Attack,0.0);     // 1.5 ms
+            e.setParamNorm(PE::Param::DecRel,0.05);    // fast decay so attacks separate
+            e.setParamNorm(PE::Param::Sustain,0.0);
+            para3::Controller c; c.prepare(e,sr_);
+            para3::Pattern p;
+            for(int s=0;s<16;++s){ p.steps[s].gate=(s==0); p.steps[s].note=48; }
+            c.bank().seedBoth(p);
+            c.setStepTrigger(st);
+            c.clock().setTempo(120.0,4); c.clock().start();
+            const int total=6000*16*2; std::vector<float> x(total);
+            c.render(x.data(),total);
+            // count attack onsets = rising edges of the amplitude envelope
+            std::vector<double> env; const int W=256,H=128;
+            for(int s=0;s+W<=total;s+=H){ double en=0;
+                for(int i=0;i<W;++i) en+=(double)x[s+i]*x[s+i];
+                env.push_back(std::sqrt(en/W)); }
+            double mx=0; for(double v:env) mx=std::max(mx,v);
+            int onsets=0; bool below=true;
+            for(double v:env){ if(below && v>0.30*mx){onsets++;below=false;}
+                               else if(!below && v<0.10*mx) below=true; }
+            return onsets;
+        };
+        const int offN=run(false), onN=run(true);
+        const bool pass = offN<=2 && onN>=12;
+        std::printf("\nT19 STEP TRIGGER  (1 gated step, note held)\n");
+        std::printf("   EG onsets  off / on     : %d / %d  (off<=2, on>=12)\n",
+                    offN,onN);
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if(!pass) ++failures;
+    }
+
+    // ---- T20  Tempo division: step interval = base * DIV, jitter 0 --------
+    {
+        const double sr_ = sr; using PE=para3::ParaEngine;
+        auto interval=[&](int div){
+            PE e; e.prepare(sr_,4096); para3::Controller c; c.prepare(e,sr_);
+            para3::Pattern p; for(int s=0;s<16;++s){p.steps[s].gate=true;p.steps[s].note=48;}
+            c.bank().seedBoth(p);
+            c.setTempoDiv(div);
+            c.clock().setTempo(120.0,4); c.clock().start();
+            std::vector<float> one(1); int prev=c.currentStep();
+            std::vector<int> bounds; 
+            for(int i=0;i<2000000 && (int)bounds.size()<10;++i){
+                c.render(one.data(),1);
+                const int cs=c.currentStep();
+                if(cs!=prev){ bounds.push_back(i); prev=cs; }
+            }
+            // intervals between consecutive boundaries; check constant (jitter)
+            long mn=1<<30,mx=0,sum=0;int k=0;
+            for(size_t b=2;b<bounds.size();++b){ long d=bounds[b]-bounds[b-1];
+                mn=std::min(mn,d);mx=std::max(mx,d);sum+=d;++k; }
+            return std::array<double,3>{ (double)sum/std::max(1,k),
+                                         (double)(mx-mn), 0.0 };
+        };
+        const double base=(60.0/120.0)/4.0*sr_;     // 6000 samples @120/16th
+        auto i1=interval(1), i2=interval(2), i4=interval(4);
+        const bool pass =
+            std::fabs(i1[0]-base)   < 2.0 && i1[1] < 2.0 &&
+            std::fabs(i2[0]-base*2) < 2.0 && i2[1] < 2.0 &&
+            std::fabs(i4[0]-base*4) < 2.0 && i4[1] < 2.0;
+        std::printf("\nT20 Tempo division  (1/1, 1/2, 1/4)\n");
+        std::printf("   mean step samples 1/2/4 : %.1f / %.1f / %.1f\n",
+                    i1[0],i2[0],i4[0]);
+        std::printf("   expected (base=%.0f)     : %.0f / %.0f / %.0f\n",
+                    base,base,base*2,base*4);
+        std::printf("   max jitter 1/2/4        : %.1f / %.1f / %.1f  (==0)\n",
+                    i1[1],i2[1],i4[1]);
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if(!pass) ++failures;
+    }
+
+    // ---- T21  Active step: disabled step => no note (structural) ----------
+    {
+        const double sr_ = sr; using PE=para3::ParaEngine;
+        auto energyStepsCount=[&](bool active5,int& stepsSeen){
+            PE e; e.prepare(sr_,4096);
+            e.setParamNorm(PE::Param::Cutoff,0.7);
+            e.setParamNorm(PE::Param::Attack,0.0);
+            e.setParamNorm(PE::Param::DecRel,0.2);
+            e.setParamNorm(PE::Param::Sustain,0.0);
+            para3::Controller c; c.prepare(e,sr_);
+            para3::Pattern p;                      // ONLY step 5 gated
+            for(int s=0;s<16;++s){ p.steps[s].gate=(s==5); p.steps[s].note=48;
+                                   p.steps[s].active=true; }
+            if(!active5) p.steps[5].active=false;  // disable the only gated step
+            c.bank().seedBoth(p);
+            c.clock().setTempo(120.0,4); c.clock().start();
+            const int total=6000*16*2; std::vector<float> x(total);
+            int prev=c.currentStep(); std::set<int> seen;
+            std::vector<float> one(1);
+            for(int i=0;i<total;++i){ c.render(one.data(),1); x[i]=one[0];
+                const int cs=c.currentStep(); if(cs!=prev){ seen.insert(cs); prev=cs; } }
+            stepsSeen=(int)seen.size();
+            double en=0; for(float v:x) en+=(double)v*v; return std::sqrt(en/total);
+        };
+        int seenA=0, seenI=0;
+        const double eAct=energyStepsCount(true,  seenA);
+        const double eIna=energyStepsCount(false, seenI);
+        const bool pass = eAct>1e-4 && eIna<eAct*0.02
+                          && seenA>=15 && seenI>=15;   // sequencer still counts
+        std::printf("\nT21 Active step  (only step 5 gated)\n");
+        std::printf("   RMS active / inactive   : %.3e / %.3e\n", eAct,eIna);
+        std::printf("   distinct steps seen     : %d / %d  (seq still counts 16)\n",
+                    seenA,seenI);
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if(!pass) ++failures;
+    }
+
+    // ---- T22  Metronome: band-limited tick + delay bypass -----------------
+    {
+        const double sr_ = sr; using PE=para3::ParaEngine;
+        // (i) isolated tick spectrum: no notes, metro on, sequencer running
+        std::vector<float> x; double tickEnergy=0;
+        {
+            PE e; e.prepare(sr_,4096);
+            para3::Controller c; c.prepare(e,sr_);
+            para3::Pattern p; for(int s=0;s<16;++s){p.steps[s].gate=false;
+                p.steps[s].active=true;}
+            c.bank().seedBoth(p);
+            c.setMetro(true);
+            c.clock().setTempo(120.0,4); c.clock().start();
+            const int total=48000; x.assign(total,0.f);
+            c.render(x.data(),total);
+            for(float v:x){ tickEnergy+=(double)v*v; }
+            tickEnergy=std::sqrt(tickEnergy/total);
+        }
+        // FFT a window containing one tick; energy must concentrate < 3 kHz,
+        // onset/offset must be ~0 (gated => band-limited).
+        int t0=-1; for(int i=1;i<(int)x.size();++i)
+            if(std::fabs(x[i])>1e-3){ t0=i; break; }
+        bool finite=true; for(float v:x) if(!std::isfinite(v)) finite=false;
+        double loBand=0,hiBand=0,onset=1,offset=1;
+        if(t0>=0 && t0+2048<(int)x.size()){
+            std::vector<cd> sp(2048);
+            for(int i=0;i<2048;++i){ const double wn=0.5-0.5*std::cos(2.0*M_PI*i/2047);
+                sp[i]=cd((double)x[t0+i]*wn,0.0); }
+            fft(sp);
+            for(int k=1;k<1024;++k){ const double f=k*sr_/2048,m=std::abs(sp[k]);
+                if(f<3000.0) loBand+=m; else hiBand+=m; }
+            onset=std::fabs(x[std::max(0,t0-1)]);
+            // find tick end (decays back to ~0 within ~60 ms)
+            int te=t0; for(int i=t0;i<t0+3000 && i<(int)x.size();++i)
+                if(std::fabs(x[i])>5e-4) te=i;
+            offset=std::fabs(x[std::min((int)x.size()-1,te+1)]);
+        }
+        const bool specOK = finite && t0>=0 && tickEnergy>1e-5
+                            && hiBand < loBand*0.25
+                            && onset < 5e-3 && offset < 5e-3;
+        // (ii) delay bypass when metro on
+        auto tailEnergy=[&](bool metro){
+            PE e; e.prepare(sr_,4096);
+            e.setParamNorm(PE::Param::Cutoff,0.7);
+            e.setParamNorm(PE::Param::Sustain,0.0);
+            e.setParamNorm(PE::Param::DecRel,0.05);
+            e.setParamNorm(PE::Param::DelayMix,0.9);
+            e.setParamNorm(PE::Param::DelayFeedback,0.7);
+            e.setParamNorm(PE::Param::DelayTime,0.3);
+            para3::Controller c; c.prepare(e,sr_);
+            para3::Pattern p; for(int s=0;s<16;++s){p.steps[s].gate=(s==0);
+                p.steps[s].note=48;p.steps[s].active=true;}
+            c.bank().seedBoth(p);
+            c.setMetro(metro);
+            c.clock().setTempo(120.0,4); c.clock().start();
+            const int total=40000; std::vector<float> y(total);
+            c.render(y.data(),total);
+            // window AFTER the note decays and BEFORE the next metro tick
+            // (step 4 @ 24000): metro-off shows the delay echo here, metro-on
+            // (delay bypassed) is silent — isolates the echo from the ticks.
+            double en=0; for(int i=12000;i<23000;++i) en+=(double)y[i]*y[i];
+            return std::sqrt(en/11000);
+        };
+        const double tOff=tailEnergy(false), tOn=tailEnergy(true);
+        const bool bypassOK = tOn < tOff*0.5;     // delay tail suppressed
+        const bool pass = specOK && bypassOK;
+        std::printf("\nT22 Metronome  (band-limited tick, delay bypass)\n");
+        std::printf("   tick lo(<3k)/hi energy  : %.3e / %.3e  (hi<<lo)\n",
+                    loBand,hiBand);
+        std::printf("   tick onset / offset     : %.2e / %.2e  (~0, gated)\n",
+                    onset,offset);
+        std::printf("   delay tail  off / on    : %.3e / %.3e  (on suppressed)\n",
+                    tOff,tOn);
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if(!pass) ++failures;
+    }
+
+    // ---- T23  FLUX: sample-accurate, OFF-before-ON, wrap, empty ----------
+    {
+        const double sr_ = sr; using PE=para3::ParaEngine;
+        const unsigned int L = 48000;                 // 1 s loop
+        auto envOnsets=[&](const std::vector<float>& x){
+            std::vector<double> e; const int W=128,H=64;
+            for(int s=0;s+W<=(int)x.size();s+=H){ double en=0;
+                for(int i=0;i<W;++i) en+=(double)x[s+i]*x[s+i];
+                e.push_back(std::sqrt(en/W)); }
+            double mx=0; for(double v:e) mx=std::max(mx,v);
+            std::vector<int> on; bool below=true;
+            for(size_t k=0;k<e.size();++k){
+                if(below && e[k]>0.30*mx){ on.push_back((int)(k*H)); below=false; }
+                else if(!below && e[k]<0.10*mx) below=true; }
+            return on;
+        };
+
+        auto nearOnset=[&](const std::vector<int>& on,int t,int tol){
+            for(int o:on){ if(std::abs(o-t)<tol) return o; }
+            return -1;
+        };
+
+        // (a) record at irregular sample times -> commit -> exact playback
+        bool jitterOK=false; int o1=-1,o2=-1;
+        {
+            PE e; e.prepare(sr_,4096);
+            e.setParamNorm(PE::Param::Cutoff,0.7);
+            e.setParamNorm(PE::Param::Attack,0.0);
+            e.setParamNorm(PE::Param::DecRel,0.04);
+            e.setParamNorm(PE::Param::Sustain,0.0);
+            para3::Controller c; c.prepare(e,sr_);
+            c.setFluxMode(true); c.fluxSetLoopLen(L); c.fluxRec(true);
+            const int O1=1234, O2=20777;               // irregular ON offsets
+            std::vector<float> one(1);
+            for(unsigned int i=0;i<L;++i){
+                if((int)i==O1){ c.fluxNote(48,true);  }
+                if((int)i==O1+3000){ c.fluxNote(48,false); }
+                if((int)i==O2){ c.fluxNote(48,true);  }
+                if((int)i==O2+3000){ c.fluxNote(48,false); }
+                c.render(one.data(),1);
+            }
+            c.fluxRec(false); c.fluxCommit();
+            std::vector<float> y(L*2);
+            for(unsigned int i=0;i<L*2;++i) c.render(&y[i],1);
+            auto on=envOnsets(y);
+            o1=nearOnset(on,O1,400);
+            o2=nearOnset(on,O2,400);
+            const int o1b=nearOnset(on,O1+(int)L,400);
+            const int o2b=nearOnset(on,O2+(int)L,400);
+            // sample-accurate => loop-2 onsets are exactly L after loop-1
+            jitterOK = o1>=0 && o2>=0 && o1b>=0 && o2b>=0
+                       && std::abs((o1b-o1)-(int)L)<130
+                       && std::abs((o2b-o2)-(int)L)<130;
+        }
+
+        // (b) OFF-before-ON at the same offset => retrigger (attack), not kill
+        bool offBeforeOn=false;
+        {
+            PE e; e.prepare(sr_,4096);
+            e.setParamNorm(PE::Param::Cutoff,0.7);
+            e.setParamNorm(PE::Param::Attack,0.0);
+            e.setParamNorm(PE::Param::DecRel,0.12);    // decays well before 24000
+            e.setParamNorm(PE::Param::Sustain,0.0);
+            para3::Controller c; c.prepare(e,sr_);
+            para3::FluxPattern fp; fp.loopLen=L; fp.count=3;
+            fp.ev[0]={ (unsigned)0,     0, 48 };       // ON  A @0
+            fp.ev[1]={ (unsigned)24000, 1, 48 };       // OFF A @24000
+            fp.ev[2]={ (unsigned)24000, 0, 48 };       // ON  A @24000 (same off)
+            c.fluxBank().seedBoth(fp);
+            c.setFluxMode(true);
+            std::vector<float> y(40000);
+            for(int i=0;i<40000;++i) c.render(&y[i],1);
+            auto on=envOnsets(y);
+            // OFF-before-ON => a fresh full onset near 24000 (note retriggered
+            // and continues). ON-before-OFF would leave alloc empty (silent).
+            offBeforeOn = nearOnset(on,24000,500) >= 0;
+        }
+
+        // (c) empty pattern => silence
+        double emptyMax=0;
+        {
+            PE e; e.prepare(sr_,4096);
+            para3::Controller c; c.prepare(e,sr_);
+            para3::FluxPattern fp; fp.loopLen=L; fp.count=0;
+            c.fluxBank().seedBoth(fp); c.setFluxMode(true);
+            std::vector<float> y(20000);
+            for(int i=0;i<20000;++i) c.render(&y[i],1);
+            for(float v:y) emptyMax=std::max(emptyMax,(double)std::fabs(v));
+        }
+
+        // (d) loop-wrap click-free (held note retriggers at wrap; T2 metric)
+        bool wrapOK=false;
+        {
+            PE e; e.prepare(sr_,4096);
+            e.setParamNorm(PE::Param::Cutoff,0.7);
+            e.setParamNorm(PE::Param::Attack,0.0);
+            e.setParamNorm(PE::Param::DecRel,0.9);
+            e.setParamNorm(PE::Param::Sustain,0.9);
+            para3::Controller c; c.prepare(e,sr_);
+            const unsigned int Lw=12000;
+            para3::FluxPattern fp; fp.loopLen=Lw; fp.count=1;
+            fp.ev[0]={ (unsigned)10, 0, 48 };          // ON near start, no OFF
+            c.fluxBank().seedBoth(fp); c.setFluxMode(true);
+            const int total=Lw*4; std::vector<float> y(total);
+            for(int i=0;i<total;++i) c.render(&y[i],1);
+            bool fin=true; for(float v:y) if(!std::isfinite(v)) fin=false;
+            const double gD=maxAbsDelta(y,1,total);
+            const double sD=maxAbsDelta(y,(int)(Lw*1.4),(int)(Lw*1.9));
+            wrapOK = fin && (sD<=0 ? gD<1e-3 : gD <= sD*1.8);
+        }
+
+        const bool pass = jitterOK && offBeforeOn && emptyMax<1e-6 && wrapOK;
+        std::printf("\nT23 FLUX  (sample-accurate event sequence)\n");
+        std::printf("   record/replay onset jitter: %s (o1=%d o2=%d, loop exact)\n",
+                    jitterOK?"0 (<=win)":"BAD", o1,o2);
+        std::printf("   OFF-before-ON retrigger   : %s\n", offBeforeOn?"yes":"NO");
+        std::printf("   empty pattern max|x|      : %.2e  (silence)\n", emptyMax);
+        std::printf("   loop-wrap click-free      : %s\n", wrapOK?"yes":"NO");
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if(!pass) ++failures;
+    }
+
+    // ---- T24  Master VOLUME: unity bit-identical, 0.5 = -6 dB, 0 silent --
+    {
+        const double sr_ = sr; using PE=para3::ParaEngine;
+        const int warm=2000,N=24000;
+        auto cap=[&](double vN,bool touch,std::vector<float>& b){
+            PE e; e.prepare(sr_,4096);
+            e.setParamNorm(PE::Param::Cutoff,0.7);
+            e.setParamNorm(PE::Param::Sustain,0.9);
+            e.setParamNorm(PE::Param::Attack,0.0);
+            if(touch) e.setParamNorm(PE::Param::Volume,vN);
+            std::vector<float> w(warm); e.process(w.data(),warm);
+            e.noteOn(57); b.assign(N,0.f); e.process(b.data(),N);
+        };
+        std::vector<float> bU,bF,bH,bZ;
+        cap(0,false,bU); cap(1.0,true,bF); cap(0.5,true,bH); cap(0.0,true,bZ);
+        double neu=0,rmsF=0,rmsH=0,mxZ=0; bool finite=true;
+        for(int i=0;i<N;++i){ neu=std::max(neu,(double)std::fabs(bF[i]-bU[i]));
+            rmsF+=(double)bF[i]*bF[i]; rmsH+=(double)bH[i]*bH[i];
+            mxZ=std::max(mxZ,(double)std::fabs(bZ[i]));
+            if(!std::isfinite(bH[i])) finite=false; }
+        rmsF=std::sqrt(rmsF/N); rmsH=std::sqrt(rmsH/N);
+        const double dB=20.0*std::log10((rmsH+1e-300)/(rmsF+1e-300));
+        const bool pass = finite && neu==0.0
+                          && std::fabs(dB-(-6.0206)) < 0.1 && mxZ < 1e-6;
+        std::printf("\nT24 Master VOLUME  (post-VCA gain)\n");
+        std::printf("   unity(1.0) vs untouched : max|d| = %.3e  (== 0)\n", neu);
+        std::printf("   0.5 level               : %.3f dB  (~ -6.02)\n", dB);
+        std::printf("   0.0 max|x|              : %.2e  (silent)\n", mxZ);
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if(!pass) ++failures;
+    }
+
+    // ---- T25  OCTAVE: 0 bit-identical, +1 doubles f, +2 alias-safe -------
+    {
+        const double sr_ = sr; using PE=para3::ParaEngine;
+        const int warm=2000,N=16384;
+        auto cap=[&](int oct,bool touch,std::vector<float>& b){
+            PE e; e.prepare(sr_,4096);
+            e.setParamNorm(PE::Param::Cutoff,0.85);
+            e.setParamNorm(PE::Param::Sustain,1.0);
+            e.setParamNorm(PE::Param::Attack,0.0);
+            if(touch) e.setOctave(oct);
+            std::vector<float> w(warm); e.process(w.data(),warm);
+            e.noteOn(48); b.assign(N,0.f); e.process(b.data(),N);
+        };
+        auto peakHz=[&](const std::vector<float>& x){
+            const int M=16384; std::vector<cd> sp(M);
+            for(int i=0;i<M;++i){ const double wn=0.5-0.5*std::cos(2.0*M_PI*i/(M-1));
+                sp[i]=cd((double)x[i]*wn,0.0); }
+            fft(sp); double best=0;int bk=1;
+            for(int k=1;k<M/2;++k){ const double m=std::abs(sp[k]);
+                if(m>best){best=m;bk=k;} }
+            return bk*sr_/M;
+        };
+        std::vector<float> b0u,b0,b1;
+        cap(0,false,b0u); cap(0,true,b0); cap(1,true,b1);
+        double neu=0; for(int i=0;i<N;++i)
+            neu=std::max(neu,(double)std::fabs(b0[i]-b0u[i]));
+        const double f0=peakHz(b0), f1=peakHz(b1);
+        const double ratio=f1/f0;
+        // +2: worst-case alias of the single oscillator at the shifted-up freq
+        const double fHi=para3::semitonesToHz(48.0+24.0);
+        double aliasDb;
+        { const int Na=32768; const double binHz=sr_/Na;
+          const int k=(int)std::round(fHi/binHz); const double ff=k*binHz;
+          para3::Oscillator o; o.prepare(sr_);
+          std::vector<double> e(Na);
+          for(int i=0;i<8192;++i) o.process(ff);
+          for(int i=0;i<Na;++i)  e[i]=o.process(ff);
+          std::vector<cd> sp(Na); for(int i=0;i<Na;++i) sp[i]=cd(e[i],0.0);
+          fft(sp); double fund=0,al=0;
+          for(int b=1;b<Na/2;++b){ const double m=std::abs(sp[b]);
+              if(b%k==0) fund=std::max(fund,m); else al=std::max(al,m); }
+          aliasDb=20.0*std::log10((al+1e-300)/(fund+1e-300)); }
+        const bool pass = neu==0.0 && std::fabs(ratio-2.0) < 0.03
+                          && aliasDb <= -55.0;
+        std::printf("\nT25 OCTAVE  (semitone shift)\n");
+        std::printf("   oct 0 vs untouched      : max|d| = %.3e  (== 0)\n", neu);
+        std::printf("   f(+1)/f(0)              : %.4f  (= 2.000)\n", ratio);
+        std::printf("   alias @ +2 top          : %.1f dBc  (<= -55)\n", aliasDb);
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if(!pass) ++failures;
+    }
+
+    // ---- T26  Fixed velocity: repeated note-ons => identical peak --------
+    {
+        const double sr_ = sr; using PE=para3::ParaEngine;
+        auto peak=[&](){
+            PE e; e.prepare(sr_,4096);
+            e.setParamNorm(PE::Param::Cutoff,0.8);
+            e.setParamNorm(PE::Param::Sustain,0.7);
+            e.setParamNorm(PE::Param::Attack,0.0);
+            std::vector<float> w(2000); e.process(w.data(),2000);
+            e.noteOn(57); std::vector<float> y(16000); e.process(y.data(),16000);
+            double p=0; for(float v:y) p=std::max(p,(double)std::fabs(v));
+            return p;
+        };
+        const double p1=peak(), p2=peak(), p3=peak();
+        const double spread=std::max({p1,p2,p3})-std::min({p1,p2,p3});
+        const bool pass = spread < 1e-9 && p1 > 1e-3;
+        std::printf("\nT26 Fixed velocity  (deterministic, no velocity)\n");
+        std::printf("   peaks                   : %.8f %.8f %.8f\n", p1,p2,p3);
+        std::printf("   spread                  : %.2e  (== 0)\n", spread);
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if(!pass) ++failures;
     }
 
     std::printf("\n==================================================\n");

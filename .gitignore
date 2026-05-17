@@ -12,3 +12,9 @@ wasm-bridge/parity_native.f32
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Transient handover archives (engine-agent drops; tracked content is in
+# changed/*.cpp etc., extracted under /tmp during the apply step)
+files.zip
+*.zip
+

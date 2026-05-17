@@ -562,6 +562,16 @@ public:
         reset();
     }
     void reset() noexcept { phase_ = 0.0; slew_ = 0.0; }
+    // E1.2 LFO trigger sync: restart the cycle EXACTLY at phi0_ (timing is
+    // faithful to the hardware — the Volca LFO genuinely jumps its phase on
+    // note trigger). Value continuity is carried by the LFO's OWN intrinsic
+    // edge band-limiter (slew_, part of the original design and applied to
+    // every waveform transition) — this is NOT added smoothing to mask the
+    // jump; the phase/timing reset is exact. No hard click (proven by T15).
+    void resetPhase() noexcept { phase_ = phi0_; }
+    void setSyncStartPhase(double p) noexcept {          // CALIB(E8) per shape
+        p -= std::floor(p); phi0_ = clamp(p, 0.0, 1.0);
+    }
     void setRateHz(double hz) noexcept { inc_ = clamp(hz, 0.01, 200.0) / sr_; }
     void setShape(Shape s) noexcept { shape_ = s; }
     void setSlewMs(double ms) noexcept {
@@ -585,6 +595,7 @@ public:
 private:
     double sr_ = 48000.0, phase_ = 0.0, inc_ = 0.0;
     double slew_ = 0.0, slewC_ = 0.0;
+    double phi0_ = 0.0;                                   // CALIB(E8) trigger-sync start phase
     Shape  shape_ = Shape::Triangle;
 };
 
@@ -648,6 +659,36 @@ private:
     RampParam time_;
 };
 
+// E4.4 Metronome tick — enveloped sine: short raised onset then exp decay,
+// hard-gated to exactly 0 at both ends => inherently band-limited (no
+// discontinuity), proven by FFT in T22. No allocation; preallocated state.
+class MetroTick {
+public:
+    void prepare(double sr) noexcept { sr_ = sr; active_ = false; n_ = 0; }
+    void trigger(bool accent) noexcept {
+        f_ = accent ? kAccentHz : kClickHz;     // CALIB(E8)
+        n_ = 0; active_ = true;
+    }
+    inline float tick() noexcept {
+        if (!active_) return 0.0f;
+        const double atk = kAtkMs * 0.001 * sr_;
+        const double dec = kTauMs * 0.001 * sr_;
+        double env;
+        if (n_ < atk) env = (double)n_ / atk;             // 0 -> 1 (starts at 0)
+        else          env = std::exp(-(n_ - atk) / dec);  // exp decay
+        const double y = env * std::sin(2.0 * M_PI * f_ * n_ / sr_);
+        if (++n_ > atk && env < 1.0e-4) { active_ = false; } // ends ~0
+        return (float)y;
+    }
+private:
+    static constexpr double kClickHz  = 1000.0;   // CALIB(E8)
+    static constexpr double kAccentHz = 1500.0;   // CALIB(E8)
+    static constexpr double kAtkMs    = 0.5;      // CALIB(E8) onset (starts at 0)
+    static constexpr double kTauMs    = 6.0;      // CALIB(E8) decay
+    double sr_ = 48000.0, f_ = 1000.0;
+    long   n_ = 0;
+    bool   active_ = false;
+};
 
 class ParaEngine {
 public:
@@ -673,7 +714,15 @@ public:
         lfoCut_.prepare  (sampleRate, 15.0);
         lfoPitch_.snap(0.0);                            // neutral default
         lfoCut_.snap(0.0);                              // neutral default
+        egInt_.prepare(sampleRate, 15.0);               // E1.1 depth via funnel
+        egInt_.snap(0.0);                               // E1.1 neutral => bit-identical
+        detune_.prepare(sampleRate, 15.0);              // E2.1 spread via funnel
+        detune_.snap(0.0);                              // E2.1 neutral => bit-identical
+        for (int i = 0; i < 3; ++i) { glide_[i] = 0.0; gtgt_[i] = 0.0; }
         delay_.prepare(sampleRate, 2.0);                // 2 s buffer (prepare-only)
+        metro_.prepare(sampleRate);                     // E4.4
+        vol_.prepare(sampleRate, 15.0);                 // E6.1 master gain (smoothed)
+        vol_.snap(1.0);                                 // E6.1 unity => bit-identical
         delay_.setMix(0.0);                             // neutral default
         delay_.setFeedback(0.0);
         reset();
@@ -686,9 +735,14 @@ public:
     }
 
     void setMode(ParaAllocator::Mode m) noexcept { alloc_.setMode(m); }
-    void noteOn(int note)  noexcept { alloc_.noteOn(note);  refresh(); env_.gateOn();  gateHeld_ = true; }
+    void noteOn(int note)  noexcept {
+        alloc_.noteOn(note + octShift_); refresh();    // E6.2 octave
+        if (syncOn_) lfo_.resetPhase();           // E1.2 GLOBAL LFO (Anhang D.1), before gate
+        env_.gateOn();
+        gateHeld_ = true;
+    }
     void noteOff(int note) noexcept {
-        alloc_.noteOff(note); refresh();
+        alloc_.noteOff(note + octShift_); refresh();   // E6.2 octave (same shift)
         if (!alloc_.anyHeld()) { env_.gateOff(); gateHeld_ = false; }
     }
     void setCutoffHz(double hz) noexcept { cutoff_.setTarget(hz); }
@@ -704,6 +758,19 @@ public:
     void setDelayTimeMs(double ms)    noexcept { delay_.setTimeMs(ms); }
     void setDelayFeedback(double f)   noexcept { delay_.setFeedback(f); }
     void setDelayMix(double m)        noexcept { delay_.setMix(m);     }
+    void setEgCutDepth(double oct)    noexcept { egInt_.setTarget(oct); } // E1.1 bipolar octaves (smoothed)
+    void setLfoSync(bool on)          noexcept { syncOn_ = on; }          // E1.2
+    void retrigger()                  noexcept { env_.gateOn(); }         // E4.1 force EG
+    void setMetro(bool on)            noexcept { metroOn_ = on; }         // E4.4 (delay bypass)
+    void metroTrigger(bool accent)    noexcept { metro_.trigger(accent); }// E4.4
+    void setVolume(double g)          noexcept { vol_.setTarget(g); }     // E6.1 (smoothed)
+    void setOctave(int oct)           noexcept { octShift_ = oct * 12; }  // E6.2 semitones
+    void setDetune(double semis)      noexcept { detune_.setTarget(semis); } // E2.1 (smoothed)
+    void setPortamento(double tauSec) noexcept {                            // E2.2 Modell A
+        portTau_ = tauSec;
+        if (tauSec <= 1e-6) { portOn_ = false; portA_ = 1.0; }
+        else { portOn_ = true; portA_ = 1.0 - std::exp(-1.0 / (tauSec * sr_)); }
+    }
 
     // --- Sprint-7 unified funnel: the SINGLE public entry every source
     //     (UI / MIDI CC / host automation / sequencer motion) goes through.
@@ -711,7 +778,7 @@ public:
     //     setter (RampParam) -> DSP. No source bypasses taper or smoother.
     enum class Param { Cutoff, Resonance, Drive, LfoCutDepth, DelayMix,
                        LfoRate, LfoPitchDepth, DelayTime, DelayFeedback,
-                       Attack, DecRel, Sustain };
+                       Attack, DecRel, Sustain, EgCutDepth, Detune, Portamento, Volume };
 
     static double taper(Param p, double n) noexcept {       // CALIB(sprint1)
         n = clamp(n, 0.0, 1.0);
@@ -728,6 +795,10 @@ public:
             case Param::Attack:        return 1.5 + 1998.5 * n;           // 1.5ms..2s
             case Param::DecRel:        return 1.5 + 1998.5 * n;           // 1.5ms..2s
             case Param::Sustain:       return n;                          // 0..1
+            case Param::EgCutDepth:    return (n - 0.5) * 2.0 * kEgIntOctMax; // E1.1 bipolar oct
+            case Param::Detune:        return n * (kDetuneCentsMax / 100.0);  // E2.1 semitone half-spread
+            case Param::Portamento:    return n * kPortMaxSec;                // E2.2 glide TAU (s)
+            case Param::Volume:        return n;                              // E6.1 0..1 (CALIB(E8) curve)
         }
         return n;
     }
@@ -745,6 +816,10 @@ public:
             case Param::Attack:        setAttackMs   (taper(p, n)); break;
             case Param::DecRel:        setDecRelMs   (taper(p, n)); break;
             case Param::Sustain:       setSustain    (taper(p, n)); break;
+            case Param::EgCutDepth:    setEgCutDepth (taper(p, n)); break;  // E1.1
+            case Param::Detune:        setDetune     (taper(p, n)); break;  // E2.1
+            case Param::Portamento:    setPortamento (taper(p, n)); break;  // E2.2
+            case Param::Volume:        setVolume     (taper(p, n)); break;  // E6.1
         }
     }
     // read-only observability (metering / tests) — not a control path
@@ -756,24 +831,36 @@ public:
             const double lfo  = lfo_.next();
             const double pMod = lfo * lfoPitch_.next();        // semitone domain
             const double cMod = lfo * lfoCut_.next();          // octave domain
+            const double eg   = env_.next();                   // E1.1 sample shared EG ONCE
+            const double egD  = egInt_.next();                 // E1.1 smoothed bipolar octaves
+            const double ds   = detune_.next();                // E2.1 smoothed semitone half-spread
+            if (portOn_) {                                     // E2.2 Modell A one-pole glide
+                for (int v = 0; v < 3; ++v) {
+                    glide_[v] += (gtgt_[v] - glide_[v]) * portA_;
+                    pitch_[v].setTarget(glide_[v]);
+                }
+            }
 
-            // funnel -> filter controls (smoothed), LFO applied in log domain
+            // funnel -> filter controls (smoothed); LFO + EG in log (octave) domain.
+            // egInt neutral (target 0) => term is exactly 0.0 => bit-identical.
             const double baseCut = cutoff_.next();
-            ladder_.setCutoffHz(baseCut * std::pow(2.0, cMod));
+            ladder_.setCutoffHz(baseCut *
+                std::pow(2.0, cMod + (eg - kEgPivot) * egD));   // E1.1
             ladder_.setResonance(reso_.next());
 
             double mix = 0.0;
             if (alloc_.ring()) {
                 // ring operands via the funnel (zipper-free), product on its
                 // own oversampling island. Non-ring path is untouched.
-                const double nA = pitch_[0].next() + pMod;
-                const double nB = pitch_[1].next() + pMod;
+                const double nA = pitch_[0].next() + pMod - ds;   // E2.1
+                const double nB = pitch_[1].next() + pMod + ds;   // E2.1
                 pitch_[2].next();                       // keep funnel consistent
                 mix = ring_.process(semitonesToHz(nA), semitonesToHz(nB));
             } else {
                 for (int v = 0; v < 3; ++v) {
                     if (!active_[v]) { pitch_[v].next(); continue; }
-                    const double hz = semitonesToHz(pitch_[v].next() + pMod);
+                    const double hz = semitonesToHz(pitch_[v].next() + pMod
+                                        + (v == 0 ? -ds : (v == 2 ? ds : 0.0))); // E2.1
                     mix += osc_[v].process(hz);
                 }
             }
@@ -782,7 +869,11 @@ public:
             const double filt = island_.process(mix,
                 [this](double s){ return ladder_.tick(s); });
 
-            out[i] = delay_.process(static_cast<float>(filt * env_.next()));
+            const float dry = static_cast<float>(filt * eg * kVelFixed); // E6.3 fixed velocity
+            const float wet = delay_.process(dry);               // keep delay state continuous
+            const float mix2 = (metroOn_ ? dry : wet)            // E4.4 delay bypass when metro
+                   + (metroOn_ ? metro_.tick() : 0.0f);          // E4.4 band-limited tick
+            out[i] = static_cast<float>(mix2 * vol_.next());     // E6.1 master volume (post-VCA)
         }
     }
 private:
@@ -792,8 +883,9 @@ private:
         for (int i = 0; i < 3; ++i) {
             active_[i] = act[i];
             if (act[i]) {
-                if (!wasActive_[i]) pitch_[i].snap(tgt[i]);  // no glide-in
-                pitch_[i].setTarget(tgt[i]);
+                if (!wasActive_[i]) { pitch_[i].snap(tgt[i]); glide_[i] = tgt[i]; } // no glide-in
+                gtgt_[i] = tgt[i];                                   // E2.2 glide target
+                if (!portOn_) pitch_[i].setTarget(tgt[i]);           // E2.2 off => original path
             }
             wasActive_[i] = act[i];
         }
@@ -811,8 +903,25 @@ private:
     Lfo            lfo_;
     RingModIsland  ring_;
     RampParam      lfoPitch_, lfoCut_;
+    RampParam      egInt_;                              // E1.1 EG->cutoff depth (octaves, bipolar)
+    RampParam      detune_;                             // E2.1 VCO spread (semitone half, smoothed)
+    double         gtgt_[3]  = {0,0,0};                 // E2.2 glide targets (semitones)
+    double         glide_[3] = {0,0,0};                 // E2.2 one-pole glide state
+    double         portTau_  = 0.0;                     // E2.2 glide time constant (s)
+    double         portA_    = 1.0;                     // E2.2 one-pole coef
+    bool           portOn_   = false;                   // E2.2 engaged (port>0)
     Delay          delay_;
     bool           gateHeld_ = false;
+    bool           syncOn_   = false;                   // E1.2 LFO trigger sync
+    bool           metroOn_  = false;                   // E4.4 metronome
+    MetroTick      metro_;                               // E4.4
+    RampParam      vol_;                                 // E6.1 master gain (smoothed)
+    int            octShift_ = 0;                        // E6.2 semitone offset
+    static constexpr double kVelFixed = 1.0;             // CALIB(E8) E6.3 fixed velocity
+    static constexpr double kEgIntOctMax   = 2.0;       // CALIB(E8) EG INT max swing (octaves)
+    static constexpr double kEgPivot       = 0.0;       // CALIB(E8) EG value at zero swing
+    static constexpr double kDetuneCentsMax= 50.0;      // CALIB(E8) DETUNE max half-spread (cents)
+    static constexpr double kPortMaxSec    = 0.5;       // CALIB(E8) PORTAMENTO max glide (s)
 };
 
 // -----------------------------------------------------------------------------
@@ -853,10 +962,16 @@ struct Step {
     bool   gate      = false;
     bool   motionOn  = false;
     double motionCut = 0.5;     // normalized -> funnel
+    bool   active    = true;    // E4.3 false => step skipped (play AND record)
 };
+// E3: per-parameter motion lanes (sparse). Indexed directly by param id;
+// size covers all current + planned ids. Resonance(1)/Tempo refused upstream.
+static constexpr int kMP = 16;
+struct MotionLane { bool used = false; float v[16] = {0}; };
 struct Pattern {
-    Step steps[16];
-    int  length = 16;
+    Step       steps[16];
+    int        length = 16;
+    MotionLane lane[kMP];                  // E3 multi-knob motion (legacy Step.motion* kept)
 };
 
 // Lock-free double buffer: control thread writes edit(), commit() flips an
@@ -878,6 +993,36 @@ private:
     std::atomic<int>    front_;
 };
 
+
+// =============================================================================
+//  E5 FLUX — sample-accurate event sequence (micro-timing). Replaces the step
+//  grid with absolute sample offsets in a loop. Fixed-capacity, no allocation.
+// =============================================================================
+static constexpr int FLUX_CAP = 256;
+struct FluxEvent { unsigned int off=0; unsigned char type=0; /*0=ON 1=OFF*/
+                   unsigned char note=60; };
+struct FluxPattern {
+    unsigned int  loopLen = 0;          // samples; 0 => silent
+    unsigned short count  = 0;
+    FluxEvent     ev[FLUX_CAP];
+};
+class FluxBank {
+public:
+    FluxBank() noexcept { front_.store(0,std::memory_order_relaxed); }
+    FluxPattern&       edit()  noexcept { return buf_[1-front_.load(std::memory_order_relaxed)]; }
+    void               commit() noexcept {
+        const int b=1-front_.load(std::memory_order_relaxed);
+        front_.store(b,std::memory_order_release);
+    }
+    const FluxPattern& read() const noexcept {
+        return buf_[front_.load(std::memory_order_acquire)];
+    }
+    void seedBoth(const FluxPattern& p) noexcept { buf_[0]=p; buf_[1]=p; }
+private:
+    FluxPattern       buf_[2];
+    std::atomic<int>  front_;
+};
+
 // Sample-accurate step clock with swing. Internal tempo or external ticks.
 class Clock {
 public:
@@ -886,6 +1031,7 @@ public:
     void setTempo(double bpm, int stepsPerBeat = 4) noexcept {
         stepSamples_ = (60.0 / std::max(1.0, bpm)) / stepsPerBeat * sr_;
     }
+    void setDiv(int d) noexcept { div_ = (d==2||d==4)? d : 1; }   // E4.2 1/1,1/2,1/4
     void setSwing(double s) noexcept { swing_ = clamp(s, 0.0, 0.7); } // CALIB(sprint1)
     void start() noexcept { running_ = true;  acc_ = 0.0; }
     void stop()  noexcept { running_ = false; }
@@ -896,7 +1042,9 @@ public:
         if (!running_) return false;
         acc_ += 1.0;
         const bool odd = ((*stepIdxIo) & 1) != 0;
-        const double dur = stepSamples_ * (odd ? (1.0 - swing_) : (1.0 + swing_));
+        const double dur = stepSamples_ * (odd ? (1.0 - swing_) : (1.0 + swing_))
+                           * (double)div_;                       // E4.2
+        curDur_ = dur;
         if (acc_ >= dur) {
             acc_ -= dur;
             *stepIdxIo = (*stepIdxIo + 1) & 15;
@@ -904,8 +1052,11 @@ public:
         }
         return false;
     }
+    double phase() const noexcept { return curDur_ > 0.0 ? acc_ / curDur_ : 0.0; } // E3 [0,1)
 private:
     double sr_ = 48000.0, acc_ = 0.0, stepSamples_ = 6000.0, swing_ = 0.0;
+    double curDur_ = 6000.0;
+    int    div_ = 1;                                          // E4.2
     bool   running_ = false;
 };
 
@@ -937,6 +1088,93 @@ public:
     void         commitEdit()  noexcept { bank_.edit() = edit_; bank_.commit(); }
     void armRecord(bool on) noexcept { recording_ = on; }
 
+    // ---- E3 motion: ziel-parametric, lock-free (edit_ -> commit) ----------
+    static bool motionCapable(int pid) noexcept {        // Resonance(1) refused
+        return pid >= 0 && pid < kMP && pid != 1;
+    }
+    static bool paramOfId(int pid, para3::ParaEngine::Param& o) noexcept {
+        using P = para3::ParaEngine::Param;
+        switch (pid) {
+            case 0:  o=P::Cutoff;        return true;
+            case 2:  o=P::Drive;         return true;
+            case 3:  o=P::LfoCutDepth;   return true;
+            case 4:  o=P::DelayMix;      return true;
+            case 5:  o=P::LfoRate;       return true;
+            case 6:  o=P::LfoPitchDepth; return true;
+            case 7:  o=P::DelayTime;     return true;
+            case 8:  o=P::DelayFeedback; return true;
+            case 9:  o=P::Attack;        return true;
+            case 10: o=P::DecRel;        return true;
+            case 11: o=P::Sustain;       return true;
+            case 12: o=P::EgCutDepth;    return true;
+            case 13: o=P::Detune;        return true;
+            case 14: o=P::Portamento;    return true;
+            case 15: o=P::Volume;        return true;   // E6.1
+            default: return false;
+        }
+    }
+    void motionSet(int pid, int step, double v) noexcept {
+        if (!motionCapable(pid)) { ++mRejects_; return; }
+        if (step < 0 || step >= 16) return;
+        edit_.lane[pid].used = true;
+        edit_.lane[pid].v[step] = (float)clamp(v, 0.0, 1.0);
+    }
+    void motionLaneCommit(int pid, const double* v16) noexcept {
+        if (!motionCapable(pid)) { ++mRejects_; return; }
+        edit_.lane[pid].used = true;
+        for (int i = 0; i < 16; ++i)
+            edit_.lane[pid].v[i] = (float)clamp(v16[i], 0.0, 1.0);
+    }
+    void motionSmooth(bool on) noexcept { smooth_ = on; }
+    long motionRejects() const noexcept { return mRejects_; }
+    // one-loop auto-deactivation capture: feed live value via motionVal()
+    void motionRec(int pid, bool on) noexcept {
+        if (!motionCapable(pid)) { ++mRejects_; return; }
+        if (on) { mCap_[pid] = true; mCapCnt_[pid] = 0;
+                  edit_.lane[pid].used = true; }
+        else      mCap_[pid] = false;
+    }
+    void motionVal(int pid, double v) noexcept {
+        if (pid >= 0 && pid < kMP) mLive_[pid] = clamp(v, 0.0, 1.0);
+    }
+    void setStepTrigger(bool on) noexcept { stepTrig_ = on; }            // E4.1
+    void setTempoDiv(int d)      noexcept { clock_.setDiv(d); }          // E4.2
+    void setActiveStep(int i, bool on) noexcept {                        // E4.3
+        if (i>=0 && i<16) edit_.steps[i].active = on;
+    }
+    void setMetro(bool on) noexcept { metroOn_ = on;                     // E4.4
+        if (eng_) eng_->setMetro(on); }
+
+    // ---- E5 FLUX -------------------------------------------------------
+    void setFluxMode(bool on) noexcept { fluxMode_ = on; }   // click-free: env continues
+    void fluxSetLoopLen(unsigned int samples) noexcept {
+        fluxEdit_.loopLen = samples;
+    }
+    void fluxRec(bool on) noexcept { fluxRec_ = on; }
+    void fluxNote(int note, bool on) noexcept {              // append at live cursor
+        if (!fluxRec_) return;
+        if (fluxEdit_.count >= FLUX_CAP) { ++fluxDropped_; return; }
+        FluxEvent e;
+        e.off  = (fluxEdit_.loopLen ? (fcur_ % fluxEdit_.loopLen) : fcur_);
+        e.type = on ? 0 : 1;
+        e.note = (unsigned char)note;
+        fluxEdit_.ev[fluxEdit_.count++] = e;
+    }
+    void fluxCommit() noexcept {                             // stable-sort, publish
+        const int n = fluxEdit_.count;
+        // OFF before ON at the same offset; stable to preserve insertion order
+        std::stable_sort(fluxEdit_.ev, fluxEdit_.ev + n,
+            [](const FluxEvent& a, const FluxEvent& b){
+                if (a.off != b.off) return a.off < b.off;
+                const int ra = (a.type==1)?0:1, rb = (b.type==1)?0:1;
+                return ra < rb;                              // OFF(1)->rank0 first
+            });
+        fluxBank_.edit() = fluxEdit_;
+        fluxBank_.commit();
+    }
+    FluxBank& fluxBank() noexcept { return fluxBank_; }
+    long fluxDropped() const noexcept { return fluxDropped_; }
+
     // CC#74 -> Cutoff (the classic). One mapping shown; same funnel for all.
     void midiCC(int cc, double norm) noexcept {
         if (cc == 74) {
@@ -958,7 +1196,25 @@ public:
                 else if (e.type == MidiEvent::Type::NoteOff) midiNoteOff(e.data1);
                 else                                         midiCC(e.data1, e.value);
             }
-            if (clock_.tick(&stepIdx_)) onStep();
+            if (fluxMode_) {                                     // E5 sample-accurate
+                const FluxPattern& fp = fluxBank_.read();
+                if (fp.loopLen > 0) {
+                    while (fpos_ < fp.count && fp.ev[fpos_].off == fcur_) {
+                        const FluxEvent& e = fp.ev[fpos_++];
+                        if (e.type == 1) eng_->noteOff(e.note);  // OFF first (sorted)
+                        else             eng_->noteOn (e.note);
+                    }
+                }
+                // cursor runs on the active loop length, or the edit-buffer
+                // length while recording before the first commit.
+                const unsigned int L = fp.loopLen ? fp.loopLen
+                                                   : fluxEdit_.loopLen;
+                if (L > 0) { if (++fcur_ >= L) { fcur_ = 0; fpos_ = 0; } } // click-free wrap
+                else       { ++fcur_; }
+            } else {
+                if (clock_.tick(&stepIdx_)) onStep();
+                if (smooth_ && stepIdx_ >= 0) applySmoothLanes();   // E3 SMOOTH on
+            }
             eng_->process(out + i, 1);
         }
     }
@@ -969,6 +1225,9 @@ private:
         const Pattern& p = bank_.read();                     // consistent snapshot
         if (stepIdx_ >= p.length) return;
         const Step& s = p.steps[stepIdx_];
+        if (!s.active) return;                               // E4.3 skip (no note/motion/capture)
+        if (metroOn_ && (stepIdx_ % 4 == 0))                 // E4.4 quarter-note tick
+            eng_->metroTrigger(stepIdx_ == 0);               // accent on beat 1
         if (recording_) {                                    // capture into edit buf
             Pattern& e = bank_.edit();
             e = p;                                           // base on current
@@ -976,9 +1235,52 @@ private:
             e.steps[stepIdx_].motionCut = recCC_;
             if (stepIdx_ == p.length - 1) bank_.commit();    // publish at loop end
         }
-        if (s.gate) eng_->noteOn(s.note); else eng_->noteOff(s.note);
-        if (s.motionOn)                                      // motion -> funnel
+        if (s.gate) eng_->noteOn(s.note);
+        else if (!stepTrig_) eng_->noteOff(s.note);          // E4.1 keep note if step-trig
+        if (stepTrig_) eng_->retrigger();                    // E4.1 force EG every step
+        if (s.motionOn)                                      // legacy cutoff lane
             eng_->setParamNorm(para3::ParaEngine::Param::Cutoff, s.motionCut);
+
+        // E3 one-loop capture: write live value into the param's lane, then
+        // auto-deactivate after exactly one full loop (Volca behaviour).
+        bool committed = false;
+        for (int pid = 0; pid < kMP; ++pid) {
+            if (!mCap_[pid]) continue;
+            Pattern& e = bank_.edit(); e = p;
+            e.lane[pid].used = true;
+            e.lane[pid].v[stepIdx_] = (float)mLive_[pid];
+            para3::ParaEngine::Param pr;
+            if (paramOfId(pid, pr)) eng_->setParamNorm(pr, mLive_[pid]); // audible
+            if (++mCapCnt_[pid] >= p.length) { mCap_[pid] = false;
+                bank_.commit(); committed = true; }   // publish at loop end
+        }
+        (void)committed;
+
+        // E3 playback, SMOOTH off: apply each used lane's step value (funnel,
+        // RampParam => stepped contour, zipper-free).
+        if (!smooth_) {
+            for (int pid = 0; pid < kMP; ++pid) {
+                if (!p.lane[pid].used) continue;
+                para3::ParaEngine::Param pr;
+                if (paramOfId(pid, pr))
+                    eng_->setParamNorm(pr, p.lane[pid].v[stepIdx_]);
+            }
+        }
+    }
+    // E3 playback, SMOOTH on: linear interpolation across the step duration.
+    void applySmoothLanes() noexcept {
+        const Pattern& p = bank_.read();
+        if (stepIdx_ >= p.length) return;
+        const double ph = clock_.phase();
+        const int nx = (stepIdx_ + 1) % p.length;
+        for (int pid = 0; pid < kMP; ++pid) {
+            if (!p.lane[pid].used) continue;
+            const double a = p.lane[pid].v[stepIdx_];
+            const double b = p.lane[pid].v[nx];
+            para3::ParaEngine::Param pr;
+            if (paramOfId(pid, pr))
+                eng_->setParamNorm(pr, a + (b - a) * ph);
+        }
     }
     para3::ParaEngine* eng_ = nullptr;
     double      sr_ = 48000.0;
@@ -988,6 +1290,20 @@ private:
     int         stepIdx_ = -1;
     double      recCC_ = 0.5;
     bool        recording_ = false;
+    bool        smooth_ = false;                 // E3 SMOOTH toggle
+    bool        stepTrig_ = false;               // E4.1
+    bool        metroOn_  = false;               // E4.4
+    bool        fluxMode_ = false;               // E5
+    bool        fluxRec_  = false;               // E5
+    unsigned int fcur_ = 0;                      // E5 sample cursor
+    unsigned short fpos_ = 0;                     // E5 next-event index
+    long        fluxDropped_ = 0;                // E5 observable overflow
+    FluxBank    fluxBank_;                        // E5 lock-free
+    FluxPattern fluxEdit_;                        // E5 host-side authoritative
+    long        mRejects_ = 0;                   // E3 observable PEAK/TEMPO refusals
+    bool        mCap_[kMP]    = {false};         // E3 one-loop capture armed
+    int         mCapCnt_[kMP] = {0};             // E3 steps since capture start
+    double      mLive_[kMP]   = {0};             // E3 fed live value
 };
 
 } // namespace para3
