@@ -235,8 +235,21 @@ body{
   box-shadow:0 0 18px color-mix(in srgb,var(--accent) 70%,transparent)}
 .kbtn{display:none}
 
-/* ===== LANDSCAPE ===== */
-@media (orientation:landscape){
+/* U3 — octave-shift indicator. Lives in the .kbd corner; appears only when
+   the oct knob is non-zero (updated by emitKnob). Pure visual; no engine call. */
+.octind{position:absolute;top:5px;right:10px;z-index:5;pointer-events:none;
+  font-family:'Chakra Petch',ui-monospace,monospace;font-size:10px;font-weight:700;
+  letter-spacing:1.6px;color:var(--accent);
+  text-shadow:0 0 10px color-mix(in srgb,var(--accent) 55%,transparent);
+  background:rgba(0,0,0,.42);padding:3px 7px;border-radius:5px;
+  border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);
+  display:none}
+
+/* ===== MOBILE LANDSCAPE (small viewport, ~iPhone/Android landscape) =======
+   U2: limit the historical "fill the screen" rule to viewports below the
+   tablet break (1024). Above that we want the centred-on-page tablet/desktop
+   layout, not 100%-stretched-across-a-monitor. */
+@media (orientation:landscape) and (max-width:1023px){
   .app{max-width:100%}
   .scroll{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;
     align-items:start;padding:0 14px 16px;}
@@ -245,8 +258,41 @@ body{
   .disp{margin:0 14px 12px}
   .kbd{max-width:100%;height:128px}
 }
-@media (orientation:landscape) and (min-width:980px){
-  .scroll{grid-template-columns:repeat(3,1fr)}
+
+/* ===== TABLET PORTRAIT (iPad mini portrait and up, both narrow tablets) ===
+   U2: centred 760-wide app, 2-col scroll grid, sequencer spans both. Keys
+   stay flex:1 distributed — number of keys is the U1 responsibility. */
+@media (min-width:720px) and (orientation:portrait){
+  .app{max-width:760px}
+  .scroll{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;
+    align-items:start;padding:0 18px 18px;}
+  .sec{margin-bottom:0}
+  .sec.full{grid-column:1/-1}
+  .disp{margin:0 18px 14px}
+  .kbd{height:140px}
+}
+
+/* ===== TABLET LANDSCAPE + DESKTOP (1024–1599, both orientations) =========
+   U2: 1200-wide centred app, 3-col scroll grid. The viewport is wide enough
+   that sections sit comfortably side-by-side without being cramped. */
+@media (min-width:1024px){
+  .app{max-width:1200px}
+  .scroll{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;
+    align-items:start;padding:0 22px 20px;}
+  .sec{margin-bottom:0}
+  .sec.full{grid-column:1/-1}
+  .disp{margin:0 22px 16px}
+  .kbd{height:152px}
+}
+
+/* ===== DESKTOP WIDE (≥1600 — 27" monitors and up) =========================
+   U2: 1480-wide centred app, 4-col scroll. Capped on purpose: above ~1500
+   the knobs would start looking comically large and the rhythm of the UI
+   would suffer. The remaining margin is breathing room to the browser edge. */
+@media (min-width:1600px){
+  .app{max-width:1480px}
+  .scroll{grid-template-columns:repeat(4,1fr);padding:0 28px 24px;gap:18px}
+  .kbd{height:164px}
 }
 
 /* ===== SMALL SCREENS (height < 720) — tighten knob cells, keep 3-col grid ===*/
@@ -372,7 +418,7 @@ body{
   </div>
 
   <button class="kbtn" id="kbtn">⌨ KEYS</button>
-  <div class="kbd" id="kbd"></div>
+  <div class="kbd" id="kbd"><div class="octind" id="octind"></div></div>
 </div>
 
 <script type="module">
@@ -446,7 +492,30 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
     if (id in KNOB_PARAM) emit((c) => c.setParam(KNOB_PARAM[id], n));
     else if (id === 'tmp') emit((c) => c.seqTempo(val));
     else if (id === 'vol') emit((c) => c.setParam(PARAM.VOLUME, n));   // E6.1
-    else if (id === 'oct') emit((c) => c.setOctave(Math.round(val)));  // E6.2
+    else if (id === 'oct') {
+      const o = Math.round(val);
+      emit((c) => c.setOctave(o));                                      // E6.2
+      updateOctIndicator(o);                                            // U3 display-only
+    }
+  }
+
+  // U3 — small visual indicator in the keyboard corner when oct knob != 0.
+  // Pure visual. No engine call, no transport message, no extra OP code.
+  function updateOctIndicator(oct) {
+    const el = document.getElementById('octind');
+    if (!el) return;
+    if (oct === 0) { el.style.display = 'none'; return; }
+    el.style.display = '';
+    el.textContent = (oct > 0 ? '+' : '') + oct + ' OCT';
+  }
+
+  // U3 — MIDI -> human note name with octave (MIDI 60 = C4 convention).
+  // Returns 'OOR' for values outside the standard 0..127 range so the user
+  // sees that the engine will clamp (we still emit noteOn; engine handles).
+  const _NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+  function midiToName(midi) {
+    if (midi < 0 || midi > 127) return 'OOR';
+    return _NOTE_NAMES[((midi % 12) + 12) % 12] + (Math.floor(midi / 12) - 1);
   }
 
   const C=2*Math.PI*25,SW=0.75,K={};
@@ -755,32 +824,130 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
     drawLane();flushPattern();}
 
   // ---- keyboard with collapsible drawer (portrait + landscape) ------------
-  const W_OFS = [0, 2, 4, 5, 7, 9, 11, 12];
-  const B_OFS = { 'C#':1, 'D#':3, 'F#':6, 'G#':8, 'A#':10 };
-  const BASE_C = 48;
+  //
+  // U1 KORG-parity-UI: multi-octave keyboard. The keyboard renders N octaves
+  // where N is derived from the viewport (industry-standard ranges, see
+  // detectOctaves). Semantics of midiOfKey are unchanged for N=1; the math is
+  // generalised to "global white index -> BASE_C + floor(idx/7)*12 + W_PER_OCT[idx%7]".
+  // No engine/bridge change — the JS API still sees noteOn(midi).
+  const W_PER_OCT = [0, 2, 4, 5, 7, 9, 11];               // semitone offsets within an octave (white keys)
+  const B_PER_OCT = { 'C#':1, 'D#':3, 'F#':6, 'G#':8, 'A#':10 };
+  const BASE_C    = 48;
+  const W_NAMES_OCT  = ['C','D','E','F','G','A','B'];
+  const B_NAMES_OCT  = ['C#','D#','F#','G#','A#'];        // 5 black keys per octave
+  const B_AFTER_W    = [0, 1, 3, 4, 5];                    // each sits AFTER white at this in-octave index
+
   function midiOfKey(el) {
     // E6.2: octave shift is engine-side (setOctave). Do NOT add oct*12 here,
     // otherwise we'd double-shift.
     if (el.classList.contains('wk')) {
       const idx = [...kbd.querySelectorAll('.wk')].indexOf(el);
-      return BASE_C + W_OFS[idx];
+      const oct = Math.floor(idx / 7);
+      const pos = idx % 7;
+      return BASE_C + oct * 12 + W_PER_OCT[pos];
     }
-    if (el.classList.contains('bk')) return BASE_C + (B_OFS[el.dataset.n] || 0);
+    if (el.classList.contains('bk')) {
+      const oct = parseInt(el.dataset.oct || '0', 10);
+      return BASE_C + oct * 12 + (B_PER_OCT[el.dataset.n] || 0);
+    }
     return -1;
   }
 
   const kbd=document.getElementById('kbd'),kbtn=document.getElementById('kbtn');
-  const wn=['C','D','E','F','G','A','B','C'],bA={0:'C#',1:'D#',3:'F#',4:'G#',5:'A#'};
-  wn.forEach(n=>{const w=document.createElement('div');w.className='wk';w.dataset.n=n;kbd.appendChild(w);});
-  [...kbd.children].forEach((w,i)=>{if(bA[i]!==undefined){const b=document.createElement('div');
-    b.className='bk';b.dataset.n=bA[i];b.style.left=((i+1)*12.5-4.5)+'%';kbd.appendChild(b);}});
 
+  // U1: industry-standard breakpoints. Most desktop synths show 3–5 octaves;
+  // mobile portrait is constrained to 1 (touch ergonomics + screen width).
+  function detectOctaves() {
+    const w = window.innerWidth;
+    if (w >= 1680) return 5;                              // desktop wide
+    if (w >= 1280) return 4;                              // desktop
+    if (w >= 1024) return 3;                              // tablet landscape / small desktop
+    if (w >= 600)  return 2;                              // tablet portrait / mobile landscape
+    return 1;                                              // phone portrait — no regression
+  }
+
+  // Pointer-id -> held key map. Declared HERE (before renderKeyboard) so the
+  // first render can reference it safely; `typeof` on a TDZ const throws.
   const held = new Map();
+
+  function renderKeyboard(N) {
+    // Release any held keys before destroying their elements (logic unchanged
+    // — uses the existing emit/noteOff path, just preempts a dangling .dn).
+    for (const [, h] of held) emit((c) => c.noteOff(h.note));
+    held.clear();
+    // Remove only piano keys; the #octind label (added by U3) is a sibling
+    // child of .kbd that must survive re-renders.
+    kbd.querySelectorAll('.wk, .bk').forEach(n => n.remove());
+    kbd.dataset.octaves = String(N);
+    const totalWhites = 7 * N + 1;
+    const W = 100 / totalWhites;                          // white-key width in %
+    const Bw = W * 0.72;                                  // black-key width relative to white
+    // Whites: N octaves of 7 whites + one closing C.
+    for (let m = 0; m < N; m++) {
+      for (let i = 0; i < 7; i++) {
+        const w = document.createElement('div');
+        w.className = 'wk';
+        w.dataset.n = W_NAMES_OCT[i];
+        w.dataset.oct = String(m);
+        kbd.appendChild(w);
+      }
+    }
+    const wEnd = document.createElement('div');
+    wEnd.className = 'wk';
+    wEnd.dataset.n = 'C';
+    wEnd.dataset.oct = String(N);                          // closing C is the start of next octave
+    kbd.appendChild(wEnd);
+    // Blacks: 5 per octave, positioned absolute with computed left+width so
+    // the white-key flex:1 distribution stays the layout authority.
+    for (let m = 0; m < N; m++) {
+      for (let k = 0; k < B_NAMES_OCT.length; k++) {
+        const i = B_AFTER_W[k];
+        const b = document.createElement('div');
+        b.className = 'bk';
+        b.dataset.n = B_NAMES_OCT[k];
+        b.dataset.oct = String(m);
+        const globalIdx = 7 * m + i;
+        const leftPct = (globalIdx + 1) * W - Bw / 2;
+        b.style.left  = leftPct + '%';
+        b.style.width = Bw + '%';
+        kbd.appendChild(b);
+      }
+    }
+  }
+
+  let currentOctaves = detectOctaves();
+  renderKeyboard(currentOctaves);
+
+  // Re-render on viewport changes (resize + rotation). Debounced so that
+  // resize-drag in dev tools doesn't thrash. ResizeObserver on document.body
+  // catches PWA-window changes that don't fire 'resize' in some browsers.
+  let _kbResizeTimer = 0;
+  function maybeRerenderKeyboard() {
+    const want = detectOctaves();
+    if (want !== currentOctaves) {
+      currentOctaves = want;
+      renderKeyboard(want);
+    }
+  }
+  window.addEventListener('resize', () => {
+    clearTimeout(_kbResizeTimer);
+    _kbResizeTimer = setTimeout(maybeRerenderKeyboard, 80);
+  });
+  if ('ResizeObserver' in window) {
+    try { new ResizeObserver(maybeRerenderKeyboard).observe(document.body); }
+    catch (_) { /* old browser; resize handler is the fallback */ }
+  }
+
   function keyDown(t, pid) {
     if (!t || !(t.classList.contains('wk') || t.classList.contains('bk'))) return;
     if (held.has(pid)) return;
     const note = midiOfKey(t); if (note < 0) return;
-    t.classList.add('dn'); show('NOTE', t.dataset.n, '');
+    t.classList.add('dn');
+    // U3: show the SOUNDING note (incl. engine octave shift) so the user can
+    // tell which absolute pitch the engine will play. note=raw keyboard MIDI;
+    // engine adds +12*round(oct) internally. OOR-MIDI marked as "OOR".
+    const octK = K.oct ? Math.round(K.oct.get()) : 0;
+    show('NOTE', midiToName(note + 12 * octK), '');
     lastNote = note; held.set(pid, { el: t, note });
     emit((c) => c.noteOn(note));
     // E5: when FLUX mode is on AND REC armed, append event at the engine's

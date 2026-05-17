@@ -14,7 +14,7 @@
 //  the worklet and needs no SAB.
 // =============================================================================
 
-const CACHE_VER  = 'para3-v6';  // worklet memory fix (STANDALONE_WASM exports memory)
+const CACHE_VER  = 'para3-v7';  // U1+U2+U3 UI sprints (multi-oct kbd, layout, oct clarity)
 const PRECACHE   = [
   './',
   './index.html',
