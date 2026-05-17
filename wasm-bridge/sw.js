@@ -14,7 +14,7 @@
 //  the worklet and needs no SAB.
 // =============================================================================
 
-const CACHE_VER  = 'para3-v3';
+const CACHE_VER  = 'para3-v4';  // KORG-parity E1–E7 frontend rollout
 const PRECACHE   = [
   './',
   './index.html',

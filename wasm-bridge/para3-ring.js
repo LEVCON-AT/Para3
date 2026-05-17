@@ -34,6 +34,25 @@ export const OP = Object.freeze({
   SEQ_COMMIT:12,
   MIDI_CC:   13,   // i0 = cc, double = norm01
   SET_LFO_SHAPE: 14, // i0 = shape (0 sine,1 tri,2 saw,3 square)
+  SET_LFO_SYNC:  15, // i0 = on (0|1)                                 -- E1.2
+  // E3 KORG-parity: target-parametric motion. PEAK (RESONANCE) is rejected
+  // engine-side (para3_seq_motion_rejects increments). publish via SEQ_COMMIT.
+  SEQ_MOTION_SET:    16, // i0=paramId, i1=stepIdx, d=v01
+  SEQ_MOTION_SMOOTH: 17, // i0 = on (0|1)  -- global per-pattern
+  SEQ_MOTION_REC:    18, // i0 = paramId, i1 = on (0|1)  -- one-loop capture
+  SEQ_MOTION_VAL:    19, // i0 = paramId, d = v01  -- live capture value
+  // E4 KORG-parity: sequencer behaviours.
+  SEQ_STEP_TRIGGER:  20, // i0 = on (0|1)  -- EG retrigger every step
+  SEQ_TEMPO_DIV:     21, // i0 = div (1|2|4)
+  SEQ_ACTIVE_STEP:   22, // i0 = idx, i1 = enabled (0|1)
+  SEQ_METRONOME:     23, // i0 = on (0|1)  -- bypasses delay engine-side
+  // E5 KORG-parity: FLUX (sample-accurate event sequence).
+  SEQ_FLUX_MODE:     24, // i0 = on (0|1)  -- click-free mode switch
+  SEQ_FLUX_LOOP_LEN: 25, // i0 = samples (signed; up to ~12h @ 48k)
+  SEQ_FLUX_REC:      26, // i0 = on (0|1)  -- arms event capture
+  SEQ_FLUX_NOTE:     27, // i0 = note, i1 = on (0|1) -- append at live cursor
+  SEQ_FLUX_COMMIT:   28, // -- stable-sort + publish
+  SET_OCTAVE:        29, // E6.2 — i0 = oct (signed; typical -2..+2)
 });
 
 const HDR = 2;                       // header int32 count
@@ -90,6 +109,26 @@ export class Para3Ring {
   seqCommit()          { return this._push(OP.SEQ_COMMIT, 0, 0, 0); }
   midiCC(cc, v)        { return this._push(OP.MIDI_CC, cc, 0, v); }
   setLfoShape(s)       { return this._push(OP.SET_LFO_SHAPE, s, 0, 0); }
+  setLfoSync(on)       { return this._push(OP.SET_LFO_SYNC, on ? 1 : 0, 0, 0); }
+  seqMotion(paramId, stepIdx, v01)
+                       { return this._push(OP.SEQ_MOTION_SET, paramId, stepIdx, v01); }
+  seqMotionSmooth(on)  { return this._push(OP.SEQ_MOTION_SMOOTH, on ? 1 : 0, 0, 0); }
+  seqMotionRec(paramId, on)
+                       { return this._push(OP.SEQ_MOTION_REC, paramId, on ? 1 : 0, 0); }
+  seqMotionVal(paramId, v01)
+                       { return this._push(OP.SEQ_MOTION_VAL, paramId, 0, v01); }
+  seqStepTrigger(on)   { return this._push(OP.SEQ_STEP_TRIGGER, on ? 1 : 0, 0, 0); }
+  seqTempoDiv(div)     { return this._push(OP.SEQ_TEMPO_DIV, div | 0, 0, 0); }
+  seqActiveStep(idx, on)
+                       { return this._push(OP.SEQ_ACTIVE_STEP, idx | 0, on ? 1 : 0, 0); }
+  seqMetronome(on)     { return this._push(OP.SEQ_METRONOME, on ? 1 : 0, 0, 0); }
+  seqFluxMode(on)      { return this._push(OP.SEQ_FLUX_MODE, on ? 1 : 0, 0, 0); }
+  seqFluxLoopLen(samples)
+                       { return this._push(OP.SEQ_FLUX_LOOP_LEN, samples | 0, 0, 0); }
+  seqFluxRec(on)       { return this._push(OP.SEQ_FLUX_REC, on ? 1 : 0, 0, 0); }
+  seqFluxNote(note, on){ return this._push(OP.SEQ_FLUX_NOTE, note | 0, on ? 1 : 0, 0); }
+  seqFluxCommit()      { return this._push(OP.SEQ_FLUX_COMMIT, 0, 0, 0); }
+  setOctave(oct)       { return this._push(OP.SET_OCTAVE, oct | 0, 0, 0); }
 
   // ---- consumer side (AudioWorklet thread). Wait-free drain. ----
   // cb(op, i0, i1, dval) is invoked for each pending message, in order.

@@ -16,6 +16,8 @@ export const PARAM = Object.freeze({
   CUTOFF: 0, RESONANCE: 1, DRIVE: 2, LFO_CUT_DEPTH: 3, DELAY_MIX: 4,
   LFO_RATE: 5, LFO_PITCH_DEPTH: 6, DELAY_TIME: 7, DELAY_FEEDBACK: 8,
   ATTACK: 9, DECREL: 10, SUSTAIN: 11,
+  // KORG-parity (E1.1, E2.1, E2.2, E6.1): bipolar EG INT centres at norm=0.5.
+  EG_CUT_DEPTH: 12, DETUNE: 13, PORTAMENTO: 14, VOLUME: 15,
 });
 export const LFO_SHAPE = Object.freeze({ SINE:0, TRIANGLE:1, SAW:2, SQUARE:3 });
 export const MODE = Object.freeze({
@@ -36,6 +38,29 @@ export class Para3Controls {
   setMode(mode)             { return this._do(() => this.ring.setMode(mode)); }
   midiCC(cc, norm01)        { return this._do(() => this.ring.midiCC(cc, norm01)); }
   setLfoShape(shape)        { return this._do(() => this.ring.setLfoShape(shape)); }
+  setLfoSync(on)            { return this._do(() => this.ring.setLfoSync(on)); }
+  // E3 — KORG-parity motion (target-parametric). PEAK/TEMPO are rejected
+  // engine-side (observable via para3_seq_motion_rejects in the native tests).
+  seqMotion(paramId, step, v01)
+                            { return this._do(() => this.ring.seqMotion(paramId, step, v01)); }
+  seqMotionSmooth(on)       { return this._do(() => this.ring.seqMotionSmooth(on)); }
+  seqMotionRec(paramId, on) { return this._do(() => this.ring.seqMotionRec(paramId, on)); }
+  seqMotionVal(paramId, v01){ return this._do(() => this.ring.seqMotionVal(paramId, v01)); }
+  // E4 — sequencer behaviours (engine T19–T22; metronome bypasses delay).
+  seqStepTrigger(on)        { return this._do(() => this.ring.seqStepTrigger(on)); }
+  seqTempoDiv(div)          { return this._do(() => this.ring.seqTempoDiv(div)); }
+  seqActiveStep(idx, on)    { return this._do(() => this.ring.seqActiveStep(idx, on)); }
+  seqMetronome(on)          { return this._do(() => this.ring.seqMetronome(on)); }
+  // E5 — FLUX (sample-accurate event sequence). REC arms append-on-noteOn;
+  // engine guards via fluxRec_ so calling seqFluxNote outside REC is a no-op.
+  seqFluxMode(on)           { return this._do(() => this.ring.seqFluxMode(on)); }
+  seqFluxLoopLen(samples)   { return this._do(() => this.ring.seqFluxLoopLen(samples)); }
+  seqFluxRec(on)            { return this._do(() => this.ring.seqFluxRec(on)); }
+  seqFluxNote(note, on)     { return this._do(() => this.ring.seqFluxNote(note, on)); }
+  seqFluxCommit()           { return this._do(() => this.ring.seqFluxCommit()); }
+  // E6.2 — engine pitch offset (integer semitones × 12). Replaces host-side
+  // +oct*12 in midiOfKey so the engine owns the pitch path (band-limited).
+  setOctave(oct)            { return this._do(() => this.ring.setOctave(oct)); }
   seqTempo(bpm)             { return this._do(() => this.ring.seqTempo(bpm)); }
   seqSwing(s01)             { return this._do(() => this.ring.seqSwing(s01)); }
   seqStart()                { return this._do(() => this.ring.seqStart()); }

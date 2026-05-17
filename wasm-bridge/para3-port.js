@@ -48,6 +48,26 @@ export class Para3Port {
   seqCommit()          { return this._push(OP.SEQ_COMMIT, 0, 0, 0); }
   midiCC(cc, v)        { return this._push(OP.MIDI_CC, cc, 0, v); }
   setLfoShape(s)       { return this._push(OP.SET_LFO_SHAPE, s, 0, 0); }
+  setLfoSync(on)       { return this._push(OP.SET_LFO_SYNC, on ? 1 : 0, 0, 0); }
+  seqMotion(paramId, stepIdx, v01)
+                       { return this._push(OP.SEQ_MOTION_SET, paramId, stepIdx, v01); }
+  seqMotionSmooth(on)  { return this._push(OP.SEQ_MOTION_SMOOTH, on ? 1 : 0, 0, 0); }
+  seqMotionRec(paramId, on)
+                       { return this._push(OP.SEQ_MOTION_REC, paramId, on ? 1 : 0, 0); }
+  seqMotionVal(paramId, v01)
+                       { return this._push(OP.SEQ_MOTION_VAL, paramId, 0, v01); }
+  seqStepTrigger(on)   { return this._push(OP.SEQ_STEP_TRIGGER, on ? 1 : 0, 0, 0); }
+  seqTempoDiv(div)     { return this._push(OP.SEQ_TEMPO_DIV, div | 0, 0, 0); }
+  seqActiveStep(idx, on)
+                       { return this._push(OP.SEQ_ACTIVE_STEP, idx | 0, on ? 1 : 0, 0); }
+  seqMetronome(on)     { return this._push(OP.SEQ_METRONOME, on ? 1 : 0, 0, 0); }
+  seqFluxMode(on)      { return this._push(OP.SEQ_FLUX_MODE, on ? 1 : 0, 0, 0); }
+  seqFluxLoopLen(samples)
+                       { return this._push(OP.SEQ_FLUX_LOOP_LEN, samples | 0, 0, 0); }
+  seqFluxRec(on)       { return this._push(OP.SEQ_FLUX_REC, on ? 1 : 0, 0, 0); }
+  seqFluxNote(note, on){ return this._push(OP.SEQ_FLUX_NOTE, note | 0, on ? 1 : 0, 0); }
+  seqFluxCommit()      { return this._push(OP.SEQ_FLUX_COMMIT, 0, 0, 0); }
+  setOctave(oct)       { return this._push(OP.SET_OCTAVE, oct | 0, 0, 0); }
 }
 
 // ---- worklet-side queue protocol (consumed in process(), pre-render) -------

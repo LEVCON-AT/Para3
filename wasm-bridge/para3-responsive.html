@@ -196,6 +196,14 @@ body{
 .step.cur::after{background:var(--accent);box-shadow:0 0 10px 3px color-mix(in srgb,var(--accent) 85%,transparent)}
 .step .n{position:absolute;bottom:4px;left:0;right:0;text-align:center;font-family:'DM Mono',monospace;
   font-size:8px;color:var(--ink-dim)}
+/* E4.3 Active-Step skip: separate UI state from onSteps; engine drops both
+   playback and recording for !actStep[i] (proven in offline_test T21). */
+.step.skip{opacity:.32}
+.step.skip .n{color:var(--ink-dim)}
+.seg{display:inline-flex;border-radius:8px;overflow:hidden;box-shadow:var(--soft)}
+.seg .tbtn{border-radius:0;padding:9px 11px;box-shadow:0 1px 0 rgba(255,255,255,.06) inset}
+/* E5 FLUX disabled state for step grid + lane: visually inert, click-inert. */
+.fluxoff{opacity:.32;pointer-events:none;filter:saturate(.4)}
 .mhead{display:flex;justify-content:space-between;align-items:center;margin:16px 0 9px}
 .mhead .mt{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:1px;color:var(--ink-dim)}
 .mhead .mt b{color:var(--accent)}
@@ -327,7 +335,11 @@ body{
         <button class="on"><svg viewBox="0 0 24 15"><polyline points="1,14 6,1 12,14 18,1 23,14"/></svg></button>
         <button><svg viewBox="0 0 24 15"><polyline points="1,14 11,1 11,14 23,1"/></svg></button>
         <button><svg viewBox="0 0 24 15"><polyline points="1,14 1,1 12,1 12,14 23,14 23,1"/></svg></button>
-        <span class="lled" id="lled"></span></div></div>
+        <span class="lled" id="lled"></span>
+        <!-- E1.2 LFO Trigger Sync: same .wave button look, separate id so the
+             shape-selector handler (querySelectorAll inside #wave) only ever
+             sees the three shape buttons via the explicit lsync.contains-check. -->
+        <button id="lsync" title="LFO TRIGGER SYNC (E1.2 KORG-parity)" style="width:auto;padding:0 10px;font:600 11px/1 ui-sans-serif,system-ui;letter-spacing:.06em">SYNC</button></div></div>
 
     <div class="sec"><h2>DELAY · <b>MASTER</b></h2>
       <div class="grid3" style="grid-template-columns:repeat(4,1fr)">
@@ -338,8 +350,23 @@ body{
 
     <div class="sec full"><div class="seqhead"><h2>STEP <b>SEQ</b> · 16</h2>
       <div class="tg"><button class="tbtn" id="play">▶</button><button class="tbtn" id="clr">CLR</button></div></div>
+      <!-- E4 KORG-parity sequencer behaviours; engine T19–T22.
+           E5 FLUX-Modus: separate mode (no step grid, event-based). -->
+      <div style="display:flex;justify-content:flex-end;gap:7px;margin-bottom:9px;flex-wrap:wrap">
+        <button class="tbtn" id="stp"   title="STEP TRIGGER · EG retrigger every step">STP</button>
+        <button class="tbtn" id="astep" title="ACTIVE-STEP MODE · click steps to skip">ACT</button>
+        <button class="tbtn" id="metro" title="METRONOME · delay bypassed engine-side">METRO</button>
+        <span class="seg" id="tdiv">
+          <button class="tbtn on" data-d="1">1/1</button>
+          <button class="tbtn"    data-d="2">1/2</button>
+          <button class="tbtn"    data-d="4">1/4</button>
+        </span>
+        <button class="tbtn" id="flux"   title="FLUX MODE · sample-accurate event sequence">FLUX</button>
+        <button class="tbtn" id="flxrec" title="FLUX REC · arm event capture (engine T23)">F·REC</button>
+      </div>
       <div class="steps" id="steps"></div>
       <div class="mhead"><span class="mt">MOTION → <b id="mTgt">CUTOFF</b></span>
+        <button class="mbtn" id="mSmooth" title="SMOOTH (E3 KORG-parity)">SMOOTH</button>
         <button class="mbtn" id="mArm">MOTION REC</button></div>
       <div class="lane" id="lane"></div></div>
   </div>
@@ -372,7 +399,9 @@ if ('serviceWorker' in navigator) {
 const audio = new Para3Audio();
 let analyser   = null;            // AnalyserNode, set after audio.start()
 let scopeBuf   = null;            // Float32Array(fftSize) — analyser output
-let masterGain = null;            // host-side master gain for VOLUME knob
+// E6.1: host-side masterGain is GONE; VOLUME goes through the engine via
+// PARAM.VOLUME so master-gain matches the rest of the funnel (smoothed,
+// bit-identical at unity per offline_test T24).
 let ready      = false;
 function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.warn(e); } }
 
@@ -396,19 +425,28 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
     lci: PARAM.LFO_CUT_DEPTH,
     dt:  PARAM.DELAY_TIME,
     df:  PARAM.DELAY_FEEDBACK,
+    // E1.1 KORG-parity. Bipolar in the engine taper: norm=(val-min)/(max-min)
+    // maps val=0 -> 0.5 -> bip=0 (no swing) for an egi range of -100..+100.
+    egi: PARAM.EG_CUT_DEPTH,
+    // E2 KORG-parity: unipolar through the existing RampParam smoother (no
+    // zipper), value=0 is the bit-identical no-op baseline (Engine T16/T17).
+    det: PARAM.DETUNE,
+    por: PARAM.PORTAMENTO,
   };
   // tmp -> seqTempo(BPM)        (NOT setParam — bpm, not a normalised param)
-  // vol -> masterGain.gain      (host-side; deliberately outside the C-API)
-  // oct -> note-offset at noteOn (host-side)
-  // egi, det, por -> inert: no engine feature; UI feedback only.
-  const INERT_KNOBS = new Set(['egi', 'det', 'por']);
+  // vol -> PARAM.VOLUME via the engine (E6.1; replaces host-side masterGain)
+  // oct -> setOctave(int) via the engine (E6.2; replaces midiOfKey +oct*12)
+  // INERT_KNOBS is kept as the doc anchor; after E1+E2+E6 it is empty. If any
+  // entry ever returns here, the UI WILL render it greyed (see .inert class)
+  // — there is no "wired but silent" state in this UI.
+  const INERT_KNOBS = new Set();
 
   function emitKnob(id, val, min, max) {
     const n = (val - min) / (max - min);
     if (id in KNOB_PARAM) emit((c) => c.setParam(KNOB_PARAM[id], n));
     else if (id === 'tmp') emit((c) => c.seqTempo(val));
-    else if (id === 'vol' && masterGain) masterGain.gain.value = n;
-    // 'oct' applied at noteOn; inert knobs: no emit
+    else if (id === 'vol') emit((c) => c.setParam(PARAM.VOLUME, n));   // E6.1
+    else if (id === 'oct') emit((c) => c.setOctave(Math.round(val)));  // E6.2
   }
 
   const C=2*Math.PI*25,SW=0.75,K={};
@@ -478,28 +516,83 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
   // ---- LFO shape: 3 buttons in this UI = TRIANGLE / SAW / SQUARE ----------
   const LFO_FROM_LW = [LFO_SHAPE.TRIANGLE, LFO_SHAPE.SAW, LFO_SHAPE.SQUARE];
   const wave=document.getElementById('wave');let lw=0;
+  // The 3 shape buttons are the FIRST 3 buttons in #wave; SYNC (id=lsync) sits
+  // next to them visually but is filtered out below so it never participates in
+  // the shape-selector state.
+  const waveShapes = [...wave.querySelectorAll('button')].filter(b => b.id !== 'lsync');
   wave.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
-    [...wave.querySelectorAll('button')].forEach(x=>x.classList.remove('on'));b.classList.add('on');
-    lw=[...wave.querySelectorAll('button')].indexOf(b);
+    if (b.id === 'lsync') return;             // E1.2 separate handler below
+    waveShapes.forEach(x=>x.classList.remove('on'));b.classList.add('on');
+    lw=waveShapes.indexOf(b);
     show('LFO WAVE',['TRIANGLE','SAW','SQUARE'][lw],'');
     emit((c) => c.setLfoShape(LFO_FROM_LW[lw]));});
+
+  // ---- E1.2 LFO Trigger Sync (toggle) -------------------------------------
+  const lsync=document.getElementById('lsync');let lfoSync=false;
+  lsync.onclick=()=>{lfoSync=!lfoSync;lsync.classList.toggle('on',lfoSync);
+    show('LFO SYNC',lfoSync?'ON':'OFF','');
+    emit((c) => c.setLfoSync(lfoSync));};
 
   // ---- sequencer ----------------------------------------------------------
   // Step note: last played MIDI note from the keyboard, fallback C3 (48).
   let lastNote = 48;
+  // E3 KORG-parity. Motion is target-parametric: one lane per motion-capable
+  // PARAM. motionByTgt is the UI-local mirror; the engine has the authoritative
+  // double-buffered copy and publishes atomically on seqCommit (T13-safe).
+  // PEAK/TEMPO are not motion-capable — setTarget rejects them; the engine
+  // additionally counts rejects via para3_seq_motion_rejects (proven in T18).
+  const motionByTgt = {};
+  const newLane = () => new Array(16).fill(50);
+  function laneFor(id) {
+    if (!motionByTgt[id]) motionByTgt[id] = newLane();
+    return motionByTgt[id];
+  }
+  function isMotionCapable(id) {
+    return (id in KNOB_PARAM) && KNOB_PARAM[id] !== PARAM.RESONANCE;
+  }
+
   function flushPattern() {
+    // E5: step-grid pattern flush is suppressed in FLUX mode (the step grid
+    // is not the playback model there; engine's fluxBank drives note events).
+    if (fluxOn) return;
     emit((c) => {
-      for (let i = 0; i < 16; i++)
-        c.seqStep(i, lastNote, onSteps[i], true, motion[i] / 100);
+      // Notes/gates only; E3 removes the legacy "motion_on + motionCut" path
+      // (the inline cutoff-implicit lane). All motion goes through the
+      // target-parametric seqMotion stream below.
+      for (let i = 0; i < 16; i++) c.seqStep(i, lastNote, onSteps[i], false, 0);
       c.seqLength(16);
+      // Re-flush every stored lane via seqMotion; the engine keeps lanes
+      // independent and seqCommit publishes them atomically together.
+      for (const id of Object.keys(motionByTgt)) {
+        if (!isMotionCapable(id)) continue;            // mirror engine reject
+        const pid = KNOB_PARAM[id], lane = motionByTgt[id];
+        for (let i = 0; i < 16; i++) c.seqMotion(pid, i, lane[i] / 100);
+      }
       c.seqCommit();
     });
   }
   const stepsEl=document.getElementById('steps');
   const onSteps=new Array(16).fill(false);[0,3,6,7,10,12].forEach(i=>onSteps[i]=true);
+  // E4.3 — separate state from onSteps (spec §E4.3, must NOT overload onSteps).
+  // actStep[i]=false means the engine skips this step entirely (no note, no
+  // motion application, but the sequencer still counts past it).
+  const actStep=new Array(16).fill(true);
+  let astepMode=false;
   for(let i=0;i<16;i++){const b=document.createElement('button');
     b.className='step'+(onSteps[i]?' on':'');b.innerHTML='<span class="n">'+(i+1)+'</span>';
-    b.onclick=()=>{onSteps[i]=!onSteps[i];b.classList.toggle('on',onSteps[i]);flushPattern();};
+    b.onclick=()=>{
+      if (astepMode) {
+        // E4.3: in active-step mode the grid edits the skip state.
+        actStep[i]=!actStep[i];
+        b.classList.toggle('skip', !actStep[i]);
+        emit((c) => c.seqActiveStep(i, actStep[i]));
+      } else {
+        // default: gate-on/off (existing semantics, preserved).
+        onSteps[i]=!onSteps[i];
+        b.classList.toggle('on', onSteps[i]);
+        flushPattern();
+      }
+    };
     stepsEl.appendChild(b);}
   const sN=[...stepsEl.children];let playing=false,cur=-1,seqT=0;
   const playB=document.getElementById('play');
@@ -510,31 +603,118 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
   document.getElementById('clr').onclick=()=>{onSteps.fill(false);
     sN.forEach(n=>n.classList.remove('on'));flushPattern();};
 
-  const laneEl=document.getElementById('lane');let motion=new Array(16).fill(50);
+  const laneEl=document.getElementById('lane');
   for(let i=0;i<16;i++){const d=document.createElement('div');d.className='mb';laneEl.appendChild(d);}
   const laneB=[...laneEl.children];
-  function drawLane(){laneB.forEach((b,i)=>b.style.height=motion[i]+'%');}drawLane();
+  function drawLane(){const lane=laneFor(tgtId);laneB.forEach((b,i)=>b.style.height=lane[i]+'%');}
   let mdrag=false;
-  function paint(e){const r=laneEl.getBoundingClientRect();
+  function paint(e){
+    if (!isMotionCapable(tgtId)) return;            // hard reject mirrors engine
+    const lane=laneFor(tgtId), pid=KNOB_PARAM[tgtId];
+    const r=laneEl.getBoundingClientRect();
     let i=Math.max(0,Math.min(15,Math.floor((e.clientX-r.left)/r.width*16)));
     let v=Math.max(0,Math.min(100,(1-(e.clientY-r.top-7)/(r.height-14))*100));
-    motion[i]=v;laneB[i].style.height=v+'%';show('MOTION '+tgtName,Math.round(v),'');
-    // Engine motion lane is cutoff-only; commit the single affected step.
-    emit((c) => { c.seqStep(i, lastNote, onSteps[i], true, motion[i] / 100);
-                  c.seqCommit(); });}
+    lane[i]=v;laneB[i].style.height=v+'%';show('MOTION '+tgtName,Math.round(v),'');
+    emit((c) => { c.seqMotion(pid, i, v / 100); c.seqCommit(); });
+  }
   laneEl.addEventListener('pointerdown',e=>{mdrag=true;laneEl.setPointerCapture(e.pointerId);paint(e);});
   laneEl.addEventListener('pointermove',e=>{if(mdrag)paint(e);});
   laneEl.addEventListener('pointerup',()=>mdrag=false);laneEl.addEventListener('pointercancel',()=>mdrag=false);
+  drawLane();
 
   let motionArm=false,tgtId='cut',tgtName='CUTOFF';
   const mArm=document.getElementById('mArm'),mTgt=document.getElementById('mTgt');
-  mArm.onclick=()=>{motionArm=!motionArm;mArm.classList.toggle('on',motionArm);
+  mArm.onclick=()=>{
+    // Per E3 spec line 80–83: #mArm is a GLOBAL arm indicator only. The engine
+    // owns per-param auto-shutdown after one loop (no UI back-channel). We arm
+    // the *current* target's REC; switching tgt mid-record does NOT disarm.
+    if (!isMotionCapable(tgtId)) {
+      show('MOTION REC', tgtName, '— Ziel nicht motion-faehig');
+      return;
+    }
+    motionArm=!motionArm;mArm.classList.toggle('on',motionArm);
     Object.values(K).forEach(o=>o.el.classList.remove('tgt'));
     if(motionArm)K[tgtId].el.classList.add('tgt');
-    emit((c) => c.seqArmRecord(motionArm));};
-  function setTarget(id){tgtId=id;tgtName=K[id].name;mTgt.textContent=tgtName;
+    emit((c) => c.seqMotionRec(KNOB_PARAM[tgtId], motionArm));
+  };
+
+  // E3 SMOOTH toggle (global per-pattern).
+  const mSmooth=document.getElementById('mSmooth');let motionSmooth=false;
+  mSmooth.onclick=()=>{motionSmooth=!motionSmooth;mSmooth.classList.toggle('on',motionSmooth);
+    show('MOTION SMOOTH',motionSmooth?'ON':'OFF','');
+    emit((c) => c.seqMotionSmooth(motionSmooth));};
+
+  // ---- E4 sequencer behaviours ---------------------------------------------
+  const stpB=document.getElementById('stp');let stepTrig=false;
+  stpB.onclick=()=>{stepTrig=!stepTrig;stpB.classList.toggle('on',stepTrig);
+    show('STEP TRIGGER',stepTrig?'ON':'OFF','');
+    emit((c) => c.seqStepTrigger(stepTrig));};
+
+  // E4.3 — active-step *mode* is a UI mode (which state the grid edits).
+  // The engine just receives per-step seqActiveStep events on grid clicks.
+  const astepB=document.getElementById('astep');
+  astepB.onclick=()=>{astepMode=!astepMode;astepB.classList.toggle('on',astepMode);
+    // Re-render the step grid in the active mode: highlight 'skip' state when on,
+    // 'gate-on' state when off. Both states are preserved independently.
+    sN.forEach((b,i)=>{
+      b.classList.toggle('on',  !astepMode && onSteps[i]);
+      b.classList.toggle('skip', astepMode && !actStep[i]);
+    });
+    show('STEP MODE', astepMode ? 'ACTIVE-STEP (skip edit)' : 'GATE', '');
+  };
+
+  const metroB=document.getElementById('metro');let metroOn=false;
+  metroB.onclick=()=>{metroOn=!metroOn;metroB.classList.toggle('on',metroOn);
+    show('METRONOME',metroOn?'ON (delay bypassed)':'OFF','');
+    emit((c) => c.seqMetronome(metroOn));};
+
+  // E4.2 — tempo division as a 3-way radio group (1/1, 1/2, 1/4 — engine T20).
+  const tdiv=document.getElementById('tdiv');let tdivVal=1;
+  tdiv.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+    const d=+b.dataset.d; if (d!==1 && d!==2 && d!==4) return;   // engine clamps
+    tdivVal=d;[...tdiv.querySelectorAll('button')].forEach(x=>x.classList.remove('on'));
+    b.classList.add('on');
+    show('TEMPO DIV','1/'+d,'');
+    emit((c) => c.seqTempoDiv(d));});
+
+  // ---- E5 FLUX mode --------------------------------------------------------
+  // Switching the mode is click-free engine-side (running notes continue via
+  // the shared gate logic). UI only flips: visual state of #steps + #lane and
+  // suppresses flushPattern while flux is on. NO new step-logic — the step
+  // grid is the wrong model for flux (events-driven, not slot-driven).
+  const fluxB=document.getElementById('flux');let fluxOn=false;
+  const flxRecB=document.getElementById('flxrec');let fluxRecOn=false;
+  function fluxLoopLenSamples() {
+    // 1 bar (4 beats) at current tempo, audio.ctx.sampleRate if available.
+    const bpm = (K.tmp && K.tmp.get) ? K.tmp.get() : 120;
+    const sr  = (audio && audio.ctx) ? audio.ctx.sampleRate : 48000;
+    return Math.max(1, Math.round((60.0 / bpm) * 4.0 * sr));
+  }
+  fluxB.onclick=()=>{fluxOn=!fluxOn;fluxB.classList.toggle('on',fluxOn);
+    show('FLUX', fluxOn ? 'ON (event sequence)' : 'OFF (step grid)', '');
+    stepsEl.classList.toggle('fluxoff', fluxOn);
+    laneEl.classList.toggle('fluxoff', fluxOn);
+    if (fluxOn) emit((c) => { c.seqFluxLoopLen(fluxLoopLenSamples()); c.seqFluxMode(true); });
+    else        emit((c) => c.seqFluxMode(false));
+  };
+  flxRecB.onclick=()=>{fluxRecOn=!fluxRecOn;flxRecB.classList.toggle('on',fluxRecOn);
+    show('FLUX REC', fluxRecOn ? 'ARMED' : 'OFF', '');
+    if (!fluxRecOn) emit((c) => { c.seqFluxRec(false); c.seqFluxCommit(); });
+    else            emit((c) => c.seqFluxRec(true));
+  };
+
+  function setTarget(id){
+    // Engine rejects PEAK; UI mirrors that hard, not silently (spec §E3.4).
+    if (!isMotionCapable(id)) {
+      const nm = K[id] ? K[id].name : id.toUpperCase();
+      show('MOTION TARGET', nm, '— nicht motion-faehig');
+      return;
+    }
+    tgtId=id;tgtName=K[id].name;mTgt.textContent=tgtName;
     Object.values(K).forEach(o=>o.el.classList.remove('tgt'));K[id].el.classList.add('tgt');
-    show('MOTION TARGET',tgtName,'');}
+    drawLane();                                       // switch lane visual
+    show('MOTION TARGET',tgtName,'');
+  }
 
   // ---- patch save/recall (UI-local snapshot; recall re-emits via .set) ----
   const patch=document.getElementById('patch'),psave=document.getElementById('psave');
@@ -552,7 +732,10 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
     show('PATCH',saveArm?'PICK SLOT…':'READY','');};
   function snap(){return{k:Object.fromEntries(Object.entries(K).map(([i,o])=>[i,o.get()])),
     f:Object.fromEntries(Object.entries(F).map(([i,o])=>[i,o.get()])),
-    v:voiceIx,w:lw,st:[...onSteps],mo:[...motion],tg:tgtId};}
+    v:voiceIx,w:lw,st:[...onSteps],
+    // E3: motion is per-target (motionByTgt). Old single-array 'mo' is gone.
+    mo:Object.fromEntries(Object.entries(motionByTgt).map(([i,a])=>[i,[...a]])),
+    tg:tgtId};}
   function restore(p){Object.entries(p.k).forEach(([i,v])=>K[i]&&K[i].set(v));
     Object.entries(p.f).forEach(([i,v])=>F[i]&&F[i].set(v));
     [...voice.children].forEach((b,i)=>b.classList.toggle('on',i===p.v));voiceIx=p.v;
@@ -560,19 +743,27 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
     [...wave.querySelectorAll('button')].forEach((b,i)=>b.classList.toggle('on',i===p.w));lw=p.w;
     emit((c) => c.setLfoShape(LFO_FROM_LW[lw]));
     p.st.forEach((on,i)=>{onSteps[i]=on;sN[i].classList.toggle('on',on);});
-    motion=[...p.mo];drawLane();setTarget(p.tg);flushPattern();}
+    // E3 restore: rebuild per-target lanes. Backwards-compat: an array under
+    // p.mo (legacy single-lane format) is treated as the CUTOFF lane only.
+    Object.keys(motionByTgt).forEach(k=>delete motionByTgt[k]);
+    if (Array.isArray(p.mo))      motionByTgt.cut = [...p.mo];
+    else if (p.mo && typeof p.mo === 'object')
+      Object.entries(p.mo).forEach(([i,a])=>{motionByTgt[i]=[...a];});
+    if (p.tg && isMotionCapable(p.tg)) setTarget(p.tg);
+    drawLane();flushPattern();}
 
   // ---- keyboard with collapsible drawer (portrait + landscape) ------------
   const W_OFS = [0, 2, 4, 5, 7, 9, 11, 12];
   const B_OFS = { 'C#':1, 'D#':3, 'F#':6, 'G#':8, 'A#':10 };
   const BASE_C = 48;
   function midiOfKey(el) {
-    const oct = K.oct ? Math.round(K.oct.get()) : 0;
+    // E6.2: octave shift is engine-side (setOctave). Do NOT add oct*12 here,
+    // otherwise we'd double-shift.
     if (el.classList.contains('wk')) {
       const idx = [...kbd.querySelectorAll('.wk')].indexOf(el);
-      return BASE_C + oct * 12 + W_OFS[idx];
+      return BASE_C + W_OFS[idx];
     }
-    if (el.classList.contains('bk')) return BASE_C + oct * 12 + (B_OFS[el.dataset.n] || 0);
+    if (el.classList.contains('bk')) return BASE_C + (B_OFS[el.dataset.n] || 0);
     return -1;
   }
 
@@ -590,11 +781,15 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
     t.classList.add('dn'); show('NOTE', t.dataset.n, '');
     lastNote = note; held.set(pid, { el: t, note });
     emit((c) => c.noteOn(note));
+    // E5: when FLUX mode is on AND REC armed, append event at the engine's
+    // live cursor. Engine also guards on fluxRec_, so this is doubly safe.
+    if (fluxOn && fluxRecOn) emit((c) => c.seqFluxNote(note, true));
   }
   function keyUp(pid) {
     const h = held.get(pid); if (!h) return;
     h.el.classList.remove('dn'); held.delete(pid);
     emit((c) => c.noteOff(h.note));
+    if (fluxOn && fluxRecOn) emit((c) => c.seqFluxNote(h.note, false));
   }
   kbd.addEventListener('pointerdown', (e) => {
     // Tapping the closed grip opens the drawer instead of triggering a note.
@@ -664,12 +859,12 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
       analyser.smoothingTimeConstant = 0;
       scopeBuf = new Float32Array(analyser.fftSize);
 
-      // Insert master gain (host-side VOLUME, deliberately outside C-API),
-      // then the read-only analyser, then destination.
-      masterGain = ctx.createGain();
-      masterGain.gain.value = +K.vol.get() / 100;
+      // E6.1: VOLUME lives in the engine now (PARAM.VOLUME). The audio graph
+      // is therefore worklet -> read-only analyser -> destination, no host
+      // gain node in the way. At unity (vol=100 -> n=1) the engine output is
+      // bit-identical to the pre-E6 graph at masterGain=1 (offline_test T24).
       audio.node.disconnect();
-      audio.node.connect(masterGain).connect(analyser).connect(ctx.destination);
+      audio.node.connect(analyser).connect(ctx.destination);
 
       ready = true;
       pushInitialState();

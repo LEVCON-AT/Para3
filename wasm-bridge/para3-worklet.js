@@ -19,6 +19,21 @@ const OP = {
   NOTE_ON:1, NOTE_OFF:2, SET_PARAM:3, SET_MODE:4, SEQ_TEMPO:5, SEQ_SWING:6,
   SEQ_START:7, SEQ_STOP:8, SEQ_ARMREC:9, SEQ_STEP:10, SEQ_LEN:11,
   SEQ_COMMIT:12, MIDI_CC:13, SET_LFO_SHAPE:14,
+  SET_LFO_SYNC:15,           // E1.2 KORG-parity
+  SEQ_MOTION_SET:16,         // E3 — i0=paramId i1=stepIdx d=v01
+  SEQ_MOTION_SMOOTH:17,      // E3 — i0=on
+  SEQ_MOTION_REC:18,         // E3 — i0=paramId i1=on
+  SEQ_MOTION_VAL:19,         // E3 — i0=paramId d=v01
+  SEQ_STEP_TRIGGER:20,       // E4 — i0=on
+  SEQ_TEMPO_DIV:21,          // E4 — i0=div (1|2|4)
+  SEQ_ACTIVE_STEP:22,        // E4 — i0=idx i1=enabled
+  SEQ_METRONOME:23,          // E4 — i0=on
+  SEQ_FLUX_MODE:24,          // E5 — i0=on
+  SEQ_FLUX_LOOP_LEN:25,      // E5 — i0=samples
+  SEQ_FLUX_REC:26,           // E5 — i0=on
+  SEQ_FLUX_NOTE:27,          // E5 — i0=note i1=on
+  SEQ_FLUX_COMMIT:28,        // E5
+  SET_OCTAVE:29,             // E6.2 — i0=oct
 };
 
 function makeImports(memory) {
@@ -90,6 +105,21 @@ class Para3Processor extends AudioWorkletProcessor {
         case OP.SEQ_COMMIT: x.para3_seq_commit(p); break;
         case OP.MIDI_CC:    x.para3_midi_cc(p, i0, d); break;
         case OP.SET_LFO_SHAPE: x.para3_set_lfo_shape(p, i0); break;
+        case OP.SET_LFO_SYNC:  x.para3_set_lfo_sync(p, i0); break;   // E1.2
+        case OP.SEQ_MOTION_SET:    x.para3_seq_motion_set(p, i0, i1, d); break; // E3
+        case OP.SEQ_MOTION_SMOOTH: x.para3_seq_motion_smooth(p, i0); break;     // E3
+        case OP.SEQ_MOTION_REC:    x.para3_seq_motion_rec(p, i0, i1); break;    // E3
+        case OP.SEQ_MOTION_VAL:    x.para3_seq_motion_val(p, i0, d); break;     // E3
+        case OP.SEQ_STEP_TRIGGER:  x.para3_seq_step_trigger(p, i0); break;      // E4.1
+        case OP.SEQ_TEMPO_DIV:     x.para3_seq_tempo_div(p, i0); break;         // E4.2
+        case OP.SEQ_ACTIVE_STEP:   x.para3_seq_active_step(p, i0, i1); break;   // E4.3
+        case OP.SEQ_METRONOME:     x.para3_seq_metronome(p, i0); break;         // E4.4
+        case OP.SEQ_FLUX_MODE:     x.para3_seq_flux_mode(p, i0); break;         // E5
+        case OP.SEQ_FLUX_LOOP_LEN: x.para3_seq_flux_loop_len(p, i0); break;     // E5
+        case OP.SEQ_FLUX_REC:      x.para3_seq_flux_rec(p, i0); break;          // E5
+        case OP.SEQ_FLUX_NOTE:     x.para3_seq_flux_note(p, i0, i1); break;     // E5
+        case OP.SEQ_FLUX_COMMIT:   x.para3_seq_flux_commit(p); break;           // E5
+        case OP.SET_OCTAVE:        x.para3_set_octave(p, i0); break;            // E6.2
         default: break;
       }
       r = (r + 1) | 0;
