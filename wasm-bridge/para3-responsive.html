@@ -701,7 +701,47 @@ const DEMO_PRESETS = {
       det: [40, 45, 55, 65, 70, 65, 55, 45, 40, 50, 60, 70, 75, 65, 55, 45],
     },
   },
-  4: { title:'ACID',     knobs:{ cut:30 } },
+  // P4 — ACID @ 122 BPM, TB-303-style Bassline. POLY, 14-step Cm-Acid-Line,
+  // STEP TRIGGER on (EG retriggert per step = klassischer 303-Envelope-Stab),
+  // hohe Resonance (PEAK 75), positiver EG_INT (Cutoff öffnet mit jeder Note),
+  // schnelles ATK/DEC/SUS, subtile Portamento für 303-Slide-Charakter.
+  // MOTION-REC auf CUTOFF: 16-Step-Sweep low→high→low (squelchy Filter-Lauf).
+  4: {
+    title: 'ACID',
+    voice: 0,              // POLY (mono-like in praxis durch alloc)
+    lfoWave: 0,            // LFO off (lrt=0)
+    lfoSync: false,
+    knobs: {
+      tmp: 122,
+      oct: 0,
+      cut: 30,             // baseline low — motion lane sweept
+      pk:  75,             // hohe Resonance = squelchy 303-Charakter
+      lrt: 0,              // LFO off
+      lpi: 0, lci: 0,
+      dt:  35,             // delay 1/16 für rhythmischen Drive
+      df:  30,
+      vol: 75,
+      egi: 75,             // positiver EG_INT — Cutoff öffnet mit jeder Note
+      det: 0,              // mono-acid (kein detune)
+      por: 25,             // 303-style slide subtle
+      arpRate: 3, arpOct: 1, arpGate: 50,
+    },
+    faders: { atk: 5, dec: 20, sus: 30 },   // sharp percussive 303 envelope
+    arpEnabled: false, arpHold: false, arpMode: 0,
+    stepTrigger: true,     // 303 retrigger per step
+    metro: false, tempoDiv: 1, motionSmooth: false,
+    // 16-Step Cm-Acid-Bassline (14 hits, syncopated rest auf step 5 + 14).
+    steps:    [true, true, true, true, true, false, true, true,
+               true, true, true, true, true, true, false, true],
+    stepNotes:[36,   36,   39,   36,   31,   0,     34,   36,
+               36,   42,   36,   43,   39,   36,    0,    36],
+    actSteps:  new Array(16).fill(true),
+    motionTarget: 'cut',
+    // CUTOFF sweep tief→hoch→tief (klassischer 303-Filter-Lauf über 16 steps).
+    motionLanes: {
+      cut: [20, 30, 45, 60, 75, 88, 95, 92, 85, 75, 65, 55, 45, 38, 30, 25],
+    },
+  },
   5: { title:'RING-RND', knobs:{ cut:80 } },
 };
 function markDirty() {
