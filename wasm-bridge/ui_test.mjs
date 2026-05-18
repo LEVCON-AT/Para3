@@ -33,27 +33,33 @@ const REPO = join(__dirname, '..');
 // --- baseline of untouched files (md5; captured immediately after the worklet
 // memory fix landed, i.e. just before the U-sprints begin) ---------------
 const md5_baseline = {
-  // B4 update: Volca-parity Play=restart-from-step-1. Clock gains a `primed_`
-  // flag (first tick after start() fires immediately, no warm-up silence);
-  // Controller::seqStart resets stepIdx_=-1 before clock.start so the primed
-  // tick advances -1→0. para3_seq_start now routes through Controller::seqStart.
-  // Proven by T29 (immediate-fire) + T30 (Stop+Start = restart, not resume);
-  // T20 regression-clean. Baseline bumped on Para3Engine.hpp + offline_test.cpp
-  // + para3_capi.cpp; the OTHER 14 engine/bridge files stay frozen.
-  'Para3Engine.hpp':                          'ad10927c78d848f9948de81f810eb376',
-  'offline_test.cpp':                         'c7d4cbd14bed326f2a2ac6253095ec7c',
-  'wasm-bridge/para3_capi.h':                 'f3ab5d6b0ae2c0258b12caa044cfa616',
-  'wasm-bridge/para3_capi.cpp':               'c93019a695e8e02ac86444187c32d965',
-  'wasm-bridge/capi_test.cpp':                '867d8965127af1015ca1b56ac5b2b417',
+  // EXT-ARP update: design extension over Volca-Keys parity (Keys hardware
+  // has no arp). Blocks A+B+C add arp pool + scheduler + modes + octave +
+  // Random/Hold/Seed; C-API adds 8 entry points (enable/mode/rate/gate/
+  // octaves/hold/seed/dropped). Bridge JS gains 7 OPs (ARP_ENABLE..ARP_SEED).
+  // The audio path is bit-identical when arpEnabled_=false — proven by T31a
+  // (max|d|=0 over a full render) AND WA7's off-state parity check at the
+  // C-API surface. Files touched by EXT-ARP:
+  //   * engine + C-API: Para3Engine.hpp, para3_capi.{h,cpp}, build_wasm.sh
+  //   * tests:          offline_test.cpp (T31..T35), capi_test.cpp (WA7)
+  //   * bridge JS:      para3-audio.js, para3-ring.js, para3-port.js,
+  //                     para3-worklet.js  (new OPs + Controls methods)
+  // The remaining 7 files (scope/parity/audio/ring/port_test, wasm_parity,
+  // parity_seq, parity_native) stay byte-frozen.
+  'Para3Engine.hpp':                          'e3107bcdaa49c1ab78b93693b8f63d42',
+  'offline_test.cpp':                         'ea22c312895449a7dc935d07edb2cc85',
+  'wasm-bridge/para3_capi.h':                 '3f22daba53093885e12733aa3c54e1a4',
+  'wasm-bridge/para3_capi.cpp':               '256340fc4dba8eade3488e134bc6e5fa',
+  'wasm-bridge/capi_test.cpp':                'aa8182e52327f513fe0d23df6ad0c1a8',
   'wasm-bridge/scope_source_test.cpp':        '646828487b3a002a565b9ec87a7abe55',
   'wasm-bridge/parity_native.cpp':            'ffdb9666262ae54961d58dc7ec19d4b0',
   'wasm-bridge/parity_seq.h':                 '9043aba77b26cecb2aa1324ba805e07a',
-  'wasm-bridge/build_wasm.sh':                '8d59e350084f241a3f3f3fd5c5b27afd',
+  'wasm-bridge/build_wasm.sh':                '8b49ff2273d773fd9f5c1d737aac35cf',
   'wasm-bridge/wasm_parity.mjs':              '9a396e68954d830a3aac0bde40b887cb',
-  'wasm-bridge/para3-audio.js':               '984bdda75219163979259ec63bd91a83',
-  'wasm-bridge/para3-ring.js':                '3b6ccb7383cba1b5c7862b9fc92bb30f',
-  'wasm-bridge/para3-port.js':                '279b67e651b24e09b4242ef05eea2823',
-  'wasm-bridge/para3-worklet.js':             'b9d4ea8bdd698d47d0c452d6e6f3312e',
+  'wasm-bridge/para3-audio.js':               '4787c6221b0efa990c839af831b665c4',
+  'wasm-bridge/para3-ring.js':                'be036c6f917c45942f045293a4b60c57',
+  'wasm-bridge/para3-port.js':                'b32b05892fc3afe81e8ab6ad750aa898',
+  'wasm-bridge/para3-worklet.js':             'b9951f20545589c6b76f8d9b04abd937',
   'wasm-bridge/audio_test.mjs':               '037acf634432569aa0edbe4a8458a595',
   'wasm-bridge/ring_test.mjs':                '76ad067b33f87f310810257a1c65ff24',
   'wasm-bridge/port_test.mjs':                '75e950283a90d7a3cefe9037fb73c408',
@@ -124,7 +130,10 @@ const html = readFileSync(join(REPO, 'wasm-bridge/para3-responsive.html'), 'utf8
     { re: /@media\s*\(min-width:\s*720px\)[\s\S]*?\.scroll\s*\{[^}]*grid-template-columns:\s*repeat\(2\s*,\s*1fr\)/, label: 'tablet-portrait → 2-col grid' },
     // Tablet landscape + desktop
     { re: /@media\s*\(min-width:\s*1024px\)[\s\S]*?\.app\s*\{[^}]*max-width:\s*1200px/, label: 'tablet-landscape/desktop ≥1024 → max-width:1200px' },
-    { re: /@media\s*\(min-width:\s*1024px\)[\s\S]*?\.scroll\s*\{[^}]*grid-template-columns:\s*repeat\(3\s*,\s*1fr\)/, label: 'tablet-landscape/desktop → 3-col grid' },
+    // EXT-ARP UI sprint: 3-col base became 6-col so the arp+seq row can be
+    // split 50/50 ("arp arp arp seq seq seq"). Visually identical: each
+    // section still spans 2/6 = 33%.
+    { re: /@media\s*\(min-width:\s*1024px\)[\s\S]*?\.scroll\s*\{[^}]*grid-template-columns:\s*repeat\(6\s*,\s*1fr\)/, label: 'tablet-landscape/desktop → 6-col grid (was 3-col, doubled for arp+seq 50/50)' },
     // Desktop wide
     { re: /@media\s*\(min-width:\s*1600px\)[\s\S]*?\.app\s*\{[^}]*max-width:\s*1560px/, label: 'desktop-wide ≥1600 → max-width:1560px (U6 expansion)' },
     { re: /@media\s*\(min-width:\s*1600px\)[\s\S]*?grid-template-columns:\s*repeat\(4\s*,\s*1fr\)/, label: 'desktop-wide → 4-col grid' },
@@ -252,13 +261,15 @@ const html = readFileSync(join(REPO, 'wasm-bridge/para3-responsive.html'), 'utf8
   // (ii) grid-template-areas declarations per breakpoint. We collapse
   //      whitespace so the grep tolerates indentation.
   const css = html.replace(/\s+/g, ' ');
+  // EXT-ARP UI sprint: arp row added between eg/lfo and seq at every
+  // breakpoint. 3-col desktop became 6-col so arp+seq can split 50/50.
   const templates = [
-    { label: '2-col (mobile-landscape / tablet-portrait) areas: 4-short paired + eg/lfo + seq',
-      re: /grid-template-areas:\s*"vco\s+osc"\s*"vcf\s+dly"\s*"eg\s+lfo"\s*"seq\s+seq"/ },
-    { label: '3-col (tablet-landscape / desktop) areas: 3-short row + eg/lfo/dly row + seq',
-      re: /grid-template-areas:\s*"vco\s+osc\s+vcf"\s*"eg\s+lfo\s+dly"\s*"seq\s+seq\s+seq"/ },
-    { label: '4-col (wide desktop) areas: 4-short row + eg×2 lfo×2 + seq×4',
-      re: /grid-template-areas:\s*"vco\s+osc\s+vcf\s+dly"\s*"eg\s+eg\s+lfo\s+lfo"\s*"seq\s+seq\s+seq\s+seq"/ },
+    { label: '2-col (mobile-landscape / tablet-portrait) areas: 4-short paired + eg/lfo + arp + seq',
+      re: /grid-template-areas:\s*"vco\s+osc"\s*"vcf\s+dly"\s*"eg\s+lfo"\s*"arp\s+arp"\s*"seq\s+seq"/ },
+    { label: '6-col (tablet-landscape / desktop) areas: doubled sections + arp/seq 50/50',
+      re: /grid-template-areas:\s*"vco\s+vco\s+osc\s+osc\s+vcf\s+vcf"\s*"eg\s+eg\s+lfo\s+lfo\s+dly\s+dly"\s*"arp\s+arp\s+arp\s+seq\s+seq\s+seq"/ },
+    { label: '4-col (wide desktop) areas: 4-short row + eg×2 lfo×2 + arp×2 seq×2',
+      re: /grid-template-areas:\s*"vco\s+osc\s+vcf\s+dly"\s*"eg\s+eg\s+lfo\s+lfo"\s*"arp\s+arp\s+seq\s+seq"/ },
   ];
   const tmplFailed = templates.filter(t => !t.re.test(css));
   // (iii) Step sequencer compaction at ≥720: 16×1 grid, lane shorter.
@@ -419,6 +430,74 @@ const html = readFileSync(join(REPO, 'wasm-bridge/para3-responsive.html'), 'utf8
   console.log(`\nU-B8: B4 visual cursor anchored to seqStart (Volca-parity)`);
   console.log(`   checks   : ${checks.length - failed.length}/${checks.length}`);
   if (failed.length) for (const f of failed) console.log(`      MISSING: ${f.label}`);
+  console.log(`   -> ${pass ? 'PASS' : 'FAIL'}`);
+  if (!pass) fails++;
+}
+
+// ----- (b9) EXT-ARP UI panel markers -------------------------------------
+// The arp panel must be present in the DOM (sec-arp section), carry the
+// "ARP · EXT" header style the user explicitly OK'd, expose the 6 control
+// groups (enable, mode/rate/oct seg-radios, gate knob, hold), and the
+// grid-template-areas must place "arp" before "seq" on every breakpoint.
+{
+  const checks = [
+    { re: /<div\s+class="sec\s+sec-arp"\s+style="grid-area:arp">/,
+      label: 'ARP section present with grid-area:arp' },
+    { re: /<h2>ARP\s*·\s*<b>EXT<\/b><\/h2>/,
+      label: 'ARP · EXT header in the existing seqhead style' },
+    { re: /id="arpOn"/,         label: 'enable toggle (#arpOn)' },
+    { re: /id="arpHold"/,       label: 'hold toggle (#arpHold)' },
+    { re: /id="arpMode"[\s\S]*?data-m="0"[\s\S]*?data-m="4"/,
+      label: 'mode segment with 5 buttons (Up..Random)' },
+    { re: /id="arpRate"[\s\S]*?data-r="0"[\s\S]*?data-r="5"/,
+      label: 'rate segment with 6 buttons (1/4..1/32)' },
+    { re: /id="arpOct"[\s\S]*?data-o="1"[\s\S]*?data-o="4"/,
+      label: 'octave segment with 4 buttons (×1..×4)' },
+    { re: /data-name="GATE"[^>]*data-k="arpGate"/,
+      label: 'gate knob (arpGate, not in KNOB_PARAM)' },
+    // grid-template-areas must list "arp" before "seq" on each breakpoint.
+    { re: /grid-template-areas:[\s\S]*?"arp arp"[\s\S]*?"seq seq"/,
+      label: '2-col layouts: arp row above seq row' },
+    { re: /grid-template-areas:[\s\S]*?"arp arp arp seq seq seq"/,
+      label: '6-col desktop: arp+seq 50/50 (3+3 of 6)' },
+    { re: /grid-template-areas:[\s\S]*?"arp arp seq seq"/,
+      label: '4-col wide desktop: arp+seq 50/50 (2+2 of 4)' },
+  ];
+  const failed = checks.filter(c => !c.re.test(html));
+  const pass = failed.length === 0;
+  console.log(`\nU-B9: EXT-ARP UI panel structure + layout`);
+  console.log(`   checks   : ${checks.length - failed.length}/${checks.length}`);
+  if (failed.length) for (const f of failed) console.log(`      MISSING: ${f.label}`);
+  console.log(`   -> ${pass ? 'PASS' : 'FAIL'}`);
+  if (!pass) fails++;
+}
+
+// ----- (b10) EXT-ARP emit paths bypass the taper trichter -----------------
+// Spec §6: arp parameters are Controller settings, NOT setParamNorm. The
+// arp panel must never call setParam(...) for arp controls — instead it
+// uses arpEnable / arpMode / arpRate / arpGate / arpOctaves / arpHold
+// (mirroring the seqTempo / seqSwing pattern).
+{
+  const checks = [
+    { re: /emit\(\(c\)\s*=>\s*c\.arpEnable\(/,   label: 'arpEnable emit path' },
+    { re: /emit\(\(c\)\s*=>\s*c\.arpHold\(/,     label: 'arpHold emit path' },
+    { re: /emit\(\(c\)\s*=>\s*c\.arpMode\(/,     label: 'arpMode emit path' },
+    { re: /emit\(\(c\)\s*=>\s*c\.arpRate\(/,     label: 'arpRate emit path' },
+    { re: /emit\(\(c\)\s*=>\s*c\.arpOctaves\(/,  label: 'arpOctaves emit path' },
+    { re: /id\s*===\s*['"]arpGate['"]\s*\)\s*emit\(\(c\)\s*=>\s*c\.arpGate\(/,
+      label: 'arpGate via emitKnob else-branch (NOT setParam)' },
+    // Negative: arpGate must not appear inside KNOB_PARAM (would route
+    // through setParam → engine taper, violating spec §6).
+    { re: /KNOB_PARAM\s*=\s*\{[^}]*\barpGate\s*:/,
+      label: 'NEG: arpGate must NOT be in KNOB_PARAM', neg: true },
+  ];
+  let pass = true;
+  console.log(`\nU-B10: EXT-ARP emit paths bypass setParamNorm trichter`);
+  for (const c of checks) {
+    const hit = c.re.test(html);
+    const ok = c.neg ? !hit : hit;
+    if (!ok) { console.log(`      ${c.neg ? 'LEAKED' : 'MISSING'}: ${c.label}`); pass = false; }
+  }
   console.log(`   -> ${pass ? 'PASS' : 'FAIL'}`);
   if (!pass) fails++;
 }

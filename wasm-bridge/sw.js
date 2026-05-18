@@ -14,7 +14,7 @@
 //  the worklet and needs no SAB.
 // =============================================================================
 
-const CACHE_VER  = 'para3-v13'; // B4: Play=restart-from-step-1 (Volca-parity); cursor anchored to seqStart
+const CACHE_VER  = 'para3-v14'; // EXT-ARP: arpeggiator (default off; bit-identical engine when disabled)
 const PRECACHE   = [
   './',
   './index.html',

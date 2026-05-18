@@ -270,10 +270,13 @@ body{
 @media (orientation:landscape) and (max-width:1023px){
   .app{max-width:100%}
   .scroll{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;
+    /* EXT-ARP UI sprint: arp row above seq on 2-col viewports (mobile-LS,
+       tablet-PT). User-confirmed: arp visually above seq, full-width row. */
     grid-template-areas:
       "vco osc"
       "vcf dly"
       "eg  lfo"
+      "arp arp"
       "seq seq";
     align-items:start;padding:0 14px 16px;}
   .sec{margin-bottom:0}
@@ -294,10 +297,12 @@ body{
                0 0 0 1px var(--app-edge);
     border-radius:18px}
   .scroll{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;
+    /* EXT-ARP UI sprint: arp row above seq. */
     grid-template-areas:
       "vco osc"
       "vcf dly"
       "eg  lfo"
+      "arp arp"
       "seq seq";
     align-items:start;padding:0 18px 18px;}
   .sec{margin-bottom:0}
@@ -317,11 +322,15 @@ body{
     box-shadow:0 32px 80px -22px rgba(var(--app-shadow),.78),
                0 0 0 1px var(--app-edge);
     border-radius:22px}
-  .scroll{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;
+  /* EXT-ARP UI sprint: 3-col base couldn't host a 50/50 arp+seq split, so
+     switch to 6-col where every section spans 2 cols. Visually identical to
+     the old 3-col (each section still gets 33% width), but the new arp+seq
+     row can be "arp arp arp seq seq seq" = 50/50, as the user requested. */
+  .scroll{display:grid;grid-template-columns:repeat(6,1fr);gap:16px;
     grid-template-areas:
-      "vco osc vcf"
-      "eg  lfo dly"
-      "seq seq seq";
+      "vco vco osc osc vcf vcf"
+      "eg  eg  lfo lfo dly dly"
+      "arp arp arp seq seq seq";
     /* align-items: stretch so the row that pairs the tall (eg/lfo) with the
        short (dly) levels out — DELAY gets extra padding inside its card,
        which reads as intentional "breathing room" not a sizing bug. */
@@ -343,10 +352,11 @@ body{
     box-shadow:0 40px 100px -24px rgba(var(--app-shadow),.82),
                0 0 0 1px var(--app-edge)}
   .scroll{grid-template-columns:repeat(4,1fr);padding:0 28px 24px;gap:18px;
+    /* EXT-ARP UI sprint: 4-col splits arp+seq cleanly 50/50. */
     grid-template-areas:
       "vco osc vcf dly"
       "eg  eg  lfo lfo"
-      "seq seq seq seq";}
+      "arp arp seq seq";}
   .kbd{height:164px}
 }
 
@@ -468,6 +478,40 @@ body{
       <div class="knob" data-min="0" data-max="100" data-val="78" data-unit="" data-name="VOLUME" data-k="vol"></div>
       <div class="knob" data-min="50" data-max="240" data-val="120" data-unit="BPM" data-name="TEMPO" data-k="tmp"></div></div></div>
 
+    <!-- EXT-ARP: design extension over Volca-Keys parity. Default off → engine
+         bit-identical to pre-EXT (proven by T31a). Header style mirrors the
+         other sections (e.g. STEP·SEQ, DELAY·MASTER). NOT in KNOB_PARAM —
+         arp settings have their own emit paths (no taper trichter). -->
+    <div class="sec sec-arp" style="grid-area:arp"><div class="seqhead"><h2>ARP · <b>EXT</b></h2>
+      <div class="tg"><button class="tbtn" id="arpOn" title="ARP ENABLE">ON</button><button class="tbtn" id="arpHold" title="ARP HOLD / LATCH">HOLD</button></div></div>
+      <div style="display:flex;justify-content:flex-end;gap:7px;margin-bottom:9px;flex-wrap:wrap">
+        <span class="seg" id="arpMode" title="ARP MODE">
+          <button class="tbtn on" data-m="0">UP</button>
+          <button class="tbtn"    data-m="1">DN</button>
+          <button class="tbtn"    data-m="2">U+D</button>
+          <button class="tbtn"    data-m="3">AS</button>
+          <button class="tbtn"    data-m="4">RND</button>
+        </span>
+        <span class="seg" id="arpRate" title="ARP RATE">
+          <button class="tbtn"    data-r="0">1/4</button>
+          <button class="tbtn"    data-r="1">1/8</button>
+          <button class="tbtn"    data-r="2">1/8T</button>
+          <button class="tbtn on" data-r="3">1/16</button>
+          <button class="tbtn"    data-r="4">1/16T</button>
+          <button class="tbtn"    data-r="5">1/32</button>
+        </span>
+        <span class="seg" id="arpOct" title="ARP OCTAVES">
+          <button class="tbtn on" data-o="1">×1</button>
+          <button class="tbtn"    data-o="2">×2</button>
+          <button class="tbtn"    data-o="3">×3</button>
+          <button class="tbtn"    data-o="4">×4</button>
+        </span>
+      </div>
+      <div class="grid3" style="grid-template-columns:1fr">
+        <div class="knob" data-min="0" data-max="100" data-val="50" data-unit="%" data-name="GATE" data-k="arpGate"></div>
+      </div>
+    </div>
+
     <div class="sec full sec-seq" style="grid-area:seq"><div class="seqhead"><h2>STEP <b>SEQ</b> · 16</h2>
       <div class="tg"><button class="tbtn" id="play">▶</button><button class="tbtn" id="clr">CLR</button></div></div>
       <!-- E4 KORG-parity sequencer behaviours; engine T19–T22.
@@ -576,6 +620,9 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
       emit((c) => c.setOctave(o));                                      // E6.2
       updateOctIndicator(o);                                            // U3 display-only
     }
+    // EXT-ARP UI: arpGate is a controller setting (not in KNOB_PARAM → no
+    // setParamNorm). Spec §6: "NICHT in KNOB_PARAM/INERT_KNOBS aufnehmen".
+    else if (id === 'arpGate') emit((c) => c.arpGate(val / 100));
   }
 
   // U3 — small visual indicator in the keyboard corner when oct knob != 0.
@@ -883,6 +930,59 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
     else            emit((c) => c.seqFluxRec(true));
   };
 
+  // EXT-ARP UI: Block A/B/C controls. State mirrors engine defaults so the
+  // first pushInitialState (called after audio.start) is a no-op for the off
+  // path — proven bit-identical to pre-EXT by the engine's T31a.
+  const arpOnB   = document.getElementById('arpOn');
+  const arpHoldB = document.getElementById('arpHold');
+  const arpModeEl = document.getElementById('arpMode');
+  const arpRateEl = document.getElementById('arpRate');
+  const arpOctEl  = document.getElementById('arpOct');
+  let arpOnState = false, arpHoldState = false;
+  let arpModeVal = 0, arpRateVal = 3, arpOctVal = 1;     // engine defaults
+  const arpModeNames = ['UP','DN','UP+DN','AS-PLAYED','RANDOM'];
+  const arpRateNames = ['1/4','1/8','1/8T','1/16','1/16T','1/32'];
+
+  arpOnB.onclick = () => {
+    arpOnState = !arpOnState;
+    arpOnB.classList.toggle('on', arpOnState);
+    show('ARP', arpOnState ? 'ON' : 'OFF', arpOnState ? arpModeNames[arpModeVal] : '');
+    emit((c) => c.arpEnable(arpOnState));
+  };
+  arpHoldB.onclick = () => {
+    arpHoldState = !arpHoldState;
+    arpHoldB.classList.toggle('on', arpHoldState);
+    show('ARP HOLD', arpHoldState ? 'LATCH' : 'OFF', '');
+    emit((c) => c.arpHold(arpHoldState));
+  };
+  arpModeEl.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    const m = +b.dataset.m; if (!(m >= 0 && m <= 4)) return;
+    arpModeVal = m;
+    [...arpModeEl.querySelectorAll('button')].forEach(x => x.classList.remove('on'));
+    b.classList.add('on');
+    show('ARP MODE', arpModeNames[m], '');
+    emit((c) => c.arpMode(m));
+  });
+  arpRateEl.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    const r = +b.dataset.r; if (!(r >= 0 && r <= 5)) return;
+    arpRateVal = r;
+    [...arpRateEl.querySelectorAll('button')].forEach(x => x.classList.remove('on'));
+    b.classList.add('on');
+    show('ARP RATE', arpRateNames[r], '');
+    emit((c) => c.arpRate(r));
+  });
+  arpOctEl.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    const o = +b.dataset.o; if (!(o >= 1 && o <= 4)) return;
+    arpOctVal = o;
+    [...arpOctEl.querySelectorAll('button')].forEach(x => x.classList.remove('on'));
+    b.classList.add('on');
+    show('ARP OCT', '×'+o, '');
+    emit((c) => c.arpOctaves(o));
+  });
+
   function setTarget(id){
     // Engine rejects PEAK; UI mirrors that hard, not silently (spec §E3.4).
     // OCT/TMP also rejected here — they're not normalised PARAMs.
@@ -1129,6 +1229,13 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
     emit((c) => c.setMode(VOICE_MODE[voiceIx]));
     emit((c) => c.setLfoShape(LFO_FROM_LW[lw]));
     emit((c) => c.seqTempo(K.tmp.get()));
+    // EXT-ARP UI: send the current arp panel state. All defaults match the
+    // engine's defaults (off, Up, 1/16, ×1, hold=off; gate is emitted via
+    // the K loop above as a normal knob). These calls are no-ops on a fresh
+    // engine — the audible bit-identity (T31a) holds regardless.
+    emit((c) => { c.arpMode(arpModeVal); c.arpRate(arpRateVal);
+                  c.arpOctaves(arpOctVal); c.arpHold(arpHoldState);
+                  c.arpEnable(arpOnState); });
     flushPattern();
   }
   async function start() {

@@ -68,6 +68,14 @@ export class Para3Port {
   seqFluxNote(note, on){ return this._push(OP.SEQ_FLUX_NOTE, note | 0, on ? 1 : 0, 0); }
   seqFluxCommit()      { return this._push(OP.SEQ_FLUX_COMMIT, 0, 0, 0); }
   setOctave(oct)       { return this._push(OP.SET_OCTAVE, oct | 0, 0, 0); }
+  // EXT-ARP producers — identical to Para3Ring (transport-blind surface).
+  arpEnable(on)        { return this._push(OP.ARP_ENABLE,  on ? 1 : 0, 0, 0); }
+  arpMode(m)           { return this._push(OP.ARP_MODE,    m | 0, 0, 0); }
+  arpRate(r)           { return this._push(OP.ARP_RATE,    r | 0, 0, 0); }
+  arpGate(g01)         { return this._push(OP.ARP_GATE,    0, 0, g01); }
+  arpOctaves(o)        { return this._push(OP.ARP_OCTAVES, o | 0, 0, 0); }
+  arpHold(on)          { return this._push(OP.ARP_HOLD,    on ? 1 : 0, 0, 0); }
+  arpSeed(seed)        { return this._push(OP.ARP_SEED,    seed | 0, 0, 0); }
 }
 
 // ---- worklet-side queue protocol (consumed in process(), pre-render) -------

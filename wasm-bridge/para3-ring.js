@@ -53,6 +53,15 @@ export const OP = Object.freeze({
   SEQ_FLUX_NOTE:     27, // i0 = note, i1 = on (0|1) -- append at live cursor
   SEQ_FLUX_COMMIT:   28, // -- stable-sort + publish
   SET_OCTAVE:        29, // E6.2 — i0 = oct (signed; typical -2..+2)
+  // EXT-ARP design extension over Volca-Keys parity (Keys hardware has no arp).
+  // Default OFF -> engine bit-identical to pre-EXT (T31a in offline_test).
+  ARP_ENABLE:        30, // i0 = on (0|1)
+  ARP_MODE:          31, // i0 = mode (0=Up 1=Dn 2=UpDn 3=AsPlayed 4=Random)
+  ARP_RATE:          32, // i0 = rate index (0=1/4 1=1/8 2=1/8T 3=1/16 4=1/16T 5=1/32)
+  ARP_GATE:          33, // d  = gate01 (0..1 staccato fraction)
+  ARP_OCTAVES:       34, // i0 = octaves (1..4)
+  ARP_HOLD:          35, // i0 = on (0|1)  -- Latch
+  ARP_SEED:          36, // i0 = seed (uint32, reproducibility for Random)
 });
 
 const HDR = 2;                       // header int32 count
@@ -129,6 +138,14 @@ export class Para3Ring {
   seqFluxNote(note, on){ return this._push(OP.SEQ_FLUX_NOTE, note | 0, on ? 1 : 0, 0); }
   seqFluxCommit()      { return this._push(OP.SEQ_FLUX_COMMIT, 0, 0, 0); }
   setOctave(oct)       { return this._push(OP.SET_OCTAVE, oct | 0, 0, 0); }
+  // EXT-ARP producers — controller settings (no taper trichter).
+  arpEnable(on)        { return this._push(OP.ARP_ENABLE,  on ? 1 : 0, 0, 0); }
+  arpMode(m)           { return this._push(OP.ARP_MODE,    m | 0, 0, 0); }
+  arpRate(r)           { return this._push(OP.ARP_RATE,    r | 0, 0, 0); }
+  arpGate(g01)         { return this._push(OP.ARP_GATE,    0, 0, g01); }
+  arpOctaves(o)        { return this._push(OP.ARP_OCTAVES, o | 0, 0, 0); }
+  arpHold(on)          { return this._push(OP.ARP_HOLD,    on ? 1 : 0, 0, 0); }
+  arpSeed(seed)        { return this._push(OP.ARP_SEED,    seed | 0, 0, 0); }
 
   // ---- consumer side (AudioWorklet thread). Wait-free drain. ----
   // cb(op, i0, i1, dval) is invoked for each pending message, in order.

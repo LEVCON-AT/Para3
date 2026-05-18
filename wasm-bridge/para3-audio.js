@@ -61,6 +61,14 @@ export class Para3Controls {
   // E6.2 — engine pitch offset (integer semitones × 12). Replaces host-side
   // +oct*12 in midiOfKey so the engine owns the pitch path (band-limited).
   setOctave(oct)            { return this._do(() => this.ring.setOctave(oct)); }
+  // EXT-ARP — controller settings (no taper trichter; mirrors seqTempo/seqSwing).
+  arpEnable(on)             { return this._do(() => this.ring.arpEnable(on)); }
+  arpMode(m)                { return this._do(() => this.ring.arpMode(m)); }
+  arpRate(r)                { return this._do(() => this.ring.arpRate(r)); }
+  arpGate(g01)              { return this._do(() => this.ring.arpGate(g01)); }
+  arpOctaves(o)             { return this._do(() => this.ring.arpOctaves(o)); }
+  arpHold(on)               { return this._do(() => this.ring.arpHold(on)); }
+  arpSeed(seed)             { return this._do(() => this.ring.arpSeed(seed)); }
   seqTempo(bpm)             { return this._do(() => this.ring.seqTempo(bpm)); }
   seqSwing(s01)             { return this._do(() => this.ring.seqSwing(s01)); }
   seqStart()                { return this._do(() => this.ring.seqStart()); }
