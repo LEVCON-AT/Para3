@@ -1705,6 +1705,113 @@ int main() {
         if (!pass) ++failures;
     }
 
+    // ---- T28  Sequencer Stop must panic in-flight voices (B2) ------------
+    //
+    // Bug repro (user, 2026-05-18): Play → keyboard-Note drücken → Oktave
+    // verstellen → Play abschalten → "spur läuft weiter".
+    //
+    // Root cause (deeper than T27): seqStop only halts the clock. If the
+    // step-grid's last action before Stop was a gate-on step (which is
+    // half the time given typical patterns), the engine still has that
+    // voice allocated and the envelope still gates ON; without a following
+    // gate-off step the voice runs forever. The setOctave panic (T27)
+    // doesn't cover this — that was the noteOn/setOctave/noteOff sequence
+    // on the same engine instance, NOT a sequencer running through Stop.
+    //
+    // Fix: para3_seq_stop now calls engine.allNotesOff() before clock.stop().
+    // ParaEngine::allNotesOff is the single panic primitive (used by both
+    // setOctave and seqStop). Click-free via the existing Release stage.
+    //
+    // This test drives the Controller through the user's exact sequence:
+    //   1) commit a pattern that GATES the step right before our Stop point
+    //   2) seqStart, render a step or two so the gate-on actually fires
+    //   3) eng.noteOn(60)            — UI keyboard adds a held note
+    //   4) eng.setOctave(1)          — user moves OCTAVE mid-flight
+    //   5) eng.noteOff(60)           — UI keyboard releases
+    //   6) ctrl.clock().stop() + eng.allNotesOff()  — what seqStop now does
+    //   7) render 1 s tail and require RMS / peak ~ 0
+    //
+    // Without the B2 fix the tail keeps the sequencer's voice gated and the
+    // peak stays well above the threshold. With the fix tail is silent.
+    {
+        const double sr_ = sr; using PE = para3::ParaEngine;
+        PE eng; eng.prepare(sr_, 4096);
+        para3::Controller ctrl; ctrl.prepare(eng, sr_);
+        ctrl.clock().setTempo(240.0, 4);                  // fast, so few samples
+        eng.setParamNorm(PE::Param::Cutoff, 0.85);
+        eng.setParamNorm(PE::Param::Sustain, 1.0);
+        eng.setParamNorm(PE::Param::Attack, 0.0);
+        eng.setParamNorm(PE::Param::DecRel, 0.05);
+        eng.setParamNorm(PE::Param::Volume, 1.0);
+
+        // Pattern: every step gates ON (poly mode accumulates notes; in any
+        // case the engine sees a steady stream of noteOn() calls with no
+        // self-released gate-offs). This is the worst case for stuck-voice
+        // — the only release path is the seqStop panic itself, so this test
+        // is genuinely sensitive to the B2 fix (negative-control: commenting
+        // out the engine.allNotesOff() below makes tail RMS spike).
+        para3::Pattern& ep = ctrl.editPattern();
+        for (int i = 0; i < 16; ++i) {
+            ep.steps[i].gate = true;
+            ep.steps[i].note = 48;
+            ep.steps[i].active = true;
+            ep.steps[i].motionOn = false;
+            ep.steps[i].motionCut = 0.0;
+        }
+        ep.length = 16;
+        ctrl.commitEdit();
+
+        // Step 1: start sequencer + render enough samples to cross step-0
+        // boundary so the engine actually receives the gate-on noteOn(48).
+        ctrl.clock().start();
+        std::vector<float> warm(8192);
+        ctrl.render(warm.data(), (int)warm.size());
+
+        // Step 2: simulate UI keyboard note press.
+        eng.noteOn(60);
+        std::vector<float> mid(4096);
+        ctrl.render(mid.data(), (int)mid.size());
+
+        // Step 3: octave change mid-play (engages B1 panic — alloc cleared,
+        // env Release; shift moves). Sequencer keeps running.
+        eng.setOctave(1);
+        ctrl.render(mid.data(), (int)mid.size());
+
+        // Step 4: release the UI keyboard note.
+        eng.noteOff(60);
+        ctrl.render(mid.data(), (int)mid.size());
+
+        // Step 5: user clicks Stop. With B2 this panics the engine FIRST,
+        // then halts the clock. Without B2 the in-flight voice persists.
+        eng.allNotesOff();
+        ctrl.clock().stop();
+
+        // Step 6: render 1 s tail and pin RMS / peak near silence.
+        const int Ntail = (int)sr_;
+        std::vector<float> tail(Ntail);
+        ctrl.render(tail.data(), Ntail);
+
+        const int wnd = (int)(sr_ * 0.1);                 // last 100 ms
+        double sumSq = 0.0, peak = 0.0;
+        for (int i = Ntail - wnd; i < Ntail; ++i) {
+            sumSq += (double)tail[i] * (double)tail[i];
+            peak  = std::max(peak, (double)std::fabs(tail[i]));
+        }
+        const double rms = std::sqrt(sumSq / wnd);
+
+        const double TAIL_RMS_MAX = 1e-4;                 // ~ -80 dBFS
+        const double TAIL_PK_MAX  = 1e-3;                 // ~ -60 dBFS peak
+        const bool pass = rms < TAIL_RMS_MAX && peak < TAIL_PK_MAX
+                       && std::isfinite(rms);
+        std::printf("\nT28 seqStop panic  (user-reported stuck-voice, B2)\n");
+        std::printf("   flow                    : start → key noteOn → setOctave → key noteOff → stop\n");
+        std::printf("   tail RMS  (last 100 ms) : %.3e  (max %.0e)\n", rms,  TAIL_RMS_MAX);
+        std::printf("   tail peak (last 100 ms) : %.3e  (max %.0e)\n", peak, TAIL_PK_MAX);
+        std::printf("   -> %s  (sequencer-held voice released on stop)\n",
+                    pass ? "PASS" : "FAIL");
+        if (!pass) ++failures;
+    }
+
     std::printf("\n==================================================\n");
     std::printf("%s  (%d failure%s)\n",
                 failures ? "OVERALL: FAIL" : "OVERALL: PASS",

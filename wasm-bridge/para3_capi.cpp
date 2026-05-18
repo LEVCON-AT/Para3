@@ -76,7 +76,17 @@ void para3_set_octave  (Para3* p, int oct){ if (p) p->engine.setOctave(oct); }  
 void para3_seq_set_tempo (Para3* p, double bpm)  { if (p) p->ctrl.clock().setTempo(bpm,4); }
 void para3_seq_set_swing (Para3* p, double s)    { if (p) p->ctrl.clock().setSwing(s); }
 void para3_seq_start     (Para3* p)              { if (p) p->ctrl.clock().start(); }
-void para3_seq_stop      (Para3* p)              { if (p) p->ctrl.clock().stop(); }
+// B2-fix: Stop must panic the engine BEFORE halting the clock. Otherwise any
+// voice the sequencer started with a gate-on step that hasn't reached its
+// matching gate-off step yet stays gated forever (the observed "stuck note"
+// when the user clicks Stop). The order matters — engine.allNotesOff first
+// so the envelope's Release stage begins; clock.stop after so no further
+// step events are scheduled. Click-free via the existing envelope logic.
+void para3_seq_stop      (Para3* p)              {
+    if (!p) return;
+    p->engine.allNotesOff();
+    p->ctrl.clock().stop();
+}
 void para3_seq_arm_record(Para3* p, int on)      { if (p) p->ctrl.armRecord(on != 0); }
 
 void para3_seq_set_step(Para3* p, int idx, int note, int gate,

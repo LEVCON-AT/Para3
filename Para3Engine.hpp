@@ -772,18 +772,23 @@ public:
     void metroTrigger(bool accent)    noexcept { metro_.trigger(accent); }// E4.4
     void setVolume(double g)          noexcept { vol_.setTarget(g); }     // E6.1 (smoothed)
     // B1-fix: panic any held voice and release the envelope BEFORE changing
-    // the shift. The matched-pair invariant (same octShift on noteOn and the
-    // corresponding noteOff) breaks if the shift moves mid-gate — without the
-    // panic, the noteOff would miss its target in alloc_ and the voice would
-    // run forever (observed: keyboard with held key + oct knob; sequencer
-    // with seqStart + oct knob → "spur läuft weiter selbst nach seqStop").
-    // The release is click-free: env_.gateOff just sets Release state, the
-    // existing envelope decay handles the audible part.
+    // the shift. Reuses the engine's own allNotesOff (below) so seqStop, the
+    // C-API panic path, and this one all converge on the same primitive.
     void setOctave(int oct)           noexcept {
+        allNotesOff();
+        octShift_ = oct * 12;                                                 // E6.2 semitones
+    }
+    // B2: engine-level panic primitive. Single source of truth for "release
+    // every voice and start the envelope's Release stage now". RT-safe: one
+    // int write (alloc.count_=0) and one Release-state assignment in
+    // AdsrEnvelope::gateOff. Click-free: the existing envelope decay handles
+    // the audible portion; no new smoother. Called from setOctave (B1) and
+    // from para3_seq_stop (B2 — without it the sequencer's in-flight gate-on
+    // step leaves a stuck voice forever when the user clicks Stop).
+    void allNotesOff() noexcept {
         alloc_.allNotesOff();
         env_.gateOff();
         gateHeld_ = false;
-        octShift_ = oct * 12;                                                 // E6.2 semitones
     }
     void setDetune(double semis)      noexcept { detune_.setTarget(semis); } // E2.1 (smoothed)
     void setPortamento(double tauSec) noexcept {                            // E2.2 Modell A

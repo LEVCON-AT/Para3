@@ -14,7 +14,7 @@
 //  the worklet and needs no SAB.
 // =============================================================================
 
-const CACHE_VER  = 'para3-v10'; // U5+U6+B1: motion-fix, desktop lift-off, octave-during-play fix
+const CACHE_VER  = 'para3-v11'; // B2: seqStop panic — releases in-flight sequencer voice on Stop
 const PRECACHE   = [
   './',
   './index.html',

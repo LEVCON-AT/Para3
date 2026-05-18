@@ -33,14 +33,16 @@ const REPO = join(__dirname, '..');
 // --- baseline of untouched files (md5; captured immediately after the worklet
 // memory fix landed, i.e. just before the U-sprints begin) ---------------
 const md5_baseline = {
-  // B1 update: setOctave now panics (allNotesOff + gateOff) before changing
-  // octShift_, plus ParaAllocator::allNotesOff added (RT-safe), plus the T27
-  // regression test for the stuck-voice scenario. Baseline rebumped to the
-  // post-B1 hashes; the OTHER 15 engine/bridge files stay frozen.
-  'Para3Engine.hpp':                          '88ea2a6fd9d69e4abcc7fa580915fd96',
-  'offline_test.cpp':                         'b8eef2672ae7f6de7459b99d7f368937',
+  // B1+B2 update: setOctave panic refactored to share ParaEngine::allNotesOff
+  // (new engine primitive). para3_seq_stop now calls engine.allNotesOff before
+  // clock.stop so a sequencer voice held by a gate-on step is released on Stop
+  // (proven by T28's negative test: without the fix tail RMS ≈ 0.37). Baseline
+  // bumped on Para3Engine.hpp + offline_test.cpp + para3_capi.cpp; the OTHER
+  // 14 engine/bridge files stay frozen.
+  'Para3Engine.hpp':                          '07a585e00685f20edd10b864154d0630',
+  'offline_test.cpp':                         '6175a6f9e00b9b66347b0b9a88a3f4ea',
   'wasm-bridge/para3_capi.h':                 'f3ab5d6b0ae2c0258b12caa044cfa616',
-  'wasm-bridge/para3_capi.cpp':               'dc44ae231c060427e07f3cbdbaf9a3f7',
+  'wasm-bridge/para3_capi.cpp':               '49d7e663934f9ef35e553e11b908a450',
   'wasm-bridge/capi_test.cpp':                '867d8965127af1015ca1b56ac5b2b417',
   'wasm-bridge/scope_source_test.cpp':        '646828487b3a002a565b9ec87a7abe55',
   'wasm-bridge/parity_native.cpp':            'ffdb9666262ae54961d58dc7ec19d4b0',
