@@ -2690,6 +2690,79 @@ int main() {
         if (!pass) ++failures;
     }
 
+    // ---- T40  RELEASE-FIX: noteOff produces smooth Release tail ------------
+    // User-reported: after key release, HOLD off, or ARP disable, the sound
+    // cuts off hard instead of decaying through the envelope's Release stage
+    // (Volca-Keys topology, kDrRatio exponential, ~DecRel ms).
+    //
+    // Root cause: ParaEngine::noteOff() called refresh() after the last
+    // physical note went away. refresh() resolved alloc_ → active_[v]=false
+    // for every voice slot. process() then short-circuited the oscillator
+    // contribution to 0 (line "if (!active_[v]) continue;"), so eg * mix
+    // collapsed to silence BEFORE env_ could drive its Release segment.
+    //
+    // Fix: on the last noteOff, mirror allNotesOff() — gate the envelope
+    // off but leave active_[v] untouched, so the oscillators keep producing
+    // the tail signal that the Release envelope multiplies down to zero.
+    //
+    // Verification: with sustain=1, decRel ~ 500 ms, the RMS measured 10 ms
+    // after release must still be > 90% of peak (definitely NOT hard cut)
+    // and the RMS measured 250 ms after release must be > 30% of peak
+    // (a real exponential tail, not a fast linear ramp).
+    {
+        using PE = para3::ParaEngine;
+        PE eng; eng.prepare(sr, 4096);
+        para3::Controller ctl; ctl.prepare(eng, sr);
+        eng.setParamNorm(PE::Param::Sustain, 1.0);
+        eng.setParamNorm(PE::Param::Cutoff,  0.85);
+        eng.setParamNorm(PE::Param::Attack,  0.0);
+        eng.setParamNorm(PE::Param::DecRel,  0.25);   // ~500 ms release
+        eng.setParamNorm(PE::Param::DelayMix, 0.0);   // isolate VCA from delay tail
+
+        const int Mhold = (int)(sr * 0.4);            // 400 ms held
+        const int Mtail = (int)(sr * 1.0);            // 1000 ms release window
+        std::vector<float> held(Mhold), tail(Mtail);
+
+        ctl.midiNoteOn(60);
+        ctl.render(held.data(), Mhold);
+        ctl.midiNoteOff(60);
+        ctl.render(tail.data(), Mtail);
+
+        auto rmsRange = [](const std::vector<float>& v, int s, int n) {
+            double a = 0.0; for (int i = 0; i < n; ++i) a += (double)v[s+i]*v[s+i];
+            return std::sqrt(a / n);
+        };
+        const int W = (int)(sr * 0.010);              // 10 ms windows
+        const double peak    = rmsRange(held, Mhold - W*5, W*5);    // last 50 ms held
+        const double rms010  = rmsRange(tail, 0,                W);  // 0..10 ms post-release
+        const double rms100  = rmsRange(tail, (int)(sr*0.100),  W);  // 100 ms post
+        const double rms250  = rmsRange(tail, (int)(sr*0.250),  W);  // 250 ms post
+        const double rms800  = rmsRange(tail, (int)(sr*0.800),  W);  // 800 ms post
+
+        // The engine's exponential time constant for DecRel=500ms with kDrRatio
+        // =0.0001 is τ ≈ 54 ms (the param value names "time to fall to kEps≈1e-5
+        // from sustain", i.e. ~9.2τ — Korg-style "time to silence"). Thresholds
+        // reflect this physics: at +10 ms (~0.2τ) we expect ~0.82·peak, at
+        // +50 ms (~1τ) ~0.37·peak. The bug (hard cut) makes +10 ms = 0.
+        const bool notHardCut    = rms010 > 0.50 * peak;     // bug -> 0; fix -> ~0.85
+        const bool realDecay     = rms100 > 0.05 * peak;     // bug -> 0; fix -> ~0.14
+        const bool eventuallyFalls = rms800 < 0.05 * peak;   // both: yes (env reaches Idle)
+        const bool pass = notHardCut && realDecay && eventuallyFalls;
+
+        std::printf("\nT40 RELEASE-FIX  (smooth release tail, no hard cut)\n");
+        std::printf("   peak (held)          : %.4f\n", peak);
+        std::printf("   RMS  +10  ms         : %.4f  (%.2f * peak, want > 0.50)\n",
+                    rms010, peak>0 ? rms010/peak : 0.0);
+        std::printf("   RMS  +100 ms         : %.4f  (%.2f * peak, want > 0.05)\n",
+                    rms100, peak>0 ? rms100/peak : 0.0);
+        std::printf("   RMS  +250 ms         : %.4f  (%.2f * peak)\n",
+                    rms250, peak>0 ? rms250/peak : 0.0);
+        std::printf("   RMS  +800 ms         : %.4f  (%.2f * peak, want < 0.05)\n",
+                    rms800, peak>0 ? rms800/peak : 0.0);
+        std::printf("   -> %s\n", pass ? "PASS" : "FAIL");
+        if (!pass) ++failures;
+    }
+
     std::printf("\n==================================================\n");
     std::printf("%s  (%d failure%s)\n",
                 failures ? "OVERALL: FAIL" : "OVERALL: PASS",

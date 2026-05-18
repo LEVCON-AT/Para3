@@ -14,7 +14,7 @@
 //  the worklet and needs no SAB.
 // =============================================================================
 
-const CACHE_VER  = 'para3-v21'; // EXT-ARP-UI-FIX6 + Debug hook (window.__para3Debug for live FFT click-tests)
+const CACHE_VER  = 'para3-v22'; // RELEASE-FIX: noteOff produces smooth Release tail (Volca-Keys parity, no hard cut)
 const PRECACHE   = [
   './',
   './index.html',

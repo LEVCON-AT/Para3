@@ -749,8 +749,23 @@ public:
         gateHeld_ = true;
     }
     void noteOff(int note) noexcept {
-        alloc_.noteOff(note + octShift_); refresh();   // E6.2 octave (same shift)
-        if (!alloc_.anyHeld()) { env_.gateOff(); gateHeld_ = false; }
+        alloc_.noteOff(note + octShift_);              // E6.2 octave (same shift)
+        if (!alloc_.anyHeld()) {
+            // RELEASE-FIX: last note off — DO NOT refresh. refresh() would set
+            // active_[v]=false, which then short-circuits the per-voice osc
+            // contribution in process() to zero — collapsing the audible
+            // signal to silence before env_ has had a chance to drive its
+            // Release segment. Mirror allNotesOff() (which seqStop has used
+            // all along, and which sounds correct) by leaving active_[v]
+            // alive while env_.gateOff lets the exponential decay ring the
+            // oscillators down to 0 over DecRel ms — Korg Volca behaviour.
+            // Polyphonic per-voice releases (other notes still held) DO need
+            // refresh to reallocate slots, so that branch is untouched.
+            env_.gateOff();
+            gateHeld_ = false;
+        } else {
+            refresh();
+        }
     }
     void setCutoffHz(double hz) noexcept { cutoff_.setTarget(hz); }
     void setResonance(double r) noexcept { reso_.setTarget(r);    }
