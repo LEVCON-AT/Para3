@@ -1006,7 +1006,11 @@ struct Step {
 };
 // E3: per-parameter motion lanes (sparse). Indexed directly by param id;
 // size covers all current + planned ids. Resonance(1)/Tempo refused upstream.
-static constexpr int kMP = 16;
+// EXT-ARP-MOTION: pid 16 = ARP_MODE (Controller-level, discrete 0..4 mapped
+// from the 0..1 lane via setArpMode). All other ids 0..15 dispatch to
+// engine.setParamNorm as before — see applyMotionParam_().
+static constexpr int kMP = 17;
+static constexpr int kArpModePid = 16;
 struct MotionLane { bool used = false; float v[16] = {0}; };
 struct Pattern {
     Step       steps[16];
@@ -1150,7 +1154,8 @@ public:
 
     // ---- E3 motion: ziel-parametric, lock-free (edit_ -> commit) ----------
     static bool motionCapable(int pid) noexcept {        // Resonance(1) refused
-        return pid >= 0 && pid < kMP && pid != 1;
+        if (pid == kArpModePid) return true;            // EXT-ARP-MOTION
+        return pid >= 0 && pid < 16 && pid != 1;
     }
     static bool paramOfId(int pid, para3::ParaEngine::Param& o) noexcept {
         using P = para3::ParaEngine::Param;
@@ -1338,6 +1343,8 @@ public:
         return (i >= 0 && i < arpPoolN_) ? arpPool_[i] : -1;
     }
     int  arpPhysSize() const noexcept { return arpPhysN_; }
+    // EXT-ARP-MOTION test accessor: current discrete mode (0..4).
+    int  arpModeCurrent() const noexcept { return arpMode_; }
     void setArpEnabled(bool on) noexcept {                       // EXT-ARP
         if (on == arpEnabled_) return;
         arpEnabled_ = on;
@@ -1466,8 +1473,7 @@ private:
             Pattern& e = bank_.edit(); e = p;
             e.lane[pid].used = true;
             e.lane[pid].v[stepIdx_] = (float)mLive_[pid];
-            para3::ParaEngine::Param pr;
-            if (paramOfId(pid, pr)) eng_->setParamNorm(pr, mLive_[pid]); // audible
+            applyMotionParam_(pid, mLive_[pid]);              // EXT-ARP-MOTION audible
             if (++mCapCnt_[pid] >= p.length) { mCap_[pid] = false;
                 bank_.commit(); committed = true; }   // publish at loop end
         }
@@ -1478,9 +1484,7 @@ private:
         if (!smooth_) {
             for (int pid = 0; pid < kMP; ++pid) {
                 if (!p.lane[pid].used) continue;
-                para3::ParaEngine::Param pr;
-                if (paramOfId(pid, pr))
-                    eng_->setParamNorm(pr, p.lane[pid].v[stepIdx_]);
+                applyMotionParam_(pid, p.lane[pid].v[stepIdx_]);  // EXT-ARP-MOTION
             }
         }
     }
@@ -1494,10 +1498,22 @@ private:
             if (!p.lane[pid].used) continue;
             const double a = p.lane[pid].v[stepIdx_];
             const double b = p.lane[pid].v[nx];
-            para3::ParaEngine::Param pr;
-            if (paramOfId(pid, pr))
-                eng_->setParamNorm(pr, a + (b - a) * ph);
+            applyMotionParam_(pid, a + (b - a) * ph);         // EXT-ARP-MOTION
         }
+    }
+    // EXT-ARP-MOTION: single dispatch for "apply lane value at current step".
+    // Handles both engine PARA3_P_* params (pid 0..15) via setParamNorm, and
+    // the Controller-level ARP_MODE pid (16) by snapping norm 0..1 → 0..4.
+    // RT-safe: one engine call OR one int store; no allocation.
+    void applyMotionParam_(int pid, double v) noexcept {
+        if (pid == kArpModePid) {
+            int m = (int)std::floor(v * 5.0);   // 0..1 → 0..4 (5 buckets of 0.2)
+            if (m > 4) m = 4; if (m < 0) m = 0;
+            setArpMode(m);
+            return;
+        }
+        para3::ParaEngine::Param pr;
+        if (paramOfId(pid, pr)) eng_->setParamNorm(pr, v);
     }
     // ============================ EXT-ARP Block A ============================
     // Note-source transform sitting between keyboard/MIDI and the engine.

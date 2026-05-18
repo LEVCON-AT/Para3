@@ -14,7 +14,7 @@
 //  the worklet and needs no SAB.
 // =============================================================================
 
-const CACHE_VER  = 'para3-v22'; // RELEASE-FIX: noteOff produces smooth Release tail (Volca-Keys parity, no hard cut)
+const CACHE_VER  = 'para3-v23'; // EXT-ARP-MOTION: MODE as 5-button .wave picker, motion-fähig (PARAM.ARP_MODE pid=16)
 const PRECACHE   = [
   './',
   './index.html',

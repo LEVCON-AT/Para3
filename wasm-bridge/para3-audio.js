@@ -18,6 +18,9 @@ export const PARAM = Object.freeze({
   ATTACK: 9, DECREL: 10, SUSTAIN: 11,
   // KORG-parity (E1.1, E2.1, E2.2, E6.1): bipolar EG INT centres at norm=0.5.
   EG_CUT_DEPTH: 12, DETUNE: 13, PORTAMENTO: 14, VOLUME: 15,
+  // EXT-ARP-MOTION: Controller-level discrete param (0..4). Lane 0..1 maps
+  // to mode 0..4 via floor(v*5) in Controller::applyMotionParam_().
+  ARP_MODE: 16,
 });
 export const LFO_SHAPE = Object.freeze({ SINE:0, TRIANGLE:1, SAW:2, SQUARE:3 });
 export const MODE = Object.freeze({

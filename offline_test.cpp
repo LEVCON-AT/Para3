@@ -2763,6 +2763,60 @@ int main() {
         if (!pass) ++failures;
     }
 
+    // ---- T41  EXT-ARP-MOTION: lane on pid=16 (ARP_MODE) snaps + applies -----
+    // Motion lane for ARP_MODE stores norm 0..1; Controller::applyMotionParam_
+    // maps each value to a discrete mode 0..4 via floor(v*5) (clamped). At
+    // every step boundary the lane drives setArpMode — so per-step automation
+    // of UP/DN/UP-DN/AS-PLAYED/RND becomes possible from the seq.
+    //
+    // Test: write 4 distinct lane values at steps 0..3 (0.1, 0.3, 0.5, 0.9
+    //       → modes 0, 1, 2, 4), commit, start seq, render past 4 steps,
+    //       observe arpMode_ after each step via a public getter.
+    {
+        using PE = para3::ParaEngine;
+        PE eng; eng.prepare(sr, 4096);
+        para3::Controller ctl; ctl.prepare(eng, sr);
+        ctl.setSeqTempo(480.0, 4);          // fast (≈ 31.25 ms / step at 480 BPM)
+        ctl.setArpEnabled(true);
+        ctl.setArpMode(0);                   // start in UP
+
+        // pid 16 is motion-capable now (new EXT-ARP-MOTION code path).
+        const bool capable = para3::Controller::motionCapable(16);
+
+        // Write a discrete lane and commit so the read-side picks it up.
+        ctl.motionSet(16, 0, 0.1);           // mode 0 (UP)
+        ctl.motionSet(16, 1, 0.3);           // mode 1 (DN)
+        ctl.motionSet(16, 2, 0.5);           // mode 2 (UP-DN)
+        ctl.motionSet(16, 3, 0.9);           // mode 4 (RND)
+        ctl.commitEdit();
+        ctl.seqStart();
+
+        const int stepSamp = (int)(sr * 60.0 / (480.0 * 4));  // 16th = 1/480bpm/4
+        std::vector<float> sink(stepSamp);
+        int modeSeen[4] = { -1, -1, -1, -1 };
+        for (int i = 0; i < 4; ++i) {
+            // Render slightly past the start of step i so onStep has fired.
+            ctl.render(sink.data(), stepSamp);
+            modeSeen[i] = ctl.arpModeCurrent();
+        }
+        ctl.clock().stop();
+        ctl.setArpEnabled(false);
+
+        const bool pass = capable
+            && modeSeen[0] == 0
+            && modeSeen[1] == 1
+            && modeSeen[2] == 2
+            && modeSeen[3] == 4;
+        std::printf("\nT41 EXT-ARP-MOTION  (lane pid=16 snaps norm -> mode)\n");
+        std::printf("   motionCapable(16)    : %s\n", capable ? "yes" : "NO");
+        std::printf("   step0 (v=0.1)        : mode %d  (want 0 UP)\n",  modeSeen[0]);
+        std::printf("   step1 (v=0.3)        : mode %d  (want 1 DN)\n",  modeSeen[1]);
+        std::printf("   step2 (v=0.5)        : mode %d  (want 2 UPDN)\n",modeSeen[2]);
+        std::printf("   step3 (v=0.9)        : mode %d  (want 4 RND)\n", modeSeen[3]);
+        std::printf("   -> %s\n", pass ? "PASS" : "FAIL");
+        if (!pass) ++failures;
+    }
+
     std::printf("\n==================================================\n");
     std::printf("%s  (%d failure%s)\n",
                 failures ? "OVERALL: FAIL" : "OVERALL: PASS",

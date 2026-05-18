@@ -46,8 +46,8 @@ const md5_baseline = {
   //                     para3-worklet.js  (new OPs + Controls methods)
   // The remaining 7 files (scope/parity/audio/ring/port_test, wasm_parity,
   // parity_seq, parity_native) stay byte-frozen.
-  'Para3Engine.hpp':                          '301387a96c0f35247124a42706ce6d36',
-  'offline_test.cpp':                         '7ac5869e110b2c243eecd3a20e6a33df',
+  'Para3Engine.hpp':                          'b7292e980186290c6941f908fec790c0',
+  'offline_test.cpp':                         '5a89c35214dfceb7fd7ee81abd3cf3e3',
   'wasm-bridge/para3_capi.h':                 '3f22daba53093885e12733aa3c54e1a4',
   'wasm-bridge/para3_capi.cpp':               '256340fc4dba8eade3488e134bc6e5fa',
   'wasm-bridge/capi_test.cpp':                'aa8182e52327f513fe0d23df6ad0c1a8',
@@ -56,7 +56,7 @@ const md5_baseline = {
   'wasm-bridge/parity_seq.h':                 '9043aba77b26cecb2aa1324ba805e07a',
   'wasm-bridge/build_wasm.sh':                '8b49ff2273d773fd9f5c1d737aac35cf',
   'wasm-bridge/wasm_parity.mjs':              '9a396e68954d830a3aac0bde40b887cb',
-  'wasm-bridge/para3-audio.js':               '4787c6221b0efa990c839af831b665c4',
+  'wasm-bridge/para3-audio.js':               '979ba0703f2cb8c84abdf98f46668666',
   'wasm-bridge/para3-ring.js':                'be036c6f917c45942f045293a4b60c57',
   'wasm-bridge/para3-port.js':                'b32b05892fc3afe81e8ab6ad750aa898',
   'wasm-bridge/para3-worklet.js':             'b9951f20545589c6b76f8d9b04abd937',
@@ -458,17 +458,30 @@ const html = readFileSync(join(REPO, 'wasm-bridge/para3-responsive.html'), 'utf8
       label: 'ON toggle (no tooltip)' },
     { re: /<button\s+class="tbtn"\s+id="arpHold">HOLD<\/button>/,
       label: 'HOLD toggle (no tooltip)' },
-    { re: /data-name="MODE"\s+data-k="arpMode"\s+data-int="1"/,
-      label: 'MODE knob (int-stepped, 0..4)' },
+    // EXT-ARP-MOTION: MODE is now a 5-button .wave picker (same icon style
+    // as LFO WAVE) — motion-fähig via PARAM.ARP_MODE (pid 16). RATE / OCT
+    // / GATE remain knobs (continuous-or-discrete as before).
+    { re: /class="wave"\s+id="arpMode"\s+data-k="amd">/,
+      label: 'ARP MODE .wave picker (id=arpMode, data-k=amd)' },
+    { re: /data-mode="0"[\s\S]{0,200}<polyline\s+points="1,14 5,14[\s\S]*?23,2"/,
+      label: 'MODE button 0 (UP) — ascending staircase polyline' },
+    { re: /data-mode="1"[\s\S]{0,200}<polyline\s+points="1,2[\s\S]*?23,14"/,
+      label: 'MODE button 1 (DN) — descending staircase polyline' },
+    { re: /data-mode="2"[\s\S]{0,200}<polyline\s+points="1,14 5,10 10,6 14,6 19,10 23,14"/,
+      label: 'MODE button 2 (UP-DN) — pyramid polyline' },
+    { re: /data-mode="3"/,
+      label: 'MODE button 3 (AS-PLAYED)' },
+    { re: /data-mode="4"[\s\S]{0,200}<circle/,
+      label: 'MODE button 4 (RND) — circle dots' },
     { re: /data-name="RATE"\s+data-k="arpRate"\s+data-int="1"/,
       label: 'RATE knob (int-stepped, 0..5)' },
     { re: /data-name="OCT"\s+data-k="arpOct"\s+data-int="1"/,
       label: 'OCT knob (int-stepped, 1..4)' },
     { re: /data-name="GATE"[^>]*data-k="arpGate"/,
       label: 'GATE knob (continuous, 0..100)' },
-    // negatives: the segment buttons must be GONE.
-    { re: /id="arpMode"[^>]*data-m=/, neg: true,
-      label: 'NEG: no segment radio for MODE' },
+    // negatives: no leftover MODE knob, no leftover segment radios.
+    { re: /data-k="arpMode"\s+data-int/, neg: true,
+      label: 'NEG: no MODE knob anymore (replaced by .wave picker)' },
     { re: /id="arpRate"[^>]*data-r=/, neg: true,
       label: 'NEG: no segment radio for RATE' },
     { re: /id="arpOct"[^>]*data-o=/,  neg: true,
@@ -500,19 +513,21 @@ const html = readFileSync(join(REPO, 'wasm-bridge/para3-responsive.html'), 'utf8
   const checks = [
     { re: /emit\(\(c\)\s*=>\s*c\.arpEnable\(/,   label: 'arpEnable emit path' },
     { re: /emit\(\(c\)\s*=>\s*c\.arpHold\(/,     label: 'arpHold emit path' },
-    { re: /id\s*===\s*['"]arpMode['"]\s*\)\s*\{[\s\S]*?emit\(\(c\)\s*=>\s*c\.arpMode\(/,
-      label: 'arpMode via emitKnob else-branch' },
+    // EXT-ARP-MOTION: MODE picker emits arpMode + seqMotionVal (motion live).
+    { re: /id\s*===\s*['"]amd['"]\s*\)[\s\S]*?c\.arpMode\([\s\S]*?c\.seqMotionVal\(PARAM\.ARP_MODE/,
+      label: 'amd emitKnob branch: arpMode + seqMotionVal(ARP_MODE)' },
     { re: /id\s*===\s*['"]arpRate['"]\s*\)\s*\{[\s\S]*?emit\(\(c\)\s*=>\s*c\.arpRate\(/,
       label: 'arpRate via emitKnob else-branch' },
     { re: /id\s*===\s*['"]arpOct['"]\s*\)\s*\{[\s\S]*?emit\(\(c\)\s*=>\s*c\.arpOctaves\(/,
       label: 'arpOct via emitKnob else-branch' },
     { re: /id\s*===\s*['"]arpGate['"]\s*\)\s*\{[\s\S]*?emit\(\(c\)\s*=>\s*c\.arpGate\(/,
       label: 'arpGate via emitKnob else-branch' },
-    // Negative: no arp* key inside KNOB_PARAM (would route to setParam).
+    // EXT-ARP-MOTION: 'amd' MUST be in KNOB_PARAM (motion-target plumbing)
+    // but RATE / OCT / GATE / MODE-knob must still be absent (no taper).
+    { re: /KNOB_PARAM\s*=\s*\{[\s\S]*?\bamd\s*:\s*PARAM\.ARP_MODE/,
+      label: 'KNOB_PARAM contains amd:PARAM.ARP_MODE for motion targeting' },
     { re: /KNOB_PARAM\s*=\s*\{[^}]*\barpGate\s*:/, neg: true,
       label: 'NEG: arpGate must NOT be in KNOB_PARAM' },
-    { re: /KNOB_PARAM\s*=\s*\{[^}]*\barpMode\s*:/, neg: true,
-      label: 'NEG: arpMode must NOT be in KNOB_PARAM' },
     { re: /KNOB_PARAM\s*=\s*\{[^}]*\barpRate\s*:/, neg: true,
       label: 'NEG: arpRate must NOT be in KNOB_PARAM' },
     { re: /KNOB_PARAM\s*=\s*\{[^}]*\barpOct\s*:/,  neg: true,

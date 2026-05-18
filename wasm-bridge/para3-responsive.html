@@ -488,11 +488,22 @@ body{
          knob convention. No tooltips — disp/show() handles feedback. -->
     <div class="sec sec-arp" style="grid-area:arp"><div class="seqhead"><h2>ARP · <b>EXT</b></h2>
       <div class="tg"><button class="tbtn" id="arpOn">ON</button><button class="tbtn" id="arpHold">HOLD</button></div></div>
-      <div class="grid3" style="grid-template-columns:repeat(4,1fr)">
-        <div class="knob" data-min="0" data-max="4"   data-val="0"  data-unit=""  data-name="MODE" data-k="arpMode" data-int="1"></div>
+      <div class="grid3" style="grid-template-columns:repeat(3,1fr)">
         <div class="knob" data-min="0" data-max="5"   data-val="3"  data-unit=""  data-name="RATE" data-k="arpRate" data-int="1"></div>
         <div class="knob" data-min="1" data-max="4"   data-val="1"  data-unit="×" data-name="OCT"  data-k="arpOct"  data-int="1"></div>
         <div class="knob" data-min="0" data-max="100" data-val="50" data-unit="%" data-name="GATE" data-k="arpGate"></div>
+      </div>
+      <!-- EXT-ARP-MOTION: MODE picker. 5 .wave-style buttons under the knobs,
+           same icon language as LFO WAVE. Motion-fähig via PARAM.ARP_MODE (16):
+           clicking emits arpMode AND seqMotionVal so motion-rec captures the
+           current mode at the next step boundary; the engine applies the lane
+           in steps (norm 0..1 -> mode 0..4 in floor(v*5) buckets). -->
+      <div class="wave" id="arpMode" data-k="amd">
+        <button data-mode="0" aria-label="up"     ><svg viewBox="0 0 24 15"><polyline points="1,14 5,14 5,10 10,10 10,6 15,6 15,2 23,2"/></svg></button>
+        <button data-mode="1" aria-label="down"   ><svg viewBox="0 0 24 15"><polyline points="1,2 5,2 5,6 10,6 10,10 15,10 15,14 23,14"/></svg></button>
+        <button data-mode="2" aria-label="up-down"><svg viewBox="0 0 24 15"><polyline points="1,14 5,10 10,6 14,6 19,10 23,14"/></svg></button>
+        <button data-mode="3" aria-label="played" ><svg viewBox="0 0 24 15"><polyline points="1,8 5,4 10,11 15,6 20,14 23,9"/></svg></button>
+        <button data-mode="4" aria-label="random" ><svg viewBox="0 0 24 15"><circle cx="4" cy="11" r="1.6" fill="currentColor" stroke="none"/><circle cx="9" cy="3" r="1.6" fill="currentColor" stroke="none"/><circle cx="14" cy="13" r="1.6" fill="currentColor" stroke="none"/><circle cx="19" cy="6" r="1.6" fill="currentColor" stroke="none"/></svg></button>
       </div>
     </div>
 
@@ -587,6 +598,12 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
     // E6.1 / U5: VOLUME is just a PARAM. The host masterGain was removed in
     // E6, so this is the only path — and it makes vol a valid motion target.
     vol: PARAM.VOLUME,
+    // EXT-ARP-MOTION: ARP MODE is a Controller-level discrete (0..4) param;
+    // the engine routes pid=16 to Controller::setArpMode in applyMotionParam_,
+    // not engine.setParamNorm. Still listed here so isMotionCapable() finds
+    // it via motionParamId() / KNOB_PARAM lookup and the lane editor accepts
+    // 'amd' as a target.
+    amd: PARAM.ARP_MODE,
   };
   // tmp -> seqTempo(BPM)        (NOT setParam — bpm, not a normalised param)
   // oct -> setOctave(int) via the engine (E6.2; replaces midiOfKey +oct*12)
@@ -597,6 +614,15 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
 
   function emitKnob(id, val, min, max) {
     const n = (val - min) / (max - min);
+    if (id === 'amd') {
+      // EXT-ARP-MOTION: 'amd' is in KNOB_PARAM solely so isMotionCapable +
+      // motionParamId('amd') resolve to PARAM.ARP_MODE (pid 16). The actual
+      // write path is c.arpMode + c.seqMotionVal — the engine has no PARA3_P_
+      // entry at pid 16, so setParam(16,…) would be silently dropped.
+      const m = Math.max(0, Math.min(4, Math.round(val)));
+      emit((c) => { c.arpMode(m); c.seqMotionVal(PARAM.ARP_MODE, m * 0.2 + 0.1); });
+      return;
+    }
     if (id in KNOB_PARAM) emit((c) => c.setParam(KNOB_PARAM[id], n));
     else if (id === 'tmp') emit((c) => c.seqTempo(val));
     else if (id === 'oct') {
@@ -606,13 +632,10 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
     }
     // EXT-ARP UI: all arp params are controller settings (not KNOB_PARAM →
     // no setParamNorm taper). UI2: MODE/RATE/OCT/GATE are now knobs.
+    // EXT-ARP-MOTION: MODE is no longer a knob; the 5-button .wave#arpMode
+    // picker handles it (see below). emitKnob retains RATE / OCT / GATE.
     // Discrete knobs use data-int="1" so the val is already rounded; we
     // also override disp/show with friendly names instead of the raw int.
-    else if (id === 'arpMode') {
-      const m = Math.round(val);
-      show('ARP MODE', arpModeNames[m] || '?', '');
-      emit((c) => c.arpMode(m));
-    }
     else if (id === 'arpRate') {
       const r = Math.round(val);
       show('ARP RATE', arpRateNames[r] || '?', '');
@@ -728,6 +751,46 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
     voiceIx=[...voice.children].indexOf(e.target);
     show('VOICE',e.target.textContent.toUpperCase(),'');
     emit((c) => c.setMode(VOICE_MODE[voiceIx]));});
+
+  // ---- EXT-ARP-MOTION: ARP MODE picker (5 .wave-style buttons) ------------
+  // Replaces the previous MODE knob. Same SVG icon language as the LFO wave
+  // selector below. Motion-fähig via PARAM.ARP_MODE (pid=16): clicking a
+  // button (a) flips visual state, (b) emits arpMode(idx) so the engine
+  // changes immediately, (c) updates the live motion value so motion-rec
+  // captures the chosen mode at the next step boundary, (d) under motion-arm,
+  // pointerdown sets 'amd' as the lane-editor target instead (same gesture
+  // discipline as knobs/faders).
+  const arpModeEl  = document.getElementById('arpMode');
+  const arpModeBtns = [...arpModeEl.querySelectorAll('button')];
+  let arpModeIdx = 0;                                          // boots in UP
+  arpModeBtns[0].classList.add('on');
+  function setArpMode(idx, opts) {
+    idx = Math.max(0, Math.min(4, idx|0));
+    arpModeIdx = idx;
+    arpModeBtns.forEach((b,i) => b.classList.toggle('on', i === idx));
+    if (!opts || opts.show !== false) show('ARP MODE', arpModeNames[idx], '');
+    emit((c) => {
+      c.arpMode(idx);
+      // Motion-rec live value: norm 0..1, 5 buckets centred on idx*0.2+0.1.
+      // The engine snaps via floor(v*5) so the centred value lands cleanly.
+      c.seqMotionVal(PARAM.ARP_MODE, idx * 0.2 + 0.1);
+    });
+  }
+  // K['amd'] mirrors the knob/fader target shape so motionEntry/motionTargets
+  // pick it up uniformly (name + el + get/set). set() converts a motion lane
+  // value 0..100 back to a mode index (floor(n/20), clamped).
+  K['amd'] = {
+    get: () => arpModeIdx,
+    set: v => setArpMode(Math.floor(Math.max(0, Math.min(99.999, v)) / 20)),
+    name: 'ARP MODE',
+    min: 0, max: 4, unit: '',
+    el: arpModeEl,
+  };
+  arpModeEl.addEventListener('pointerdown', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (motionArm) { setTarget('amd'); return; }              // U5 target pick
+    setArpMode(+b.dataset.mode);
+  });
 
   // ---- LFO shape: 3 buttons in this UI = TRIANGLE / SAW / SQUARE ----------
   const LFO_FROM_LW = [LFO_SHAPE.TRIANGLE, LFO_SHAPE.SAW, LFO_SHAPE.SQUARE];
@@ -986,7 +1049,7 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
     // (industry-standard HW behaviour). Toggling ARP does NOT touch Play —
     // ARP runs on its own tempo-derived clock as soon as arpEnabled_=true.
     show('ARP', arpOnState ? 'ON' : 'OFF',
-         arpOnState ? arpModeNames[Math.round(K.arpMode.get())] : '');
+         arpOnState ? arpModeNames[arpModeIdx] : '');
     emit((c) => c.arpEnable(arpOnState));
   };
   arpHoldB.onclick = () => {
