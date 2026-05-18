@@ -666,7 +666,41 @@ const DEMO_PRESETS = {
       por: [5, 10, 18, 28, 40, 52, 65, 78, 88, 92, 92, 88, 78, 60, 38, 18],
     },
   },
-  3: { title:'VK-BRASS', knobs:{ cut:70 } },
+  // P3 — VK-BRASS @ 105 BPM, UNISON, ARP UP+HOLD ×2 Oct, Cm9 latched.
+  // Volca-Keys-Brass-Hommage: brass-typischer fast attack, mittlere Sustain,
+  // LFO SAW + CUT_INT positiv → "rising filter" Sweep durch jeden Arp-Step.
+  // MOTION-REC auf DETUNE mit Smooth: kontinuierliche analoge Drift.
+  3: {
+    title: 'VK-BRASS',
+    voice: 1,              // UNISON (3 oscillators stacked, detune-spread)
+    lfoWave: 1,            // SAW (rising filter sweep)
+    lfoSync: false,
+    knobs: {
+      tmp: 105,
+      oct: 0,
+      cut: 60, pk: 30,
+      lrt: 35,             // LFO mid-fast (rising sweep per arp step)
+      lpi: 0,              // keine Pitch-Mod
+      lci: 28,             // LFO moduliert Cutoff stark = brass-Sweep
+      dt:  55,             // delay 1/8 dotted feel
+      df:  30,
+      vol: 70,
+      egi: 50,
+      det: 50,             // baseline detune (motion lane überschreibt)
+      por: 0,
+      arpRate: 3, arpOct: 2, arpGate: 70,
+    },
+    faders: { atk: 10, dec: 35, sus: 65 },   // brass envelope
+    arpEnabled: true, arpHold: true, arpMode: 0,    // UP mode, HOLD on
+    arpChord: [48, 51, 55, 58],   // Cm9: C4-Eb4-G4-Bb4 (latched into pool)
+    stepTrigger: false, metro: false, tempoDiv: 1, motionSmooth: true,
+    steps: new Array(16).fill(false),    // SEQ off (ARP runs independent)
+    motionTarget: 'det',
+    // DETUNE lane: kontinuierlicher Drift um 50 herum (analog-fühl).
+    motionLanes: {
+      det: [40, 45, 55, 65, 70, 65, 55, 45, 40, 50, 60, 70, 75, 65, 55, 45],
+    },
+  },
   4: { title:'ACID',     knobs:{ cut:30 } },
   5: { title:'RING-RND', knobs:{ cut:80 } },
 };
@@ -1263,6 +1297,16 @@ function emit(fn) {
       if (typeof p.arpMode === 'number') {
         // Use the canonical setter so the live motion val is set too.
         setArpMode(p.arpMode, { show: false });
+      }
+      // Chord-into-ARP-pool injection (preset only). Requires arpEnabled+arpHold
+      // to be set first (handled above). noteOn adds to the arp pool; the
+      // subsequent noteOff under HOLD-on keeps the latched set — same gesture
+      // a real user would make ("hold these keys, latch HOLD, release keys").
+      if (Array.isArray(p.arpChord) && p.arpEnabled) {
+        emit((c) => {
+          p.arpChord.forEach(n => c.noteOn(n));
+          p.arpChord.forEach(n => c.noteOff(n));
+        });
       }
       // ---- Sequencer controller-settings ----
       if (typeof p.stepTrigger === 'boolean') {
