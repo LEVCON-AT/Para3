@@ -14,7 +14,7 @@
 //  the worklet and needs no SAB.
 // =============================================================================
 
-const CACHE_VER  = 'para3-v18'; // EXT-ARP-UI2: knob layout (MODE/RATE/OCT/GATE rotary); no tooltips
+const CACHE_VER  = 'para3-v19'; // EXT-ARP-UI-FIX5: HOLD-off clears latched pool (industry-standard HOLD semantics)
 const PRECACHE   = [
   './',
   './index.html',

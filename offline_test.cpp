@@ -2592,6 +2592,56 @@ int main() {
         if (!pass) ++failures;
     }
 
+    // ---- T38  EXT-ARP UI-FIX5: setArpHold(false) clears latched pool -------
+    // User-reported: after HOLD-on + key-press + key-release, toggling HOLD
+    // off left the arp playing — could only be silenced by disabling ARP.
+    // Industry standard: HOLD-off immediately drops latched notes.
+    // Test sequence: arp on, hold on, press+release key (latched), render to
+    // confirm sound, hold off, render to confirm silence in the trailing
+    // window (envelope decay + buffer of safety).
+    {
+        using PE = para3::ParaEngine;
+        PE eng; eng.prepare(sr, 4096);
+        para3::Controller ctl; ctl.prepare(eng, sr);
+        eng.setParamNorm(PE::Param::Sustain, 1.0);
+        eng.setParamNorm(PE::Param::Cutoff,  0.85);
+        eng.setParamNorm(PE::Param::Attack,  0.0);
+        eng.setParamNorm(PE::Param::DecRel,  0.0);
+        ctl.setArpEnabled(true);
+        ctl.setArpMode(0); ctl.setArpRate(1); ctl.setArpGate(0.5);
+        ctl.setArpHold(true);                           // Latch on
+        ctl.setSeqTempo(120.0, 4);                       // tempo only
+
+        // Press and release a key — pool stays latched.
+        ctl.midiNoteOn(48); ctl.midiNoteOff(48);
+
+        const int Mh = 60000;
+        std::vector<float> a(Mh / 2), b(Mh / 2);
+        ctl.render(a.data(), Mh / 2);                    // 0.625 s of latched arp
+
+        // Disable HOLD with no physical keys held → pool must clear,
+        // current note must release (envelope decays in DecRel=1.5 ms).
+        ctl.setArpHold(false);
+        ctl.render(b.data(), Mh / 2);                    // 0.625 s after HOLD off
+
+        auto rmsRange = [](const std::vector<float>& v, int s, int n) {
+            double a = 0.0; for (int i = 0; i < n; ++i) a += (double)v[s+i]*v[s+i];
+            return std::sqrt(a / n);
+        };
+        // Before HOLD-off: arp should be audible.
+        const double rmsLatched = rmsRange(a, a.size() - 12000, 8000);
+        // After HOLD-off: skip the first 500 samples for env release tail,
+        // then check the rest is silent.
+        const double rmsAfter   = rmsRange(b, 2000, b.size() - 2000);
+        const bool pass = rmsLatched > 0.05 && rmsAfter < 1e-4;
+
+        std::printf("\nT38 EXT-ARP UI-FIX5  (HOLD-off clears latched pool)\n");
+        std::printf("   RMS during latch     : %.4f   (want > 0.05)\n", rmsLatched);
+        std::printf("   RMS after HOLD off   : %.3e   (want < 1e-4)\n", rmsAfter);
+        std::printf("   -> %s\n", pass ? "PASS" : "FAIL");
+        if (!pass) ++failures;
+    }
+
     std::printf("\n==================================================\n");
     std::printf("%s  (%d failure%s)\n",
                 failures ? "OVERALL: FAIL" : "OVERALL: PASS",

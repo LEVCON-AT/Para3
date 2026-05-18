@@ -1349,11 +1349,29 @@ public:
         arpIdx_       = arpIdx_       % L;
         arpUpDownCnt_ = arpUpDownCnt_ % period;
     }
-    // EXT-ARP Block C: Hold/Latch toggle. With hold=true, midiNoteOff leaves
-    // the pool untouched; the arp keeps playing held notes until either
-    // hold goes off or a fresh "all-released → new key" gesture clears it
-    // (the 0→1 arpPhysHeld_ transition; spec §2.6).
-    void setArpHold(bool on) noexcept { arpHold_ = on; }
+    // EXT-ARP Block C + UI-FIX5: Hold/Latch toggle. With hold=true,
+    // midiNoteOff leaves the pool untouched; the arp keeps playing held
+    // notes until either hold goes off or a fresh "all-released → new key"
+    // gesture clears it (the 0→1 arpPhysHeld_ transition; spec §2.6).
+    //
+    // Industry-standard HW behaviour for HOLD off (Volca FM, Minilogue,
+    // JP-8000, Sub 37): releasing the latch immediately drops every
+    // latched note — the arp stops. User reported that the previous
+    // implementation only flipped the flag, leaving the pool intact;
+    // sound could only be silenced by disabling the arp entirely.
+    // We now drop the pool on the true→false transition, but only when
+    // no physical keys are currently held — if the user is still pressing
+    // notes, those keep playing (they'll arpRemove naturally on release).
+    void setArpHold(bool on) noexcept {
+        if (on == arpHold_) return;
+        const bool wasOn = arpHold_;
+        arpHold_ = on;
+        if (wasOn && !on && arpPhysHeld_ == 0) {
+            arpPoolN_ = 0; arpIdx_ = 0; arpUpDownCnt_ = 0;
+            if (arpCur_ >= 0) { eng_->noteOff(arpCur_); arpCur_ = -1; }
+            arpAcc_ = 0.0; arpGateAcc_ = 0.0;
+        }
+    }
     // EXT-ARP Block C: Random PRNG seed. Same seed ⇒ identical note sequence
     // (T34 proves reproducibility). Default seed is a design default, not a
     // hardware calibration — the Volca Keys has no random arp.
