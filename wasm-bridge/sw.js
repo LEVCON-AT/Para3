@@ -14,7 +14,7 @@
 //  the worklet and needs no SAB.
 // =============================================================================
 
-const CACHE_VER  = 'para3-v29'; // Sprint 5: P4 ACID @ 122 BPM (TB-303-style, STEP TRIGGER, hohe Reso+EG_INT, MOTION-REC/CUTOFF)
+const CACHE_VER  = 'para3-v30'; // Sprint 6: P5 RING-RND @ 140 BPM (POLYRING, ARP HOLD ×3 Oct, MOTION-REC/ARP_MODE cyclt 5 Modi)
 const PRECACHE   = [
   './',
   './index.html',
