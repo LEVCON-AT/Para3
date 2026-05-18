@@ -2508,6 +2508,90 @@ int main() {
         if (!pass) ++failures;
     }
 
+    // ---- T37  EXT-ARP-FIX4: Arp independent of sequencer transport --------
+    // User-reported (twice): ARP on + key press = silence. Root cause was
+    // spec §1.4's reading that the arp scheduler is gated by clock_.running()
+    // — which is the sequencer's transport state, not a tempo source. HW
+    // arps (Volca FM, Minilogue, JP-8000, etc.) run on the tempo
+    // INDEPENDENTLY of sequencer Play/Stop: pressing a key with ARP on
+    // produces rhythmic notes immediately, no Play required.
+    // This test sets arpEnabled_=true, pool {48,52,55}, and DOES NOT start
+    // the clock. Pre-fix: peak ≈ 0 (silence). Post-fix: arp produces the
+    // Up sequence on its own.
+    {
+        using PE = para3::ParaEngine;
+        PE eng; eng.prepare(sr, 4096);
+        para3::Controller ctl; ctl.prepare(eng, sr);
+        eng.setParamNorm(PE::Param::Sustain, 1.0);
+        eng.setParamNorm(PE::Param::Cutoff,  0.85);
+        eng.setParamNorm(PE::Param::Attack,  0.0);
+        eng.setParamNorm(PE::Param::DecRel,  0.0);
+        ctl.setArpEnabled(true);
+        ctl.setArpMode(0);                              // Up
+        ctl.setArpRate(1); ctl.setArpGate(0.5);
+        ctl.setSeqTempo(120.0, 4);                       // tempo only; NO seqStart
+        // Sanity: clock must NOT be running for this test to mean anything.
+        const bool clockStopped = !ctl.clock().running();
+        ctl.midiNoteOn(48); ctl.midiNoteOn(52); ctl.midiNoteOn(55);
+
+        const int Md = 96000;                            // 1s @ 48k
+        std::vector<float> d(Md);
+        ctl.render(d.data(), Md);
+
+        // Engine fires arpStep at sample 12000, 24000, ..., independent of
+        // the (stopped) sequencer clock. Probe 4 mid-step windows.
+        auto peakHz = [&](int start) {
+            const int M = 4096; if (start + M > (int)d.size()) return 0.0;
+            std::vector<cd> sp(M);
+            for (int i = 0; i < M; ++i) {
+                const double w = 0.5 - 0.5*std::cos(2.0*M_PI*i/(M-1));
+                sp[i] = cd((double)d[start+i] * w, 0.0);
+            }
+            fft(sp);
+            int bk = 1; double best = 0.0;
+            for (int k = 1; k < M/2; ++k) {
+                const double m = std::abs(sp[k]);
+                if (m > best) { best = m; bk = k; }
+            }
+            double db = 0.0;
+            if (bk > 1 && bk < M/2-1) {
+                const double aL = std::abs(sp[bk-1]),
+                             bC = std::abs(sp[bk]),
+                             cR = std::abs(sp[bk+1]);
+                const double den = (aL - 2.0*bC + cR);
+                if (std::fabs(den) > 1e-18) db = 0.5 * (aL - cR) / den;
+            }
+            return (bk + db) * sr / (double)M;
+        };
+        const double f48 = para3::semitonesToHz(48.0);
+        const double f52 = para3::semitonesToHz(52.0);
+        const double f55 = para3::semitonesToHz(55.0);
+        // arpStep fires at samples 12000, 24000, 36000 — sequence 48, 52, 55.
+        const double p0 = peakHz(12000 + 3000);
+        const double p1 = peakHz(24000 + 3000);
+        const double p2 = peakHz(36000 + 3000);
+        const bool hit0 = std::fabs(p0 - f48)/f48 < 0.06;
+        const bool hit1 = std::fabs(p1 - f52)/f52 < 0.06;
+        const bool hit2 = std::fabs(p2 - f55)/f55 < 0.06;
+
+        // Also verify buffer is non-silent overall.
+        double rms2 = 0.0;
+        for (float x : d) rms2 += (double)x * x;
+        rms2 = std::sqrt(rms2 / d.size());
+
+        const bool pass = clockStopped && hit0 && hit1 && hit2 && rms2 > 0.05;
+        std::printf("\nT37 EXT-ARP-FIX4  (Arp runs without sequencer transport)\n");
+        std::printf("   clock_.running()        : %s   (must be false)\n",
+                    clockStopped ? "false" : "TRUE — test setup leak");
+        std::printf("   mid-step pitches        : %.2f / %.2f / %.2f Hz\n", p0, p1, p2);
+        std::printf("   expected                : %.2f / %.2f / %.2f Hz\n", f48, f52, f55);
+        std::printf("   step pitch hits         : [0]%s [1]%s [2]%s\n",
+                    hit0?"ok":"FAIL", hit1?"ok":"FAIL", hit2?"ok":"FAIL");
+        std::printf("   buffer RMS              : %.3f   (want > 0.05)\n", rms2);
+        std::printf("   -> %s\n", pass ? "PASS" : "FAIL");
+        if (!pass) ++failures;
+    }
+
     std::printf("\n==================================================\n");
     std::printf("%s  (%d failure%s)\n",
                 failures ? "OVERALL: FAIL" : "OVERALL: PASS",

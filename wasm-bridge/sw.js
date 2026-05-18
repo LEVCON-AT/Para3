@@ -14,7 +14,7 @@
 //  the worklet and needs no SAB.
 // =============================================================================
 
-const CACHE_VER  = 'para3-v16'; // EXT-ARP-FIX3: cursor mirrors engine acc+step; ARP auto-starts Play
+const CACHE_VER  = 'para3-v17'; // EXT-ARP-FIX4: arp scheduler independent of seq transport (industry-standard)
 const PRECACHE   = [
   './',
   './index.html',

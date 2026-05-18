@@ -1282,10 +1282,19 @@ public:
                 if (clock_.tick(&stepIdx_)) onStep();
                 if (smooth_ && stepIdx_ >= 0) applySmoothLanes();   // E3 SMOOTH on
             }
-            // EXT-ARP Block A: per-sample arp scheduler. Runs only when enabled
-            // AND the clock is running (HW-arp parity §1.4). When disabled this
-            // block is dead code; T27(a) proves bit-identity vs. no-arp build.
-            if (arpEnabled_ && clock_.running()) {
+            // EXT-ARP Block A + FIX4: per-sample arp scheduler. Runs whenever
+            // arpEnabled_ is true — INDEPENDENT of the sequencer's transport
+            // state (clock_.running()). This matches industry-standard HW arps
+            // (Volca FM, Minilogue, JP-8000, etc.): the arp derives its
+            // step duration from the same tempo (clock_.sixteenthSamples()),
+            // but the user's Play button controls only the SEQUENCER. The
+            // earlier spec §1.4 reading ("arp runs only when clock_.running()")
+            // forced the user to press Play to hear the arp, which is wrong.
+            // arpStepSamples_ is set by setTempo / setArpRate regardless of
+            // running state, so the tempo source is always valid. When
+            // arpEnabled_ goes false, setArpEnabled releases the current note
+            // and zeroes arpAcc_/arpGateAcc_/arpIdx_ for a clean restart.
+            if (arpEnabled_) {
                 arpAcc_ += 1.0;                                  // EXT-ARP
                 if (arpAcc_ >= arpStepSamples_) {                // EXT-ARP
                     arpAcc_ -= arpStepSamples_;                  // EXT-ARP
