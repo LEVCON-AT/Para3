@@ -1226,14 +1226,22 @@ public:
     // is false (default), behaviour is byte-identical to direct engine.noteOn —
     // T27(a) proves max|d|=0 over a full render. When true, notes go to the
     // arp pool instead and the per-sample arp scheduler drives the engine.
+    // Block C: hold/latch semantics per spec §2.6 — when arpHold_ is true,
+    // a fresh attack (arpPhysHeld_ 0→1) clears the pool first (so the
+    // previous latched chord is replaced, not added to); subsequent
+    // midiNoteOff calls keep the pool intact until that 0→1 trigger.
     void midiNoteOn (int n) noexcept {
-        if (arpEnabled_) { arpAdd_(n); ++arpPhysHeld_; }   // EXT-ARP Block A
-        else             { eng_->noteOn(n); }
+        if (arpEnabled_) {
+            if (arpHold_ && arpPhysHeld_ == 0) {           // EXT-ARP Block C latch reset
+                arpPoolN_ = 0; arpIdx_ = 0; arpUpDownCnt_ = 0;
+            }
+            arpAdd_(n); ++arpPhysHeld_;                     // EXT-ARP Block A
+        } else { eng_->noteOn(n); }
     }
     void midiNoteOff(int n) noexcept {
-        if (arpEnabled_) {                                  // EXT-ARP Block A
+        if (arpEnabled_) {                                  // EXT-ARP Block A+C
             if (arpPhysHeld_ > 0) --arpPhysHeld_;
-            arpRemove_(n);                                  // pool unchanged if Hold (Block C)
+            if (!arpHold_) arpRemove_(n);                   // EXT-ARP Block C — keep pool when held
         } else {
             eng_->noteOff(n);
         }
@@ -1327,6 +1335,15 @@ public:
         arpIdx_       = arpIdx_       % L;
         arpUpDownCnt_ = arpUpDownCnt_ % period;
     }
+    // EXT-ARP Block C: Hold/Latch toggle. With hold=true, midiNoteOff leaves
+    // the pool untouched; the arp keeps playing held notes until either
+    // hold goes off or a fresh "all-released → new key" gesture clears it
+    // (the 0→1 arpPhysHeld_ transition; spec §2.6).
+    void setArpHold(bool on) noexcept { arpHold_ = on; }
+    // EXT-ARP Block C: Random PRNG seed. Same seed ⇒ identical note sequence
+    // (T34 proves reproducibility). Default seed is a design default, not a
+    // hardware calibration — the Volca Keys has no random arp.
+    void setArpSeed(unsigned int s) noexcept { arpRng_ = (uint32_t)s; }
 
 private:
     void onStep() noexcept {
@@ -1412,6 +1429,13 @@ private:
         static constexpr double mul[6] = { 4.0, 2.0, 4.0/3.0, 1.0, 2.0/3.0, 0.5 };
         arpStepSamples_ = clock_.sixteenthSamples() * mul[arpRate_];
     }
+    // EXT-ARP Block C: xorshift32 PRNG. RT-safe, deterministic from arpRng_.
+    // Seeded via setArpSeed; default seed 0x9E3779B9 is the golden-ratio
+    // constant used as a "Design-Default" — there is no HW reference.
+    inline uint32_t arpXorshift_() noexcept {
+        uint32_t x = arpRng_; x ^= x << 13; x ^= x >> 17; x ^= x << 5;
+        return (arpRng_ = x);
+    }
     void arpStep_() noexcept {                         // EXT-ARP one beat
         // OFF-before-ON discipline (mirrors E5, click-free via existing env).
         if (arpCur_ >= 0) { eng_->noteOff(arpCur_); arpCur_ = -1; }
@@ -1453,7 +1477,14 @@ private:
                 arpGateAcc_ = arpGate_ * arpStepSamples_;
                 return;                                 // bypass sorted-path below
             }
-            // case 4 (Random): added in Block C with xorshift seed.
+            case 4: {                                   // EXT-ARP Block C — Random
+                // Deterministic xorshift32 (seedable, RT-safe, no rand()).
+                // Note built from SORTED pool so octave-spread is reproducible
+                // for a given seed — spec §2.5.
+                i = (int)(arpXorshift_() % (uint32_t)L);
+                // arpIdx_ not advanced (Random has no "next" semantic).
+                break;
+            }
             default: {                                  // EXT-ARP Up (mode 0)
                 i = arpIdx_;
                 arpIdx_ = (arpIdx_ + 1) % L;
@@ -1466,7 +1497,7 @@ private:
     }
     // EXT-ARP state (Blocks A+B; Block C extends hold/rng).
     bool   arpEnabled_   = false;                       // EXT-ARP DEFAULT off
-    int    arpMode_      = 0;                           // EXT-ARP 0=Up 1=Dn 2=UpDn 3=AsPlayed (4=Rnd in Block C)
+    int    arpMode_      = 0;                           // EXT-ARP 0=Up 1=Dn 2=UpDn 3=AsPlayed 4=Random
     int    arpRate_      = 3;                           // EXT-ARP DEFAULT 1/16
     int    arpOct_       = 1;                           // EXT-ARP Block B DEFAULT 1..4 range
     int    arpPool_[kArpCap] = {0};                     // EXT-ARP held notes
@@ -1480,6 +1511,8 @@ private:
     double arpGate_      = 0.5;                         // EXT-ARP DEFAULT staccato-50%
     double arpGateAcc_   = 0.0;                         // EXT-ARP samples until NoteOff
     long   arpDropped_   = 0;                           // EXT-ARP observable pool-overflow
+    bool   arpHold_      = false;                       // EXT-ARP Block C latch toggle
+    uint32_t arpRng_     = 0x9E3779B9u;                 // EXT-ARP Block C DEFAULT seed (golden ratio)
     // =========================================================================
     para3::ParaEngine* eng_ = nullptr;
     double      sr_ = 48000.0;

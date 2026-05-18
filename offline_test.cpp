@@ -2286,6 +2286,154 @@ int main() {
         if (!pass) ++failures;
     }
 
+    // ---- T34  EXT-ARP Block C — Random reproducibility (seed determinism) -
+    // Two engines, identical patches, identical pool {36, 40, 43, 47}, mode
+    // Random, seed S. Render N samples → byte-identical output (xorshift is
+    // deterministic). Then seed S' ≠ S → output differs (no rand() laundry).
+    // Pool notes chosen so the worst-case (note + 12*1 = 12 oct above) lands
+    // at 47+12=59, still ≠ 60 (avoids the seq-pattern noteOff(60) collision).
+    {
+        using PE = para3::ParaEngine;
+        auto buildRun = [&](unsigned int seed) {
+            PE eng; eng.prepare(sr, 4096);
+            para3::Controller ctl; ctl.prepare(eng, sr);
+            eng.setParamNorm(PE::Param::Sustain, 1.0);
+            eng.setParamNorm(PE::Param::Cutoff,  0.85);
+            eng.setParamNorm(PE::Param::Attack,  0.0);
+            eng.setParamNorm(PE::Param::DecRel,  0.0);
+            ctl.setArpEnabled(true);
+            ctl.setArpMode(4);                        // Random
+            ctl.setArpRate(1); ctl.setArpGate(0.5);
+            ctl.setArpSeed(seed);
+            ctl.setSeqTempo(120.0, 4); ctl.clock().start();
+            ctl.midiNoteOn(36); ctl.midiNoteOn(40);
+            ctl.midiNoteOn(43); ctl.midiNoteOn(47);
+            std::vector<float> b(96000);
+            ctl.render(b.data(), 96000);
+            return b;
+        };
+        const std::vector<float> a1 = buildRun(0xDEADBEEFu);
+        const std::vector<float> a2 = buildRun(0xDEADBEEFu);     // same seed
+        const std::vector<float> b1 = buildRun(0x12345678u);     // different seed
+        double diffSame = 0.0, diffDiff = 0.0;
+        for (size_t i = 0; i < a1.size(); ++i) {
+            diffSame = std::max(diffSame, (double)std::fabs(a1[i] - a2[i]));
+            diffDiff = std::max(diffDiff, (double)std::fabs(a1[i] - b1[i]));
+        }
+        const bool pass = diffSame == 0.0 && diffDiff > 0.01;
+        std::printf("\nT34 EXT-ARP Block C  (Random reproducibility via seed)\n");
+        std::printf("   same seed,   max|d| : %.3e  (must be 0)\n", diffSame);
+        std::printf("   other seed,  max|d| : %.3e  (must be > 0.01)\n", diffDiff);
+        std::printf("   -> %s\n", pass ? "PASS" : "FAIL");
+        if (!pass) ++failures;
+    }
+
+    // ---- T35  EXT-ARP Block C — Hold/Latch + Arp×Fifth coexistence --------
+    // (1) Hold/Latch: arpHold_=true. Press keys, render some, then release
+    //     ALL keys (midiNoteOff). Pool must remain → arp keeps playing.
+    //     RMS of "post-release" window must equal RMS of "during-hold".
+    // (2) Arp×Fifth: voice mode Fifth makes each arp note become note + (note+7).
+    //     FFT of a mid-arp-step window must show energy at BOTH the
+    //     fundamental and ~f*2^(7/12) (≈1.498× ratio).
+    {
+        using PE = para3::ParaEngine;
+        PE eng; eng.prepare(sr, 4096);
+        para3::Controller ctl; ctl.prepare(eng, sr);
+        eng.setParamNorm(PE::Param::Sustain, 1.0);
+        eng.setParamNorm(PE::Param::Cutoff,  0.85);
+        eng.setParamNorm(PE::Param::Attack,  0.0);
+        eng.setParamNorm(PE::Param::DecRel,  0.0);
+        eng.setMode(para3::ParaAllocator::Mode::Fifth);  // each note + perfect fifth
+        ctl.setArpEnabled(true);
+        ctl.setArpMode(0);                                // Up
+        ctl.setArpRate(1); ctl.setArpGate(0.5);
+        ctl.setArpHold(true);                             // Latch
+        ctl.setSeqTempo(120.0, 4); ctl.clock().start();
+        // Pool {36, 40, 43} — sorted Up → arp produces 36, 40, 43, 36, ... in
+        // Fifth mode each is paired with note+7: (36+43), (40+47), (43+50).
+        ctl.midiNoteOn(36); ctl.midiNoteOn(40); ctl.midiNoteOn(43);
+        const int Mh = 96000;
+        std::vector<float> hbuf(Mh);
+        ctl.render(hbuf.data(), 24000);                   // render 24000 with keys held
+        // Now release ALL keys; with Hold on the pool must stay.
+        ctl.midiNoteOff(36); ctl.midiNoteOff(40); ctl.midiNoteOff(43);
+        ctl.render(hbuf.data() + 24000, Mh - 24000);      // render rest with keys released
+
+        auto rmsRange = [&](int s, int n) {
+            double a = 0.0; for (int i = 0; i < n; ++i) a += (double)hbuf[s+i]*hbuf[s+i];
+            return std::sqrt(a / n);
+        };
+        const double rmsHold    = rmsRange(13000, 8000);   // during hold (step 0)
+        const double rmsLatched = rmsRange(60000, 8000);   // long after release
+        const bool latchOK = rmsLatched > 0.05            // not silent
+                          && rmsLatched > rmsHold * 0.5;  // similar amplitude
+
+        // Now spectral check (Arp×Fifth). Probe sample 13000+1000 — mid step 0,
+        // arp note 36. Fifth mode → engine plays 36 + (36+7)=43.
+        // fundamental f36 = 65.4 Hz, fifth note 43 = 97.999 Hz.
+        // 4096-bin FFT, look for TWO peaks: the loudest + a second-largest
+        // at the expected fifth ratio (2^(7/12) ≈ 1.4983).
+        const int M = 4096;
+        std::vector<cd> sp(M);
+        for (int i = 0; i < M; ++i) {
+            const double w = 0.5 - 0.5 * std::cos(2.0*M_PI*i/(M-1));
+            sp[i] = cd((double)hbuf[13000 + 1000 + i] * w, 0.0);
+        }
+        fft(sp);
+        std::vector<double> mag(M/2);
+        for (int k = 0; k < M/2; ++k) mag[k] = std::abs(sp[k]);
+        // find top peak
+        int k1 = 1; double m1 = 0.0;
+        for (int k = 2; k < M/2 - 1; ++k)
+            if (mag[k] > mag[k-1] && mag[k] > mag[k+1] && mag[k] > m1) {
+                m1 = mag[k]; k1 = k;
+            }
+        // find second top peak >= 200 Hz away from first to avoid leakage twins
+        int k2 = 1; double m2 = 0.0;
+        const int minBinDist = (int)(20.0 * M / sr);     // ~20 Hz separation
+        for (int k = 2; k < M/2 - 1; ++k) {
+            if (std::abs(k - k1) < minBinDist) continue;
+            if (mag[k] > mag[k-1] && mag[k] > mag[k+1] && mag[k] > m2) {
+                m2 = mag[k]; k2 = k;
+            }
+        }
+        // Parabolic interpolation around each peak for sub-bin accuracy
+        // (mirrors peakHzBufHi in T33). 4096-bin width is 11.7 Hz; without
+        // refine, a 65 Hz fundamental sitting between bins 5 and 6 reads
+        // off by ~7% which would fail the ±6% tolerance below.
+        auto refine = [&](int k) {
+            if (k <= 0 || k >= M/2 - 1) return (double)k;
+            const double aL = mag[k-1], bC = mag[k], cR = mag[k+1];
+            const double den = (aL - 2.0*bC + cR);
+            const double db = (std::fabs(den) > 1e-18) ? 0.5*(aL - cR)/den : 0.0;
+            return (double)k + db;
+        };
+        const double hz1 = refine(k1) * sr / M;
+        const double hz2 = refine(k2) * sr / M;
+        const double lo = std::min(hz1, hz2);
+        const double hi = std::max(hz1, hz2);
+        const double f36b = para3::semitonesToHz(36.0);
+        const double f43  = para3::semitonesToHz(43.0);
+        // ratio = 2^(7/12) ≈ 1.4983
+        const double ratio = hi / std::max(1e-6, lo);
+        const bool fifthOK = std::fabs(ratio - 1.4983) < 0.08    // ±5% on ratio
+                          && std::fabs(lo - f36b) / f36b < 0.06
+                          && std::fabs(hi - f43 ) / f43  < 0.06;
+
+        const bool pass = latchOK && fifthOK;
+        std::printf("\nT35 EXT-ARP Block C  (Hold/Latch + Arp x Fifth voice mode)\n");
+        std::printf("   RMS during hold / latched : %.4f / %.4f  (latched > 0.5*hold, > 0.05)\n",
+                    rmsHold, rmsLatched);
+        std::printf("   spectral peaks            : %.1f Hz / %.1f Hz  (want %.1f / %.1f)\n",
+                    lo, hi, f36b, f43);
+        std::printf("   fifth ratio               : %.4f       (want 1.4983 ±0.08)\n", ratio);
+        std::printf("   -> %s   (latch=%s fifth=%s)\n",
+                    pass ? "PASS" : "FAIL",
+                    latchOK ? "ok" : "FAIL",
+                    fifthOK ? "ok" : "FAIL");
+        if (!pass) ++failures;
+    }
+
     std::printf("\n==================================================\n");
     std::printf("%s  (%d failure%s)\n",
                 failures ? "OVERALL: FAIL" : "OVERALL: PASS",

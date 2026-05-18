@@ -148,6 +148,9 @@ void para3_arp_mode   (Para3* p, int mode)     { if (p) p->ctrl.setArpMode(mode)
 void para3_arp_rate   (Para3* p, int rate)     { if (p) p->ctrl.setArpRate(rate); }
 void para3_arp_gate   (Para3* p, double g)     { if (p) p->ctrl.setArpGate(g); }
 void para3_arp_octaves(Para3* p, int oct)      { if (p) p->ctrl.setArpOctaves(oct); } // EXT-ARP Block B
+void para3_arp_hold   (Para3* p, int on)       { if (p) p->ctrl.setArpHold(on != 0); } // EXT-ARP Block C
+void para3_arp_seed   (Para3* p, unsigned int s){ if (p) p->ctrl.setArpSeed(s); }      // EXT-ARP Block C
+long para3_arp_dropped(Para3* p)               { return p ? p->ctrl.arpDropped() : 0; } // EXT-ARP Block C
 
 void para3_render(Para3* p, float* out, int n) {
     if (!p) return;

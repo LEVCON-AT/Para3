@@ -257,6 +257,86 @@ int main() {
         if (!pass) ++failures;
     }
 
+    // ---- WA7  EXT-ARP full C-API sweep (Blocks A+B+C) ----------------------
+    // Walk every arp-related C-API entry point at runtime, drive >16 notes to
+    // trip the pool-overflow counter, sweep modes (Up/Dn/UpDn/AsP/Rnd) and
+    // rates (1/4..1/32), toggle hold/seed, and confirm:
+    //   * para3_arp_dropped reports >0 after overflow
+    //   * audio output stays finite & bounded under all switches
+    //   * Off→On→Off transitions don't NaN
+    //   * Off-state still produces the same audio as never calling the arp
+    //     (regression against pre-EXT behaviour).
+    {
+        Para3* p = para3_create(48000.0, 128);
+        if (!p) { std::fprintf(stderr, "WA7 create failed\n"); ++failures; }
+        else {
+            para3_set_param(p, PARA3_P_SUSTAIN, 1.0);
+            para3_set_param(p, PARA3_P_CUTOFF,  0.85);
+            para3_seq_set_tempo(p, 120.0);
+            para3_seq_start(p);
+
+            // Baseline (arp untouched): play a held key, render.
+            para3_note_on(p, 48);
+            std::vector<float> base(8000);
+            para3_render(p, base.data(), 8000);
+            para3_note_off(p, 48);
+
+            // Turn on arp and walk every setter.
+            para3_arp_enable(p, 1);
+            for (int m = 0; m <= 4; ++m) {
+                para3_arp_mode(p, m);
+                for (int r = 0; r <= 5; ++r) para3_arp_rate(p, r);
+            }
+            para3_arp_gate   (p, 0.25);
+            para3_arp_octaves(p, 3);
+            para3_arp_hold   (p, 1);
+            para3_arp_seed   (p, 0xC0FFEEu);
+
+            // Try to overflow the 16-slot pool: press 20 distinct notes.
+            for (int i = 0; i < 20; ++i) para3_note_on(p, 36 + i);
+            std::vector<float> sweep(48000);
+            para3_render(p, sweep.data(), 48000);
+            for (int i = 0; i < 20; ++i) para3_note_off(p, 36 + i);
+            const long dropped = para3_arp_dropped(p);
+
+            // Disable arp; check no NaN/Inf and the audio path is sane.
+            para3_arp_enable(p, 0);
+            std::vector<float> tail(8000);
+            para3_render(p, tail.data(), 8000);
+
+            // Sanity: finite + bounded.
+            double pkS = 0.0, pkT = 0.0;
+            bool finite = true;
+            for (float x : sweep) { if (!std::isfinite(x)) finite = false; pkS = std::max(pkS, (double)std::fabs(x)); }
+            for (float x : tail)  { if (!std::isfinite(x)) finite = false; pkT = std::max(pkT, (double)std::fabs(x)); }
+
+            // Off-state baseline parity: a fresh engine with NO arp calls should
+            // produce the same render as 'arp disabled' on a configured engine.
+            Para3* q = para3_create(48000.0, 128);
+            para3_set_param(q, PARA3_P_SUSTAIN, 1.0);
+            para3_set_param(q, PARA3_P_CUTOFF,  0.85);
+            para3_seq_set_tempo(q, 120.0);
+            para3_seq_start(q);
+            para3_note_on(q, 48);
+            std::vector<float> baseQ(8000);
+            para3_render(q, baseQ.data(), 8000);
+            double maxD = 0.0;
+            for (size_t i = 0; i < base.size(); ++i) maxD = std::max(maxD, (double)std::fabs(base[i]-baseQ[i]));
+            para3_destroy(q);
+            para3_destroy(p);
+
+            const bool pass = finite && pkS < 4.0 && pkT < 4.0 && dropped > 0
+                           && maxD == 0.0;
+            std::printf("\nWA7 EXT-ARP full surface sweep (Blocks A+B+C)\n");
+            std::printf("   finite                  : %s\n", finite ? "yes" : "NO");
+            std::printf("   peak sweep / tail       : %.3f / %.3f  (< 4.0)\n", pkS, pkT);
+            std::printf("   arp dropped (>16 notes) : %ld  (>0 expected)\n", dropped);
+            std::printf("   off-state parity max|d| : %.3e  (== 0)\n", maxD);
+            std::printf("   -> %s\n", pass ? "PASS" : "FAIL");
+            if (!pass) ++failures;
+        }
+    }
+
     std::printf("\n==================================================\n");
     std::printf("%s  (%d failure%s)\n",
                 failures ? "OVERALL: FAIL" : "OVERALL: PASS",

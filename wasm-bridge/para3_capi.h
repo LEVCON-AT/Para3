@@ -101,10 +101,13 @@ void para3_midi_cc      (Para3* p, int cc, double norm01);
 // Modes: 0=Up (1=Down, 2=UpDown, 3=AsPlayed, 4=Random added in Block B/C).
 // Rates: index into {1/4, 1/8, 1/8T, 1/16, 1/16T, 1/32}.
 void para3_arp_enable (Para3* p, int on);                     // EXT-ARP
-void para3_arp_mode   (Para3* p, int mode);                   // EXT-ARP
+void para3_arp_mode   (Para3* p, int mode);                   // EXT-ARP (4=Random in Block C)
 void para3_arp_rate   (Para3* p, int rate);                   // EXT-ARP
 void para3_arp_gate   (Para3* p, double gate01);              // EXT-ARP staccato 0..1
 void para3_arp_octaves(Para3* p, int oct);                    // EXT-ARP Block B 1..4
+void para3_arp_hold   (Para3* p, int on);                     // EXT-ARP Block C Latch
+void para3_arp_seed   (Para3* p, unsigned int seed);          // EXT-ARP Block C Random reproducibility
+long para3_arp_dropped(Para3* p);                             // EXT-ARP Block C pool-overflow observability
 
 // render n frames into out (mono). out is a pointer into the WASM heap.
 // real-time safe: no allocation, no locks, no syscalls.
