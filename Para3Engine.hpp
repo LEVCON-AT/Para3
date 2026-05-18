@@ -1508,7 +1508,8 @@ private:
     void applyMotionParam_(int pid, double v) noexcept {
         if (pid == kArpModePid) {
             int m = (int)std::floor(v * 5.0);   // 0..1 → 0..4 (5 buckets of 0.2)
-            if (m > 4) m = 4; if (m < 0) m = 0;
+            if (m > 4) m = 4;
+            if (m < 0) m = 0;
             setArpMode(m);
             return;
         }

@@ -14,7 +14,7 @@
 //  the worklet and needs no SAB.
 // =============================================================================
 
-const CACHE_VER  = 'para3-v23'; // EXT-ARP-MOTION: MODE as 5-button .wave picker, motion-fähig (PARAM.ARP_MODE pid=16)
+const CACHE_VER  = 'para3-v24'; // Handover process infra + warning-fix (Para3Engine.hpp split if/if on separate lines)
 const PRECACHE   = [
   './',
   './index.html',
