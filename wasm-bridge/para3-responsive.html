@@ -584,13 +584,52 @@ let inTransport = false;
 // Sprint 1 placeholder content. Real Track contents land in later sprints
 // (FLUX-HOP / BERLIN / VK-BRASS / ACID / RING-RND). Stubs carry a marker
 // param so a click visibly moves the engine + UI, proving the load path.
-const DEMO_TITLES  = { 1:'FLUX-HOP', 2:'BERLIN', 3:'VK-BRASS', 4:'ACID', 5:'RING-RND' };
+// NB: P1 was titled "FLUX-HOP" in the design but FLUX-MODE event injection
+// from JS isn't sample-accurate (engine fcur_ advances in the worklet, JS
+// setTimeout jitter is dozens of ms vs 1/16 = 53 ms @ 70 BPM). To keep the
+// preset deterministic, P1 uses the regular 16-step sequencer for the
+// hip-hop groove. FLUX / F·REC are exercised by a separate Playwright
+// user story (live recording) — see CLAUDE_USER_SCENARIOS.md.
+const DEMO_TITLES  = { 1:'HIP-HOP', 2:'BERLIN', 3:'VK-BRASS', 4:'ACID', 5:'RING-RND' };
 const DEMO_PRESETS = {
-  1: { title:'FLUX-HOP', k:{ cut:60 }, f:{}, v:0, w:0, st:new Array(16).fill(false), mo:{}, tg:'cut' },
-  2: { title:'BERLIN',   k:{ cut:45 }, f:{}, v:0, w:0, st:new Array(16).fill(false), mo:{}, tg:'cut' },
-  3: { title:'VK-BRASS', k:{ cut:70 }, f:{}, v:0, w:0, st:new Array(16).fill(false), mo:{}, tg:'cut' },
-  4: { title:'ACID',     k:{ cut:30 }, f:{}, v:0, w:0, st:new Array(16).fill(false), mo:{}, tg:'cut' },
-  5: { title:'RING-RND', k:{ cut:80 }, f:{}, v:0, w:0, st:new Array(16).fill(false), mo:{}, tg:'cut' },
+  // P1 — HIP-HOP @ 70 BPM. POLY, low bass groove, METRO on, MOTION-REC/VOLUME
+  // swell. Exercises: SEQ-Pattern, per-step notes, METRO, MOTION-REC/VOLUME,
+  // DELAY. Slowest tempo of the demo set.
+  1: {
+    title: 'HIP-HOP',
+    voice: 0,              // POLY
+    lfoWave: 0,            // TRIANGLE (off, lrt=0)
+    lfoSync: false,
+    knobs: {
+      tmp: 70,             // BPM (slowest demo)
+      oct: 0,
+      cut: 55, pk: 25,
+      lrt: 0,  lpi: 0,  lci: 0,    // LFO disabled
+      dt: 50,  df: 35,  vol: 75,   // DELAY ~half time, mid FB
+      egi: 50,                      // bipolar centre = neutral EG-int
+      det: 5,  por: 0,
+      arpRate: 3, arpOct: 1, arpGate: 50,
+    },
+    faders: { atk: 8, dec: 45, sus: 60 },
+    arpEnabled: false, arpHold: false, arpMode: 0,
+    stepTrigger: false, metro: true, tempoDiv: 1, motionSmooth: false,
+    // Bass groove: 8 hits over 16 steps. C2/D#2/G2/F2/D#2 — Bb minor blues vibe.
+    steps:     [true,  false, false, true,  false, false, true,  false,
+                true,  false, true,  false, true,  false, true,  false],
+    stepNotes: [36,    0,     0,     36,    0,     0,     39,    0,
+                43,    0,     43,    0,     41,    0,     39,    0   ],
+    actSteps:  new Array(16).fill(true),
+    motionTarget: 'vol',
+    // VOLUME swell over the 16-step bar (hip-hop fade-in fade-out feel).
+    motionLanes: {
+      vol: [12, 18, 25, 34, 44, 55, 67, 78, 88, 95, 95, 88, 75, 58, 38, 18],
+    },
+  },
+  // Sprint 1 stubs for P2-P5 (replaced by real content in upcoming sprints).
+  2: { title:'BERLIN',   knobs:{ cut:45 } },
+  3: { title:'VK-BRASS', knobs:{ cut:70 } },
+  4: { title:'ACID',     knobs:{ cut:30 } },
+  5: { title:'RING-RND', knobs:{ cut:80 } },
 };
 function markDirty() {
   if (!ready || loadedDemo === null || inRestore || inTransport) return;
@@ -1141,14 +1180,122 @@ function emit(fn) {
     patch.appendChild(b);}
   const pE=[...patch.querySelectorAll('.pslot')];
   function mark(s){pE.forEach(e=>e.classList.toggle('active',+e.dataset.s===s));}
-  // Sprint 1 — Demo load + visual state machine. Wraps restore() with
-  // inRestore so emits during the load don't mark dirty. Clears .loaded
-  // from siblings so only one demo carries the bright accent at a time.
-  // Re-clicking the same slot resets dirty (= "undo my edits").
+  // Sprint 2 — comprehensive demo apply. Maps every preset field into the
+  // existing UI state vars + engine emits. Wraps with inRestore so emits
+  // during apply don't trip the dirty indicator. Each field is OPTIONAL —
+  // a preset only writes the fields it cares about (others stay at the UI
+  // default or previous state). Sprint 1 stubs (only `k`/cut) still work
+  // because all the long-form fields default to "skip".
+  function applyDemoPreset(p){
+    inRestore = true;
+    try {
+      // ---- voice mode ----
+      if (typeof p.voice === 'number') {
+        voiceIx = p.voice;
+        [...voice.children].forEach((b,i)=>b.classList.toggle('on', i === voiceIx));
+        emit((c) => c.setMode(VOICE_MODE[voiceIx]));
+      }
+      // ---- LFO shape + sync ----
+      if (typeof p.lfoWave === 'number') {
+        lw = p.lfoWave;
+        waveShapes.forEach((b,i)=>b.classList.toggle('on', i === lw));
+        emit((c) => c.setLfoShape(LFO_FROM_LW[lw]));
+      }
+      if (typeof p.lfoSync === 'boolean') {
+        lfoSync = p.lfoSync;
+        lsync.classList.toggle('on', lfoSync);
+        emit((c) => c.setLfoSync(lfoSync));
+      }
+      // ---- knobs / faders (K[].set + F[].set call emitKnob/emitFader,
+      //      which fire through the wrapped emit — inRestore suppresses dirty) ----
+      if (p.knobs)  Object.entries(p.knobs ).forEach(([id,v]) => K[id] && K[id].set(v));
+      if (p.faders) Object.entries(p.faders).forEach(([id,v]) => F[id] && F[id].set(v));
+      // ---- ARP ----
+      if (typeof p.arpEnabled === 'boolean') {
+        arpOnState = p.arpEnabled;
+        arpOnB.classList.toggle('on', arpOnState);
+        emit((c) => c.arpEnable(arpOnState));
+      }
+      if (typeof p.arpHold === 'boolean') {
+        arpHoldState = p.arpHold;
+        arpHoldB.classList.toggle('on', arpHoldState);
+        emit((c) => c.arpHold(arpHoldState));
+      }
+      if (typeof p.arpMode === 'number') {
+        // Use the canonical setter so the live motion val is set too.
+        setArpMode(p.arpMode, { show: false });
+      }
+      // ---- Sequencer controller-settings ----
+      if (typeof p.stepTrigger === 'boolean') {
+        stepTrig = p.stepTrigger;
+        stpB.classList.toggle('on', stepTrig);
+        emit((c) => c.seqStepTrigger(stepTrig));
+      }
+      if (typeof p.metro === 'boolean') {
+        metroOn = p.metro;
+        metroB.classList.toggle('on', metroOn);
+        emit((c) => c.seqMetronome(metroOn));
+      }
+      if (typeof p.tempoDiv === 'number') {
+        tdivVal = p.tempoDiv;
+        [...tdiv.querySelectorAll('button')].forEach(b => b.classList.toggle('on', +b.dataset.d === tdivVal));
+        emit((c) => c.seqTempoDiv(tdivVal));
+      }
+      if (typeof p.motionSmooth === 'boolean') {
+        motionSmooth = p.motionSmooth;
+        mSmooth.classList.toggle('on', motionSmooth);
+        emit((c) => c.seqMotionSmooth(motionSmooth));
+      }
+      if (Array.isArray(p.actSteps)) {
+        p.actSteps.forEach((on,i) => {
+          actStep[i] = on;
+          // visual: ACT-skip shading only when astepMode is on, but engine state always
+          if (astepMode) sN[i].classList.toggle('skip', !on);
+          emit((c) => c.seqActiveStep(i, on));
+        });
+      }
+      // ---- Sequencer pattern (per-step notes + gates) ----
+      if (Array.isArray(p.steps)) {
+        p.steps.forEach((on,i) => {
+          onSteps[i] = on;
+          if (!astepMode) sN[i].classList.toggle('on', on);
+        });
+        emit((c) => {
+          for (let i = 0; i < 16; i++) {
+            const note = (p.stepNotes && p.stepNotes[i] != null) ? p.stepNotes[i] : (lastNote || 60);
+            c.seqStep(i, note, p.steps[i] || false, false, 0);
+          }
+          c.seqLength(p.steps.length);
+        });
+      }
+      // ---- Motion lanes ----
+      if (p.motionLanes) {
+        Object.keys(motionByTgt).forEach(k => delete motionByTgt[k]);
+        Object.entries(p.motionLanes).forEach(([id,lane]) => {
+          motionByTgt[id] = [...lane];
+          const pid = motionParamId(id);
+          if (pid !== undefined) emit((c) => {
+            for (let i = 0; i < 16; i++) c.seqMotion(pid, i, (lane[i] || 0) / 100);
+          });
+        });
+      }
+      // Commit pattern + motion atomically.
+      if (Array.isArray(p.steps) || p.motionLanes) emit((c) => c.seqCommit());
+      // ---- Motion target (UI selection) ----
+      if (p.motionTarget && isMotionCapable(p.motionTarget)) {
+        setTarget(p.motionTarget);
+      }
+      drawLane();
+    } finally {
+      inRestore = false;
+    }
+  }
+  // Sprint 1 — demo load + visual state machine. Sprint 2 — delegate the
+  // actual state apply to applyDemoPreset (handles the comprehensive
+  // preset format); the visual loaded/dirty/active machinery lives here.
   function loadDemo(s){
     const p = DEMO_PRESETS[s]; if (!p) return;
-    inRestore = true;
-    try { restore(p); } finally { inRestore = false; }
+    applyDemoPreset(p);
     pE.forEach((e,i)=>{
       const isThis = (i+1) === s;
       if (DEMO_PRESETS[i+1]) {

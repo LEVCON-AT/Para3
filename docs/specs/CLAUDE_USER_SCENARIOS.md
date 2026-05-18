@@ -106,16 +106,20 @@ Mess:   __para3Capture(96000): 8 Onsets im erwarteten Raster (Jitter 0);
      verteilt; Voice-Modi 5/6 abgedeckt, MOTION-REC-Targets 5/5
      unterschiedlich, alle 3 LFO-Shapes, alle 5 ARP-Modi via P5-Motion). -->
 
-### US-DEMO-P1-FLUX — FLUX-HOP @ 70 BPM lädt + spielt + Motion-VOL-Swell
+### US-DEMO-P1-HIPHOP — HIP-HOP-Groove @ 70 BPM lädt + spielt + Motion-VOL-Swell
 Given:  Cold-Start, kein Bedienelement berührt. Audio gestartet (TAP TO START).
 When:   Klick auf Button `P1`. Anschließend Klick `▶` (Play).
-Then:   Display zeigt `P1: FLUX-HOP`. Akzent-Linie unter P1 in `--accent-dim`.
-        FLUX-Mode aktiv, METRO an, F·REC-Loop läuft, Tempo 70 BPM.
-        Audio swellt über ~2 s von leise nach laut (MOTION-REC auf VOLUME).
-Mess:   __para3Capture(~96000 Samples bei 48 kHz = 2 s):
-        - RMS-Verlauf monoton steigend von <0.02 (Start) auf >0.10 (Ende),
-        - METRO-Tick (Quarter-Note) erkennbar als kurze Hochfrequenz-Bursts,
-        - F·REC-Note-Onsets vorhanden (mindestens 4 Onsets im 2-s-Fenster).
+Then:   Display zeigt `P1: HIP-HOP`. Akzent-Linie unter P1 (loaded, clean).
+        POLY-Voice, regulärer 16-Step-Sequenzer mit 8-Note-Bassgroove
+        (C2/D#2/G2/F2/D#2-Cycle), METRO an, Tempo 70 BPM.
+        MOTION-REC auf VOLUME: 16-Step-Lane mit Swell-Kurve (rampt von ~12 auf
+        ~95 und wieder auf 18 zurück über die 16 Steps).
+        FLUX/F·REC werden separat von einer Live-Record-Story exerziert
+        (Pre-Baking aus JS ist nicht sample-genau).
+Mess:   __para3Capture(~96000 Samples bei 48 kHz = 2 s = 1 Loop @ 70 BPM × 1/16 × 16):
+        - 8 Note-Onsets im 2-s-Fenster (16 Steps mit Gates [1,0,0,1,0,0,1,0, 1,0,1,0, 1,0,1,0]),
+        - RMS-Profil folgt der Swell-Kurve: mittlere Hälfte deutlich lauter als Anfang/Ende,
+        - METRO-Tick (Quarter-Note) als zusätzliche Hochfrequenz-Bursts erkennbar.
 
 ### US-DEMO-P2-BERLIN — BERLIN-Sequenz @ 88 BPM mit TEMPO DIV 1/2, FIFTH-Voice, MOTION-REC/PORTAMENTO
 Given:  Cold-Start, audio ready.

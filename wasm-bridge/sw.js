@@ -14,7 +14,7 @@
 //  the worklet and needs no SAB.
 // =============================================================================
 
-const CACHE_VER  = 'para3-v25'; // Sprint 1: P1-P5 Demo-Indikator (Akzent-Linie + Dirty/Reset)
+const CACHE_VER  = 'para3-v26'; // Sprint 2: Preset-Datenmodell + applyDemoPreset + P1 HIP-HOP Inhalt
 const PRECACHE   = [
   './',
   './index.html',
