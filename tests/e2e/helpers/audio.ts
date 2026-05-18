@@ -98,6 +98,19 @@ export function specDb(samples: number[], fs: number, f: number): number {
   return 20 * Math.log10(Math.max(a, 1e-9));
 }
 
+// Peak Goertzel power across a frequency band, returned in dB. Useful when
+// the exact fundamental drifts (portamento, detune) or sits between Goertzel
+// bins — sweeps with `step` Hz resolution and takes the max.
+export function bandPeakDb(samples: number[], fs: number,
+                           fLow: number, fHigh: number, step: number): number {
+  let max = -Infinity;
+  for (let f = fLow; f <= fHigh; f += step) {
+    const db = specDb(samples, fs, f);
+    if (db > max) max = db;
+  }
+  return max;
+}
+
 // Simple onset detector on RMS curve. An onset is a local maximum exceeding
 // (prev + rise) and minRMS. Returns array of {idx, t_ms, rms}.
 export function detectOnsets(rms: number[], opts: {

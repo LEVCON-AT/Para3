@@ -18,3 +18,8 @@ desktop.ini
 files.zip
 *.zip
 
+# Scratch context dropped by the Claude Code session handoff (CLAUDE.md
+# duplicates, INSTALL.md, docs/ snapshots). The authoritative copies live
+# at the repo root; this directory is local-only.
+claude-code-context/
+
