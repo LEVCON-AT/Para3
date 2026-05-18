@@ -1232,8 +1232,11 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
 
     // sequencer visual cursor (UI-soft estimate; engine drives the audio)
     if (playing) {
-      // cheap step cursor based on audioContext time — purely visual.
-      const bpm = K.tmp.get(), sm = 60 / (bpm * 4);
+      // Bug-fix: must honour tempoDiv. Without `* tdivVal` the cursor walks at
+      // 1/1 speed even when the engine is at 1/2 or 1/4 — the lit step no
+      // longer matches the audible note, which reads as "Noten nicht korrekt
+      // getimet" until the user toggles div back to 1/1.
+      const bpm = K.tmp.get(), sm = (60 / (bpm * 4)) * tdivVal;
       const t = audio.ctx ? audio.ctx.currentTime : 0;
       const c = (Math.floor(t / sm) % 16 + 16) % 16;
       if (c !== cur) {

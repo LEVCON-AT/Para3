@@ -375,6 +375,28 @@ const html = readFileSync(join(REPO, 'wasm-bridge/para3-responsive.html'), 'utf8
   if (!pass) fails++;
 }
 
+// ----- (b7) B3 VISUAL CURSOR HONOURS tempoDiv -----------------------------
+// User-reported regression: visual cursor walks at 1/1 speed even when div is
+// 1/2 or 1/4, so the lit step doesn't match the audible note. The cursor
+// formula in the frame() function must scale step-seconds by tdivVal.
+{
+  const checks = [
+    { re: /sm\s*=\s*\(\s*60\s*\/\s*\(\s*bpm\s*\*\s*4\s*\)\s*\)\s*\*\s*tdivVal/,
+      label: 'visual cursor sm formula multiplied by tdivVal' },
+    { re: /let\s+tdivVal\s*=\s*1/,
+      label: 'tdivVal initialised to 1 (no-op default)' },
+    { re: /tdivVal\s*=\s*d\s*;/,
+      label: 'tdivVal updated on div button click' },
+  ];
+  const failed = checks.filter(c => !c.re.test(html));
+  const pass = failed.length === 0;
+  console.log(`\nU-B7: B3 visual cursor honours tempoDiv (1/2, 1/4 alignment)`);
+  console.log(`   checks   : ${checks.length - failed.length}/${checks.length}`);
+  if (failed.length) for (const f of failed) console.log(`      MISSING: ${f.label}`);
+  console.log(`   -> ${pass ? 'PASS' : 'FAIL'}`);
+  if (!pass) fails++;
+}
+
 // ----- (c) PURE-FUNCTION UNIT TEST ---------------------------------------
 {
   // Spec-duplicate of the in-HTML math. If you change one, change the other.
