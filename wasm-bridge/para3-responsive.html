@@ -1280,6 +1280,12 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
       splash.classList.add('hidden');
       show('READY', 'PLAY', '');
 
+      // EXT-ARP-UI-FIX6 verification hook: tiny read-only surface so live
+      // click-tests (Playwright) can attach FFT analysis to the same
+      // analyser the on-screen scope already reads. No control surface
+      // change — exposes existing references only.
+      window.__para3Debug = () => ({ audio, analyser, scopeBuf, ready });
+
       // Optional in-app proof (Nachweis B). Run on demand: ?selftest=1
       if (new URLSearchParams(location.search).get('selftest') === '1') {
         scopeSelftest();

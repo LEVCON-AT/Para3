@@ -14,7 +14,7 @@
 //  the worklet and needs no SAB.
 // =============================================================================
 
-const CACHE_VER  = 'para3-v20'; // EXT-ARP-UI-FIX6: HOLD-off with keys-held filters pool to physical set (Korg LATCH parity)
+const CACHE_VER  = 'para3-v21'; // EXT-ARP-UI-FIX6 + Debug hook (window.__para3Debug for live FFT click-tests)
 const PRECACHE   = [
   './',
   './index.html',
