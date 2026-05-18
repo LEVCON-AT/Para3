@@ -625,8 +625,47 @@ const DEMO_PRESETS = {
       vol: [12, 18, 25, 34, 44, 55, 67, 78, 88, 95, 95, 88, 75, 58, 38, 18],
     },
   },
-  // Sprint 1 stubs for P2-P5 (replaced by real content in upcoming sprints).
-  2: { title:'BERLIN',   knobs:{ cut:45 } },
+  // P2 — BERLIN @ 88 BPM, FIFTH voice, TEMPO DIV 1/2 (effektiv 44 BPM),
+  // Cm-Skala-Run, ACT-Skips auf Step 4+11, LFO TRI+SYNC für sanfte Modulation,
+  // langer Delay-Tail. MOTION-REC auf PORTAMENTO mit Smooth-Lane —
+  // Glide-Intensität wandert kontinuierlich über den Loop (Berlin-School
+  // klassisches Klangwandern).
+  2: {
+    title: 'BERLIN',
+    voice: 3,              // FIFTH (Quinten-Stack)
+    lfoWave: 0,            // TRIANGLE
+    lfoSync: true,         // beat-synchron mit Sequencer
+    knobs: {
+      tmp: 88,
+      oct: -1,             // eine Oktave tiefer (Berlin-Bass-Register)
+      cut: 50,
+      pk:  35,             // mehr Resonance für klassischen Berlin-Filter
+      lrt: 18,             // langsame LFO
+      lpi: 7,              // subtle Pitch-Mod
+      lci: 0,
+      dt:  72,             // langer Delay
+      df:  55,             // hoher Feedback (Bläschen-Echo)
+      vol: 70,
+      egi: 50,             // bipolar centre
+      det: 0,              // keine Detune (FIFTH liefert Intervall)
+      por: 50,             // mittlerer Baseline (Motion-Lane überschreibt)
+      arpRate: 3, arpOct: 1, arpGate: 50,
+    },
+    faders: { atk: 25, dec: 70, sus: 80 },   // weicher Pad-Charakter
+    arpEnabled: false, arpHold: false, arpMode: 0,
+    stepTrigger: false, metro: false, tempoDiv: 2, motionSmooth: true,
+    // 16-Step Cm-Skala-Run (C-D#-G-A#-G-D#-C-G-... mit Variation).
+    // Skip auf Step 4 und 11 → rhythmische Lücken.
+    steps:    new Array(16).fill(true),
+    stepNotes:[48, 51, 55, 58,  58, 58, 55, 51,  48, 55, 48, 51,  51, 53, 55, 58],
+    actSteps: [true,true,true,true,  false,true,true,true,  true,true,true,false,  true,true,true,true],
+    motionTarget: 'por',
+    // PORTAMENTO swell: kleine Glide am Anfang, dann progressiv stärker,
+    // langsam zurück am Loop-Ende. SMOOTH ON glättet zwischen den Steps.
+    motionLanes: {
+      por: [5, 10, 18, 28, 40, 52, 65, 78, 88, 92, 92, 88, 78, 60, 38, 18],
+    },
+  },
   3: { title:'VK-BRASS', knobs:{ cut:70 } },
   4: { title:'ACID',     knobs:{ cut:30 } },
   5: { title:'RING-RND', knobs:{ cut:80 } },

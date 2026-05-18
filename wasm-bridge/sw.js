@@ -14,7 +14,7 @@
 //  the worklet and needs no SAB.
 // =============================================================================
 
-const CACHE_VER  = 'para3-v26'; // Sprint 2: Preset-Datenmodell + applyDemoPreset + P1 HIP-HOP Inhalt
+const CACHE_VER  = 'para3-v27'; // Sprint 3: P2 BERLIN @ 88 BPM (FIFTH, TEMPO DIV 1/2, ACT-Skip, MOTION-REC/PORTAMENTO smooth)
 const PRECACHE   = [
   './',
   './index.html',
