@@ -14,7 +14,7 @@
 //  the worklet and needs no SAB.
 // =============================================================================
 
-const CACHE_VER  = 'para3-v30'; // Sprint 6: P5 RING-RND @ 140 BPM (POLYRING, ARP HOLD ×3 Oct, MOTION-REC/ARP_MODE cyclt 5 Modi)
+const CACHE_VER  = 'para3-v31'; // Sprint 7: E2E-TAP test-only hook (window.__para3Capture, gated by ?e2e=1)
 const PRECACHE   = [
   './',
   './index.html',

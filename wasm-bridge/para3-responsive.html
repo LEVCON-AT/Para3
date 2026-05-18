@@ -1742,6 +1742,55 @@ function emit(fn) {
       // change — exposes existing references only.
       window.__para3Debug = () => ({ audio, analyser, scopeBuf, ready });
 
+      // E2E-TAP test-only — installed ONLY when ?e2e=1 or window.__PARA3_E2E
+      // is set. Attaches a ScriptProcessor that mirrors the worklet output
+      // into a circular Float32Array; window.__para3Capture(n) returns the
+      // last n samples. With the flag OFF, NO extra node touches the graph
+      // (production is bit-identical to the pre-E2E build). The
+      // ScriptProcessor passes input straight to output, so audible playback
+      // is also unchanged when the flag is ON.
+      const e2eFlag = new URLSearchParams(location.search).get('e2e') === '1'
+                   || !!window.__PARA3_E2E;
+      if (e2eFlag) {
+        const FS_E2E   = audio.ctx.sampleRate;
+        const CAP_E2E  = Math.round(FS_E2E * 8.0);              // 8 s ring
+        const ringE2E  = new Float32Array(CAP_E2E);
+        let   wE2E     = 0;
+        const spE2E    = audio.ctx.createScriptProcessor(2048, 1, 1);
+        spE2E.onaudioprocess = (e) => {
+          const x = e.inputBuffer.getChannelData(0);
+          const n = x.length;
+          // wrap-aware copy into the ring
+          const tail = CAP_E2E - wE2E;
+          if (n <= tail) {
+            ringE2E.set(x, wE2E);
+          } else {
+            ringE2E.set(x.subarray(0, tail), wE2E);
+            ringE2E.set(x.subarray(tail),    0);
+          }
+          wE2E = (wE2E + n) % CAP_E2E;
+          e.outputBuffer.getChannelData(0).set(x);              // passthrough
+        };
+        audio.node.connect(spE2E);
+        spE2E.connect(audio.ctx.destination);
+        // Capture the last `nSamples` samples ending at the current write head.
+        window.__para3Capture = (nSamples) => {
+          const n = Math.min(nSamples | 0, CAP_E2E);
+          const out = new Float32Array(n);
+          const start = (wE2E - n + CAP_E2E) % CAP_E2E;
+          const tail  = CAP_E2E - start;
+          if (n <= tail) out.set(ringE2E.subarray(start, start + n));
+          else {
+            out.set(ringE2E.subarray(start), 0);
+            out.set(ringE2E.subarray(0, n - tail), tail);
+          }
+          return out;
+        };
+        // Helper for tests to wait for N additional samples after a trigger.
+        window.__para3CaptureCursor = () => wE2E;
+        window.__para3CaptureSampleRate = () => FS_E2E;
+      }
+
       // Optional in-app proof (Nachweis B). Run on demand: ?selftest=1
       if (new URLSearchParams(location.search).get('selftest') === '1') {
         scopeSelftest();
