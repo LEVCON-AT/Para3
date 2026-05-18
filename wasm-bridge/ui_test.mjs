@@ -414,26 +414,30 @@ const html = readFileSync(join(REPO, 'wasm-bridge/para3-responsive.html'), 'utf8
 // user idled on splash. User-reported symptom: cursor and audible note out
 // of phase until app reload. Engine pairs (T29/T30) prove step 0 fires at
 // t=t0 — the cursor must too.
-// EXT-ARP-FIX2 upgrade: the single seqStartT anchor jumped backward on
-// mid-play tdivVal changes (because the formula divided ALL elapsed time by
-// the NEW sm). Replaced with a regime snapshot pair (cursorBaseTime +
-// cursorBaseStep), re-snapped at Play AND on every tdiv change.
+// EXT-ARP-FIX3 upgrade: FIX2 dropped the fractional acc on tdiv changes,
+// which let the engine fire ahead of the cursor (user saw "klang eine Note
+// zu früh"). FIX3 tracks cursorStep + cursorAccSec to mirror the engine's
+// {step, acc} state exactly.
 {
   const checks = [
-    { re: /let\s+cursorBaseTime\s*=\s*0\s*;[\s\S]{0,200}?let\s+cursorBaseStep\s*=\s*0\s*;/,
-      label: 'cursorBaseTime + cursorBaseStep declared (tempo-regime anchor)' },
-    { re: /if\s*\(\s*playing\s*\)\s*\{[\s\S]*?cursorBaseTime\s*=\s*audio\.ctx[\s\S]*?cursorBaseStep\s*=\s*0/,
-      label: 'Play click captures base time and resets base step to 0' },
-    { re: /cursorBaseStep\s*=\s*\(\s*cursorBaseStep\s*\+\s*Math\.floor\(\s*\(\s*tNow\s*-\s*cursorBaseTime\s*\)\s*\/\s*smOld\s*\)\s*\)/,
-      label: 'tdiv handler re-snaps cursorBaseStep before changing tdivVal' },
-    { re: /elapsedInRegime\s*=\s*Math\.max\(\s*0\s*,\s*t\s*-\s*cursorBaseTime\s*\)/,
-      label: 'cursor formula uses (currentTime - cursorBaseTime) per-regime' },
-    { re: /total\s*=\s*cursorBaseStep\s*\+\s*Math\.floor\(\s*elapsedInRegime\s*\/\s*sm\s*\)/,
-      label: 'step index = cursorBaseStep + floor(elapsedInRegime/sm)' },
+    { re: /let\s+cursorStep\s*=\s*0\s*;[\s\S]{0,300}?let\s+cursorAccSec\s*=\s*0\s*;[\s\S]{0,300}?let\s+cursorRegimeTs\s*=\s*0\s*;/,
+      label: 'cursorStep + cursorAccSec + cursorRegimeTs declared' },
+    { re: /if\s*\(\s*playing\s*\)\s*\{[\s\S]*?cursorStep\s*=\s*0[\s\S]*?cursorAccSec\s*=\s*0[\s\S]*?cursorRegimeTs\s*=\s*audio\.ctx/,
+      label: 'Play resets step/acc/ts (Volca restart-from-0)' },
+    { re: /cursorAccSec\s*\+\s*\(\s*tNow\s*-\s*cursorRegimeTs\s*\)/,
+      label: 'tdiv handler computes total = acc + (now - regimeTs)' },
+    { re: /stepsFired\s*=\s*Math\.floor\(\s*total\s*\/\s*smOld\s*\)/,
+      label: 'tdiv handler counts steps fired in old regime' },
+    { re: /cursorAccSec\s*=\s*total\s*-\s*stepsFired\s*\*\s*smOld/,
+      label: 'tdiv handler folds fractional carry into new cursorAccSec' },
+    { re: /total\s*=\s*cursorAccSec\s*\+\s*Math\.max\(\s*0\s*,\s*t\s*-\s*cursorRegimeTs\s*\)/,
+      label: 'frame() formula = cursorAccSec + elapsed-in-regime' },
+    { re: /stepsAdvanced\s*=\s*Math\.floor\(\s*total\s*\/\s*sm\s*\)/,
+      label: 'frame() step count = floor(total/sm)' },
   ];
   const failed = checks.filter(c => !c.re.test(html));
   const pass = failed.length === 0;
-  console.log(`\nU-B8: B4+EXT-ARP-FIX2 cursor anchor tracks tempo regime`);
+  console.log(`\nU-B8: EXT-ARP-FIX3 cursor mirrors engine acc + step`);
   console.log(`   checks   : ${checks.length - failed.length}/${checks.length}`);
   if (failed.length) for (const f of failed) console.log(`      MISSING: ${f.label}`);
   console.log(`   -> ${pass ? 'PASS' : 'FAIL'}`);

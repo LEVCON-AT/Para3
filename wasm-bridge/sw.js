@@ -14,7 +14,7 @@
 //  the worklet and needs no SAB.
 // =============================================================================
 
-const CACHE_VER  = 'para3-v15'; // EXT-ARP-FIX2: seq/arp coexistence + cursor-anchor tracks tempo regime
+const CACHE_VER  = 'para3-v16'; // EXT-ARP-FIX3: cursor mirrors engine acc+step; ARP auto-starts Play
 const PRECACHE   = [
   './',
   './index.html',
