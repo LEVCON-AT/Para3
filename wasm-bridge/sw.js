@@ -14,7 +14,7 @@
 //  the worklet and needs no SAB.
 // =============================================================================
 
-const CACHE_VER  = 'para3-v19'; // EXT-ARP-UI-FIX5: HOLD-off clears latched pool (industry-standard HOLD semantics)
+const CACHE_VER  = 'para3-v20'; // EXT-ARP-UI-FIX6: HOLD-off with keys-held filters pool to physical set (Korg LATCH parity)
 const PRECACHE   = [
   './',
   './index.html',

@@ -1232,20 +1232,24 @@ public:
     // T27(a) proves max|d|=0 over a full render. When true, notes go to the
     // arp pool instead and the per-sample arp scheduler drives the engine.
     // Block C: hold/latch semantics per spec §2.6 — when arpHold_ is true,
-    // a fresh attack (arpPhysHeld_ 0→1) clears the pool first (so the
+    // a fresh attack (arpPhys_ 0→1) clears the pool first (so the
     // previous latched chord is replaced, not added to); subsequent
     // midiNoteOff calls keep the pool intact until that 0→1 trigger.
+    // UI-FIX6: arpPhys_[] tracks the actual physically-held notes (not just
+    // a count) so setArpHold(false) can filter the pool to that set —
+    // matches Korg LATCH/HOLD-off semantics (microKORG, Minilogue, Volca).
     void midiNoteOn (int n) noexcept {
         if (arpEnabled_) {
-            if (arpHold_ && arpPhysHeld_ == 0) {           // EXT-ARP Block C latch reset
+            if (arpHold_ && arpPhysN_ == 0) {              // EXT-ARP Block C latch reset
                 arpPoolN_ = 0; arpIdx_ = 0; arpUpDownCnt_ = 0;
             }
-            arpAdd_(n); ++arpPhysHeld_;                     // EXT-ARP Block A
+            arpAdd_(n);                                     // EXT-ARP Block A (pool)
+            arpListAdd_(arpPhys_, arpPhysN_, n);            // EXT-ARP UI-FIX6 (physical set)
         } else { eng_->noteOn(n); }
     }
     void midiNoteOff(int n) noexcept {
         if (arpEnabled_) {                                  // EXT-ARP Block A+C
-            if (arpPhysHeld_ > 0) --arpPhysHeld_;
+            arpListRemove_(arpPhys_, arpPhysN_, n);         // EXT-ARP UI-FIX6 (always)
             if (!arpHold_) arpRemove_(n);                   // EXT-ARP Block C — keep pool when held
         } else {
             eng_->noteOff(n);
@@ -1313,6 +1317,12 @@ public:
     int currentStep() const noexcept { return stepIdx_; }
     // EXT-ARP Block A: observable + setters (no taper trichter — Controller settings).
     long arpDropped() const noexcept { return arpDropped_; }     // EXT-ARP
+    // EXT-ARP UI-FIX6 test accessors (read-only pool/phys snapshots).
+    int  arpPoolSize() const noexcept { return arpPoolN_; }
+    int  arpPoolNote(int i) const noexcept {
+        return (i >= 0 && i < arpPoolN_) ? arpPool_[i] : -1;
+    }
+    int  arpPhysSize() const noexcept { return arpPhysN_; }
     void setArpEnabled(bool on) noexcept {                       // EXT-ARP
         if (on == arpEnabled_) return;
         arpEnabled_ = on;
@@ -1349,27 +1359,47 @@ public:
         arpIdx_       = arpIdx_       % L;
         arpUpDownCnt_ = arpUpDownCnt_ % period;
     }
-    // EXT-ARP Block C + UI-FIX5: Hold/Latch toggle. With hold=true,
+    // EXT-ARP Block C + UI-FIX5/6: Hold/Latch toggle. With hold=true,
     // midiNoteOff leaves the pool untouched; the arp keeps playing held
     // notes until either hold goes off or a fresh "all-released → new key"
-    // gesture clears it (the 0→1 arpPhysHeld_ transition; spec §2.6).
+    // gesture clears it (the 0→1 arpPhysN_ transition; spec §2.6).
     //
-    // Industry-standard HW behaviour for HOLD off (Volca FM, Minilogue,
-    // JP-8000, Sub 37): releasing the latch immediately drops every
-    // latched note — the arp stops. User reported that the previous
-    // implementation only flipped the flag, leaving the pool intact;
-    // sound could only be silenced by disabling the arp entirely.
-    // We now drop the pool on the true→false transition, but only when
-    // no physical keys are currently held — if the user is still pressing
-    // notes, those keep playing (they'll arpRemove naturally on release).
+    // Industry-standard HW behaviour for HOLD off (Korg microKORG /
+    // Minilogue LATCH, Volca FM, JP-8000):
+    //   * no keys physically held  → drop the entire latched set, arp stops
+    //     (UI-FIX5);
+    //   * keys still physically held → filter the pool down to that set,
+    //     so notes briefly pressed and released *during* HOLD (then released
+    //     before HOLD-off) disappear; only the actually-held keys remain
+    //     and the arp keeps cycling them (UI-FIX6).
+    // We also release arpCur_ when it falls outside the new pool, accounting
+    // for octave shifts produced by arpStep_ (note = phys + 12*k).
     void setArpHold(bool on) noexcept {
         if (on == arpHold_) return;
         const bool wasOn = arpHold_;
         arpHold_ = on;
-        if (wasOn && !on && arpPhysHeld_ == 0) {
+        if (!(wasOn && !on)) return;
+        if (arpPhysN_ == 0) {
+            // UI-FIX5: latch released and no key held → clear & silence.
             arpPoolN_ = 0; arpIdx_ = 0; arpUpDownCnt_ = 0;
             if (arpCur_ >= 0) { eng_->noteOff(arpCur_); arpCur_ = -1; }
             arpAcc_ = 0.0; arpGateAcc_ = 0.0;
+        } else {
+            // UI-FIX6: latch released but keys still held → pool ← phys set.
+            for (int i = 0; i < arpPhysN_; ++i) arpPool_[i] = arpPhys_[i];
+            arpPoolN_ = arpPhysN_;
+            arpIdx_ = 0; arpUpDownCnt_ = 0;
+            // Release currently-sounding note if it's not a member (any
+            // octave shift) of the new physical set.
+            if (arpCur_ >= 0) {
+                bool stillHeld = false;
+                for (int k = 0; k < arpOct_ && !stillHeld; ++k) {
+                    const int base = arpCur_ - 12*k;
+                    for (int i = 0; i < arpPhysN_; ++i)
+                        if (arpPhys_[i] == base) { stillHeld = true; break; }
+                }
+                if (!stillHeld) { eng_->noteOff(arpCur_); arpCur_ = -1; }
+            }
         }
     }
     // EXT-ARP Block C: Random PRNG seed. Same seed ⇒ identical note sequence
@@ -1460,17 +1490,25 @@ private:
     // build when arpEnabled_==false (T27a is the proof). All controller
     // settings, no taper/funnel. RT-safe: no allocation, no rand(), bounded.
     static constexpr int kArpCap = 16;                 // EXT-ARP pool capacity
+    // EXT-ARP UI-FIX6: generic deduped-list helpers, reused by both the
+    // latched pool (arpPool_) and the physical-key set (arpPhys_). The
+    // pool variant additionally bumps arpDropped_ on overflow (observable).
+    static void arpListAdd_(int* p, int& n, int note) noexcept {
+        for (int i = 0; i < n; ++i) if (p[i] == note) return;
+        if (n >= kArpCap) return;
+        p[n++] = note;
+    }
+    static void arpListRemove_(int* p, int& n, int note) noexcept {
+        int w = 0;
+        for (int r = 0; r < n; ++r) if (p[r] != note) p[w++] = p[r];
+        n = w;
+    }
     void arpAdd_(int n) noexcept {                     // EXT-ARP dedupe + bounded
         for (int i = 0; i < arpPoolN_; ++i) if (arpPool_[i] == n) return;
         if (arpPoolN_ >= kArpCap) { ++arpDropped_; return; }   // Pool full
         arpPool_[arpPoolN_++] = n;
     }
-    void arpRemove_(int n) noexcept {                  // EXT-ARP stable filter
-        int w = 0;
-        for (int r = 0; r < arpPoolN_; ++r)
-            if (arpPool_[r] != n) arpPool_[w++] = arpPool_[r];
-        arpPoolN_ = w;
-    }
+    void arpRemove_(int n) noexcept { arpListRemove_(arpPool_, arpPoolN_, n); }
     void arpRecalcStepSamples_() noexcept {            // EXT-ARP rate table
         // 16th-multipliers per §2.3 (1/4, 1/8, 1/8T, 1/16, 1/16T, 1/32).
         static constexpr double mul[6] = { 4.0, 2.0, 4.0/3.0, 1.0, 2.0/3.0, 0.5 };
@@ -1547,9 +1585,10 @@ private:
     int    arpMode_      = 0;                           // EXT-ARP 0=Up 1=Dn 2=UpDn 3=AsPlayed 4=Random
     int    arpRate_      = 3;                           // EXT-ARP DEFAULT 1/16
     int    arpOct_       = 1;                           // EXT-ARP Block B DEFAULT 1..4 range
-    int    arpPool_[kArpCap] = {0};                     // EXT-ARP held notes
+    int    arpPool_[kArpCap] = {0};                     // EXT-ARP latched/active pool
     int    arpPoolN_     = 0;                           // EXT-ARP pool size
-    int    arpPhysHeld_  = 0;                           // EXT-ARP physical key count (Block C latch)
+    int    arpPhys_[kArpCap] = {0};                     // EXT-ARP UI-FIX6 physical keys
+    int    arpPhysN_     = 0;                           // EXT-ARP physical-key count
     int    arpIdx_       = 0;                           // EXT-ARP running index
     int    arpUpDownCnt_ = 0;                           // EXT-ARP Block B UpDown counter (period 2L-2)
     int    arpCur_       = -1;                          // EXT-ARP currently sounding note (-1 none)

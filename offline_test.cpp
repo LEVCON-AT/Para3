@@ -2642,6 +2642,54 @@ int main() {
         if (!pass) ++failures;
     }
 
+    // ---- T39  EXT-ARP UI-FIX6: HOLD-off filters pool to physically-held -----
+    // Korg LATCH-off semantics (microKORG, Minilogue, Volca FM): when HOLD
+    // goes off while keys are still physically held, the pool must collapse
+    // to that physical set — keys that were briefly tapped during HOLD (and
+    // released before HOLD-off) are dropped.
+    //
+    // Scenario: hold C+D physically, HOLD on, briefly tap B (releasing B
+    // while still holding C+D), then HOLD off. Pre-fix (UI-FIX5 only) the
+    // pool would still contain {47,48,50}; after UI-FIX6 it must be {48,50}.
+    {
+        using PE = para3::ParaEngine;
+        PE eng; eng.prepare(sr, 4096);
+        para3::Controller ctl; ctl.prepare(eng, sr);
+        ctl.setArpEnabled(true);
+        ctl.setArpMode(0); ctl.setArpRate(3);
+        ctl.setSeqTempo(120.0, 4);
+
+        // Physically hold C+D
+        ctl.midiNoteOn(48); ctl.midiNoteOn(50);
+        ctl.setArpHold(true);                            // latch on
+        ctl.midiNoteOn(47);                              // brief B tap
+        ctl.midiNoteOff(47);                             // released while HOLD on
+
+        const int prePoolN = ctl.arpPoolSize();
+        const int prePhysN = ctl.arpPhysSize();
+
+        ctl.setArpHold(false);                           // UI-FIX6 path: physN>0
+
+        const int postPoolN = ctl.arpPoolSize();
+        std::set<int> postPool;
+        for (int i = 0; i < postPoolN; ++i) postPool.insert(ctl.arpPoolNote(i));
+
+        const bool poolHasC = postPool.count(48) > 0;
+        const bool poolHasD = postPool.count(50) > 0;
+        const bool poolNoB  = postPool.count(47) == 0;
+        const bool pass = (postPoolN == 2) && poolHasC && poolHasD && poolNoB;
+
+        std::printf("\nT39 EXT-ARP UI-FIX6  (HOLD-off filters pool to phys set)\n");
+        std::printf("   pre  pool size       : %d   (latched + tapped B)\n", prePoolN);
+        std::printf("   pre  phys size       : %d   (want 2)\n", prePhysN);
+        std::printf("   post pool size       : %d   (want 2)\n", postPoolN);
+        std::printf("   post contains C(48)  : %s   (want yes)\n", poolHasC ? "yes" : "no");
+        std::printf("   post contains D(50)  : %s   (want yes)\n", poolHasD ? "yes" : "no");
+        std::printf("   post contains B(47)  : %s   (want no )\n", postPool.count(47) ? "yes" : "no");
+        std::printf("   -> %s\n", pass ? "PASS" : "FAIL");
+        if (!pass) ++failures;
+    }
+
     std::printf("\n==================================================\n");
     std::printf("%s  (%d failure%s)\n",
                 failures ? "OVERALL: FAIL" : "OVERALL: PASS",

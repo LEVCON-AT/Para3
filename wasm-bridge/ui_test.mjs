@@ -46,8 +46,8 @@ const md5_baseline = {
   //                     para3-worklet.js  (new OPs + Controls methods)
   // The remaining 7 files (scope/parity/audio/ring/port_test, wasm_parity,
   // parity_seq, parity_native) stay byte-frozen.
-  'Para3Engine.hpp':                          '19d2f2e1bc66e8df929e1bec0b895035',
-  'offline_test.cpp':                         '0a0633b71d8a0000b0410a2a26ab3782',
+  'Para3Engine.hpp':                          'c7aa300ceafbf6bdff24dc00e46e4bcb',
+  'offline_test.cpp':                         'd8e12dc524aa767c60e2644bf39dd443',
   'wasm-bridge/para3_capi.h':                 '3f22daba53093885e12733aa3c54e1a4',
   'wasm-bridge/para3_capi.cpp':               '256340fc4dba8eade3488e134bc6e5fa',
   'wasm-bridge/capi_test.cpp':                'aa8182e52327f513fe0d23df6ad0c1a8',
