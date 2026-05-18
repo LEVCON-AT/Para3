@@ -444,27 +444,35 @@ const html = readFileSync(join(REPO, 'wasm-bridge/para3-responsive.html'), 'utf8
   if (!pass) fails++;
 }
 
-// ----- (b9) EXT-ARP UI panel markers -------------------------------------
-// The arp panel must be present in the DOM (sec-arp section), carry the
-// "ARP · EXT" header style the user explicitly OK'd, expose the 6 control
-// groups (enable, mode/rate/oct seg-radios, gate knob, hold), and the
-// grid-template-areas must place "arp" before "seq" on every breakpoint.
+// ----- (b9) EXT-ARP UI panel markers (UI2: knob layout) ------------------
+// UI2 industry-standard rework: only ON/HOLD remain as toggles; MODE/RATE/
+// OCT/GATE are knobs (data-int="1" for the discrete ones). No tooltips
+// (title attributes) — the user explicitly didn't want them.
 {
   const checks = [
     { re: /<div\s+class="sec\s+sec-arp"\s+style="grid-area:arp">/,
       label: 'ARP section present with grid-area:arp' },
     { re: /<h2>ARP\s*·\s*<b>EXT<\/b><\/h2>/,
-      label: 'ARP · EXT header in the existing seqhead style' },
-    { re: /id="arpOn"/,         label: 'enable toggle (#arpOn)' },
-    { re: /id="arpHold"/,       label: 'hold toggle (#arpHold)' },
-    { re: /id="arpMode"[\s\S]*?data-m="0"[\s\S]*?data-m="4"/,
-      label: 'mode segment with 5 buttons (Up..Random)' },
-    { re: /id="arpRate"[\s\S]*?data-r="0"[\s\S]*?data-r="5"/,
-      label: 'rate segment with 6 buttons (1/4..1/32)' },
-    { re: /id="arpOct"[\s\S]*?data-o="1"[\s\S]*?data-o="4"/,
-      label: 'octave segment with 4 buttons (×1..×4)' },
+      label: 'ARP · EXT header in seqhead style' },
+    { re: /<button\s+class="tbtn"\s+id="arpOn">ON<\/button>/,
+      label: 'ON toggle (no tooltip)' },
+    { re: /<button\s+class="tbtn"\s+id="arpHold">HOLD<\/button>/,
+      label: 'HOLD toggle (no tooltip)' },
+    { re: /data-name="MODE"\s+data-k="arpMode"\s+data-int="1"/,
+      label: 'MODE knob (int-stepped, 0..4)' },
+    { re: /data-name="RATE"\s+data-k="arpRate"\s+data-int="1"/,
+      label: 'RATE knob (int-stepped, 0..5)' },
+    { re: /data-name="OCT"\s+data-k="arpOct"\s+data-int="1"/,
+      label: 'OCT knob (int-stepped, 1..4)' },
     { re: /data-name="GATE"[^>]*data-k="arpGate"/,
-      label: 'gate knob (arpGate, not in KNOB_PARAM)' },
+      label: 'GATE knob (continuous, 0..100)' },
+    // negatives: the segment buttons must be GONE.
+    { re: /id="arpMode"[^>]*data-m=/, neg: true,
+      label: 'NEG: no segment radio for MODE' },
+    { re: /id="arpRate"[^>]*data-r=/, neg: true,
+      label: 'NEG: no segment radio for RATE' },
+    { re: /id="arpOct"[^>]*data-o=/,  neg: true,
+      label: 'NEG: no segment radio for OCT' },
     // grid-template-areas must list "arp" before "seq" on each breakpoint.
     { re: /grid-template-areas:[\s\S]*?"arp arp"[\s\S]*?"seq seq"/,
       label: '2-col layouts: arp row above seq row' },
@@ -473,33 +481,42 @@ const html = readFileSync(join(REPO, 'wasm-bridge/para3-responsive.html'), 'utf8
     { re: /grid-template-areas:[\s\S]*?"arp arp seq seq"/,
       label: '4-col wide desktop: arp+seq 50/50 (2+2 of 4)' },
   ];
-  const failed = checks.filter(c => !c.re.test(html));
-  const pass = failed.length === 0;
-  console.log(`\nU-B9: EXT-ARP UI panel structure + layout`);
-  console.log(`   checks   : ${checks.length - failed.length}/${checks.length}`);
-  if (failed.length) for (const f of failed) console.log(`      MISSING: ${f.label}`);
+  let pass = true;
+  console.log(`\nU-B9: EXT-ARP UI panel structure + layout (UI2 knob layout)`);
+  for (const c of checks) {
+    const hit = c.re.test(html);
+    const ok = c.neg ? !hit : hit;
+    if (!ok) { console.log(`      ${c.neg ? 'LEAKED' : 'MISSING'}: ${c.label}`); pass = false; }
+  }
   console.log(`   -> ${pass ? 'PASS' : 'FAIL'}`);
   if (!pass) fails++;
 }
 
 // ----- (b10) EXT-ARP emit paths bypass the taper trichter -----------------
-// Spec §6: arp parameters are Controller settings, NOT setParamNorm. The
-// arp panel must never call setParam(...) for arp controls — instead it
-// uses arpEnable / arpMode / arpRate / arpGate / arpOctaves / arpHold
-// (mirroring the seqTempo / seqSwing pattern).
+// Spec §6: arp params are Controller settings, NOT setParamNorm. UI2: all
+// four arp knobs (mode/rate/oct/gate) route through the emitKnob else-
+// branches (NOT KNOB_PARAM). The two toggles call their controls directly.
 {
   const checks = [
     { re: /emit\(\(c\)\s*=>\s*c\.arpEnable\(/,   label: 'arpEnable emit path' },
     { re: /emit\(\(c\)\s*=>\s*c\.arpHold\(/,     label: 'arpHold emit path' },
-    { re: /emit\(\(c\)\s*=>\s*c\.arpMode\(/,     label: 'arpMode emit path' },
-    { re: /emit\(\(c\)\s*=>\s*c\.arpRate\(/,     label: 'arpRate emit path' },
-    { re: /emit\(\(c\)\s*=>\s*c\.arpOctaves\(/,  label: 'arpOctaves emit path' },
-    { re: /id\s*===\s*['"]arpGate['"]\s*\)\s*emit\(\(c\)\s*=>\s*c\.arpGate\(/,
-      label: 'arpGate via emitKnob else-branch (NOT setParam)' },
-    // Negative: arpGate must not appear inside KNOB_PARAM (would route
-    // through setParam → engine taper, violating spec §6).
-    { re: /KNOB_PARAM\s*=\s*\{[^}]*\barpGate\s*:/,
-      label: 'NEG: arpGate must NOT be in KNOB_PARAM', neg: true },
+    { re: /id\s*===\s*['"]arpMode['"]\s*\)\s*\{[\s\S]*?emit\(\(c\)\s*=>\s*c\.arpMode\(/,
+      label: 'arpMode via emitKnob else-branch' },
+    { re: /id\s*===\s*['"]arpRate['"]\s*\)\s*\{[\s\S]*?emit\(\(c\)\s*=>\s*c\.arpRate\(/,
+      label: 'arpRate via emitKnob else-branch' },
+    { re: /id\s*===\s*['"]arpOct['"]\s*\)\s*\{[\s\S]*?emit\(\(c\)\s*=>\s*c\.arpOctaves\(/,
+      label: 'arpOct via emitKnob else-branch' },
+    { re: /id\s*===\s*['"]arpGate['"]\s*\)\s*\{[\s\S]*?emit\(\(c\)\s*=>\s*c\.arpGate\(/,
+      label: 'arpGate via emitKnob else-branch' },
+    // Negative: no arp* key inside KNOB_PARAM (would route to setParam).
+    { re: /KNOB_PARAM\s*=\s*\{[^}]*\barpGate\s*:/, neg: true,
+      label: 'NEG: arpGate must NOT be in KNOB_PARAM' },
+    { re: /KNOB_PARAM\s*=\s*\{[^}]*\barpMode\s*:/, neg: true,
+      label: 'NEG: arpMode must NOT be in KNOB_PARAM' },
+    { re: /KNOB_PARAM\s*=\s*\{[^}]*\barpRate\s*:/, neg: true,
+      label: 'NEG: arpRate must NOT be in KNOB_PARAM' },
+    { re: /KNOB_PARAM\s*=\s*\{[^}]*\barpOct\s*:/,  neg: true,
+      label: 'NEG: arpOct must NOT be in KNOB_PARAM' },
   ];
   let pass = true;
   console.log(`\nU-B10: EXT-ARP emit paths bypass setParamNorm trichter`);

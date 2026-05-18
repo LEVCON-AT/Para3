@@ -480,34 +480,18 @@ body{
 
     <!-- EXT-ARP: design extension over Volca-Keys parity. Default off → engine
          bit-identical to pre-EXT (proven by T31a). Header style mirrors the
-         other sections (e.g. STEP·SEQ, DELAY·MASTER). NOT in KNOB_PARAM —
-         arp settings have their own emit paths (no taper trichter). -->
+         other sections. NOT in KNOB_PARAM — arp settings have their own
+         emit paths (no taper trichter).
+         UI2 (industry-standard layout): two LED toggles (ON / HOLD), four
+         knobs (MODE / RATE / OCT / GATE). Discrete knobs use data-int="1"
+         so they snap to integer detents. Matches Volca FM's TYPE/RANGE
+         knob convention. No tooltips — disp/show() handles feedback. -->
     <div class="sec sec-arp" style="grid-area:arp"><div class="seqhead"><h2>ARP · <b>EXT</b></h2>
-      <div class="tg"><button class="tbtn" id="arpOn" title="ARP ENABLE">ON</button><button class="tbtn" id="arpHold" title="ARP HOLD / LATCH">HOLD</button></div></div>
-      <div style="display:flex;justify-content:flex-end;gap:7px;margin-bottom:9px;flex-wrap:wrap">
-        <span class="seg" id="arpMode" title="ARP MODE">
-          <button class="tbtn on" data-m="0">UP</button>
-          <button class="tbtn"    data-m="1">DN</button>
-          <button class="tbtn"    data-m="2">U+D</button>
-          <button class="tbtn"    data-m="3">AS</button>
-          <button class="tbtn"    data-m="4">RND</button>
-        </span>
-        <span class="seg" id="arpRate" title="ARP RATE">
-          <button class="tbtn"    data-r="0">1/4</button>
-          <button class="tbtn"    data-r="1">1/8</button>
-          <button class="tbtn"    data-r="2">1/8T</button>
-          <button class="tbtn on" data-r="3">1/16</button>
-          <button class="tbtn"    data-r="4">1/16T</button>
-          <button class="tbtn"    data-r="5">1/32</button>
-        </span>
-        <span class="seg" id="arpOct" title="ARP OCTAVES">
-          <button class="tbtn on" data-o="1">×1</button>
-          <button class="tbtn"    data-o="2">×2</button>
-          <button class="tbtn"    data-o="3">×3</button>
-          <button class="tbtn"    data-o="4">×4</button>
-        </span>
-      </div>
-      <div class="grid3" style="grid-template-columns:1fr">
+      <div class="tg"><button class="tbtn" id="arpOn">ON</button><button class="tbtn" id="arpHold">HOLD</button></div></div>
+      <div class="grid3" style="grid-template-columns:repeat(4,1fr)">
+        <div class="knob" data-min="0" data-max="4"   data-val="0"  data-unit=""  data-name="MODE" data-k="arpMode" data-int="1"></div>
+        <div class="knob" data-min="0" data-max="5"   data-val="3"  data-unit=""  data-name="RATE" data-k="arpRate" data-int="1"></div>
+        <div class="knob" data-min="1" data-max="4"   data-val="1"  data-unit="×" data-name="OCT"  data-k="arpOct"  data-int="1"></div>
         <div class="knob" data-min="0" data-max="100" data-val="50" data-unit="%" data-name="GATE" data-k="arpGate"></div>
       </div>
     </div>
@@ -620,9 +604,29 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
       emit((c) => c.setOctave(o));                                      // E6.2
       updateOctIndicator(o);                                            // U3 display-only
     }
-    // EXT-ARP UI: arpGate is a controller setting (not in KNOB_PARAM → no
-    // setParamNorm). Spec §6: "NICHT in KNOB_PARAM/INERT_KNOBS aufnehmen".
-    else if (id === 'arpGate') emit((c) => c.arpGate(val / 100));
+    // EXT-ARP UI: all arp params are controller settings (not KNOB_PARAM →
+    // no setParamNorm taper). UI2: MODE/RATE/OCT/GATE are now knobs.
+    // Discrete knobs use data-int="1" so the val is already rounded; we
+    // also override disp/show with friendly names instead of the raw int.
+    else if (id === 'arpMode') {
+      const m = Math.round(val);
+      show('ARP MODE', arpModeNames[m] || '?', '');
+      emit((c) => c.arpMode(m));
+    }
+    else if (id === 'arpRate') {
+      const r = Math.round(val);
+      show('ARP RATE', arpRateNames[r] || '?', '');
+      emit((c) => c.arpRate(r));
+    }
+    else if (id === 'arpOct') {
+      const o = Math.round(val);
+      show('ARP OCT', '×' + o, '');
+      emit((c) => c.arpOctaves(o));
+    }
+    else if (id === 'arpGate') {
+      show('ARP GATE', Math.round(val), '%');
+      emit((c) => c.arpGate(val / 100));
+    }
   }
 
   // U3 — small visual indicator in the keyboard corner when oct knob != 0.
@@ -656,7 +660,13 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
     if (INERT_KNOBS.has(id)) k.classList.add('inert');
     const fl=k.querySelector('.flx'),ind=k.querySelector('.ind'),dial=k.querySelector('.dial');
     fl.style.strokeDasharray=(C*SW)+' '+C;
-    const stepInt=(Math.abs(min)<=2&&Math.abs(max)<=2);
+    // EXT-ARP-UI2: integer-step opt-in via data-int="1". Previous logic
+    // auto-detected stepInt from |min|<=2 && |max|<=2 (covers OCTAVE knob),
+    // but discrete ARP knobs (MODE 0..4, RATE 0..5, OCT 1..4) need the
+    // same snap-to-integer behaviour without inflating the auto-detect
+    // range and changing other knobs. data-int="1" is additive: any future
+    // discrete-stepped knob can opt in the same way.
+    const stepInt=(k.dataset.int==='1')||(Math.abs(min)<=2&&Math.abs(max)<=2);
     function R(){const f=(val-min)/(max-min);fl.style.strokeDashoffset=C*SW*(1-f);
       ind.style.transform='translateX(-50%) rotate('+(-135+f*270)+'deg)';}
     R();
@@ -958,16 +968,14 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
     else            emit((c) => c.seqFluxRec(true));
   };
 
-  // EXT-ARP UI: Block A/B/C controls. State mirrors engine defaults so the
-  // first pushInitialState (called after audio.start) is a no-op for the off
-  // path — proven bit-identical to pre-EXT by the engine's T31a.
+  // EXT-ARP UI2: only ON / HOLD are toggles. MODE / RATE / OCT / GATE are
+  // knobs (data-int="1" for the discrete ones). Industry-standard layout:
+  // the rotary controls match every other section of the synth; the two
+  // LEDs are the only stateful buttons. State is read from K.arpMode etc.
+  // on demand (knob loop populates them).
   const arpOnB   = document.getElementById('arpOn');
   const arpHoldB = document.getElementById('arpHold');
-  const arpModeEl = document.getElementById('arpMode');
-  const arpRateEl = document.getElementById('arpRate');
-  const arpOctEl  = document.getElementById('arpOct');
   let arpOnState = false, arpHoldState = false;
-  let arpModeVal = 0, arpRateVal = 3, arpOctVal = 1;     // engine defaults
   const arpModeNames = ['UP','DN','UP+DN','AS-PLAYED','RANDOM'];
   const arpRateNames = ['1/4','1/8','1/8T','1/16','1/16T','1/32'];
 
@@ -976,11 +984,9 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
     arpOnB.classList.toggle('on', arpOnState);
     // EXT-ARP-FIX4: ARP and the sequencer transport are independent surfaces
     // (industry-standard HW behaviour). Toggling ARP does NOT touch Play —
-    // ARP runs on its own tempo-derived clock as soon as arpEnabled_=true
-    // (engine handles that), and Play continues to control only the
-    // 16-step sequencer pattern. User reports any auto-Play behaviour as
-    // wrong UX ("Sequenzer soll nicht automatisch starten").
-    show('ARP', arpOnState ? 'ON' : 'OFF', arpOnState ? arpModeNames[arpModeVal] : '');
+    // ARP runs on its own tempo-derived clock as soon as arpEnabled_=true.
+    show('ARP', arpOnState ? 'ON' : 'OFF',
+         arpOnState ? arpModeNames[Math.round(K.arpMode.get())] : '');
     emit((c) => c.arpEnable(arpOnState));
   };
   arpHoldB.onclick = () => {
@@ -989,33 +995,6 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
     show('ARP HOLD', arpHoldState ? 'LATCH' : 'OFF', '');
     emit((c) => c.arpHold(arpHoldState));
   };
-  arpModeEl.addEventListener('click', e => {
-    const b = e.target.closest('button'); if (!b) return;
-    const m = +b.dataset.m; if (!(m >= 0 && m <= 4)) return;
-    arpModeVal = m;
-    [...arpModeEl.querySelectorAll('button')].forEach(x => x.classList.remove('on'));
-    b.classList.add('on');
-    show('ARP MODE', arpModeNames[m], '');
-    emit((c) => c.arpMode(m));
-  });
-  arpRateEl.addEventListener('click', e => {
-    const b = e.target.closest('button'); if (!b) return;
-    const r = +b.dataset.r; if (!(r >= 0 && r <= 5)) return;
-    arpRateVal = r;
-    [...arpRateEl.querySelectorAll('button')].forEach(x => x.classList.remove('on'));
-    b.classList.add('on');
-    show('ARP RATE', arpRateNames[r], '');
-    emit((c) => c.arpRate(r));
-  });
-  arpOctEl.addEventListener('click', e => {
-    const b = e.target.closest('button'); if (!b) return;
-    const o = +b.dataset.o; if (!(o >= 1 && o <= 4)) return;
-    arpOctVal = o;
-    [...arpOctEl.querySelectorAll('button')].forEach(x => x.classList.remove('on'));
-    b.classList.add('on');
-    show('ARP OCT', '×'+o, '');
-    emit((c) => c.arpOctaves(o));
-  });
 
   function setTarget(id){
     // Engine rejects PEAK; UI mirrors that hard, not silently (spec §E3.4).
@@ -1263,13 +1242,11 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
     emit((c) => c.setMode(VOICE_MODE[voiceIx]));
     emit((c) => c.setLfoShape(LFO_FROM_LW[lw]));
     emit((c) => c.seqTempo(K.tmp.get()));
-    // EXT-ARP UI: send the current arp panel state. All defaults match the
-    // engine's defaults (off, Up, 1/16, ×1, hold=off; gate is emitted via
-    // the K loop above as a normal knob). These calls are no-ops on a fresh
-    // engine — the audible bit-identity (T31a) holds regardless.
-    emit((c) => { c.arpMode(arpModeVal); c.arpRate(arpRateVal);
-                  c.arpOctaves(arpOctVal); c.arpHold(arpHoldState);
-                  c.arpEnable(arpOnState); });
+    // EXT-ARP UI2: the four arp knobs (mode/rate/oct/gate) are already
+    // emitted by the K loop above. Only the two toggles (hold/enable)
+    // and an explicit final enable need a manual emit (arpEnable last
+    // so the engine starts in the user-visible state).
+    emit((c) => { c.arpHold(arpHoldState); c.arpEnable(arpOnState); });
     flushPattern();
   }
   async function start() {

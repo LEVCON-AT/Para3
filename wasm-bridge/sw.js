@@ -14,7 +14,7 @@
 //  the worklet and needs no SAB.
 // =============================================================================
 
-const CACHE_VER  = 'para3-v17'; // EXT-ARP-FIX4: arp scheduler independent of seq transport (industry-standard)
+const CACHE_VER  = 'para3-v18'; // EXT-ARP-UI2: knob layout (MODE/RATE/OCT/GATE rotary); no tooltips
 const PRECACHE   = [
   './',
   './index.html',
