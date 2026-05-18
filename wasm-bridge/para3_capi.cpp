@@ -143,10 +143,11 @@ void para3_midi_cc(Para3* p, int cc, double n) { if (p) p->ctrl.midiCC(cc, n); }
 // EXT-ARP Block A: controller-level settings (NOT in setParamNorm trichter —
 // no taper, no smoothing). Each call is RT-safe (one assignment + optional
 // step-samples recalc). All defaults are design defaults, NOT CALIB(E8).
-void para3_arp_enable(Para3* p, int on)        { if (p) p->ctrl.setArpEnabled(on != 0); }
-void para3_arp_mode  (Para3* p, int mode)      { if (p) p->ctrl.setArpMode(mode); }
-void para3_arp_rate  (Para3* p, int rate)      { if (p) p->ctrl.setArpRate(rate); }
-void para3_arp_gate  (Para3* p, double g)      { if (p) p->ctrl.setArpGate(g); }
+void para3_arp_enable (Para3* p, int on)       { if (p) p->ctrl.setArpEnabled(on != 0); }
+void para3_arp_mode   (Para3* p, int mode)     { if (p) p->ctrl.setArpMode(mode); }
+void para3_arp_rate   (Para3* p, int rate)     { if (p) p->ctrl.setArpRate(rate); }
+void para3_arp_gate   (Para3* p, double g)     { if (p) p->ctrl.setArpGate(g); }
+void para3_arp_octaves(Para3* p, int oct)      { if (p) p->ctrl.setArpOctaves(oct); } // EXT-ARP Block B
 
 void para3_render(Para3* p, float* out, int n) {
     if (!p) return;

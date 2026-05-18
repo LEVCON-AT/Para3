@@ -2066,6 +2066,226 @@ int main() {
         if (!pass) ++failures;
     }
 
+    // ---- T32  EXT-ARP Block B — Down / UpDown / AsPlayed mode sequences ----
+    // Same pool {48,52,55}, three Controller instances (one per mode), each
+    // rendered 96000 samples (8 eighth-notes @ 120 BPM). Per onset measure
+    // pitch via FFT-peak; assert the mode-specific sequence.
+    {
+        using PE = para3::ParaEngine;
+        const int Mb = 96000;
+        // shared FFT peak helper (same as T31c, but parameterised by buffer)
+        auto peakHzBuf = [&](const std::vector<float>& v, int start) {
+            const int M = 1024; if (start + M > (int)v.size()) return 0.0;
+            std::vector<cd> sp(M);
+            for (int i = 0; i < M; ++i) {
+                const double w = 0.5 - 0.5 * std::cos(2.0*M_PI*i/(M-1));
+                sp[i] = cd((double)v[start+i] * w, 0.0);
+            }
+            fft(sp);
+            int bk = 1; double best = 0.0;
+            for (int k = 1; k < M/2; ++k) {
+                const double m = std::abs(sp[k]);
+                if (m > best) { best = m; bk = k; }
+            }
+            double db = 0.0;
+            if (bk > 1 && bk < M/2-1) {
+                const double aL = std::abs(sp[bk-1]),
+                             bC = std::abs(sp[bk]),
+                             cR = std::abs(sp[bk+1]);
+                const double den = (aL - 2.0*bC + cR);
+                if (std::fabs(den) > 1e-18) db = 0.5 * (aL - cR) / den;
+            }
+            return (bk + db) * sr / (double)M;
+        };
+        // shared onset detector
+        auto detectOnsets = [&](const std::vector<float>& v) {
+            const int env_W = 256, env_H = 64;
+            std::vector<double> env;
+            for (int s = 0; s + env_W <= (int)v.size(); s += env_H) {
+                double sum = 0.0;
+                for (int i = 0; i < env_W; ++i) {
+                    const double w = 0.5 - 0.5*std::cos(2.0*M_PI*i/(env_W-1));
+                    const double x = (double)v[s+i] * w;
+                    sum += x * x;
+                }
+                env.push_back(std::sqrt(sum / env_W));
+            }
+            double envMx = 0.0; for (double x : env) envMx = std::max(envMx, x);
+            std::vector<int> onsets; bool below = true;
+            for (size_t k = 0; k < env.size(); ++k) {
+                if (below && env[k] > 0.30 * envMx) {
+                    onsets.push_back((int)(k * env_H + env_W/2));
+                    below = false;
+                } else if (env[k] < 0.10 * envMx) below = true;
+            }
+            return onsets;
+        };
+        const double f48 = para3::semitonesToHz(48.0);
+        const double f52 = para3::semitonesToHz(52.0);
+        const double f55 = para3::semitonesToHz(55.0);
+        auto match = [&](double pk, double want) {
+            return std::fabs(pk - want) / want < 0.06;          // ±1 semitone tol
+        };
+
+        // ---------- Down: expect 55,52,48,55,52,48,... ----------
+        PE engD; engD.prepare(sr, 4096);
+        para3::Controller ctlD; ctlD.prepare(engD, sr);
+        engD.setParamNorm(PE::Param::Sustain, 1.0);
+        engD.setParamNorm(PE::Param::Cutoff,  0.85);
+        engD.setParamNorm(PE::Param::Attack,  0.0);
+        engD.setParamNorm(PE::Param::DecRel,  0.05);
+        ctlD.setArpEnabled(true);
+        ctlD.setArpMode(1);                              // Down
+        ctlD.setArpRate(1); ctlD.setArpGate(0.5);
+        ctlD.setSeqTempo(120.0, 4); ctlD.clock().start();
+        ctlD.midiNoteOn(48); ctlD.midiNoteOn(52); ctlD.midiNoteOn(55);
+        std::vector<float> dBuf(Mb); ctlD.render(dBuf.data(), Mb);
+        auto onD = detectOnsets(dBuf);
+        const double expDn[3] = { f55, f52, f48 };
+        int hitsDn = 0;
+        for (int i = 0; i < (int)onD.size() && i < 6; ++i)
+            if (match(peakHzBuf(dBuf, onD[i] + 200), expDn[i % 3])) ++hitsDn;
+
+        // ---------- UpDown: expect 48,52,55,52,48,52,55,52,... (excl) ----
+        PE engU; engU.prepare(sr, 4096);
+        para3::Controller ctlU; ctlU.prepare(engU, sr);
+        engU.setParamNorm(PE::Param::Sustain, 1.0);
+        engU.setParamNorm(PE::Param::Cutoff,  0.85);
+        engU.setParamNorm(PE::Param::Attack,  0.0);
+        engU.setParamNorm(PE::Param::DecRel,  0.05);
+        ctlU.setArpEnabled(true);
+        ctlU.setArpMode(2);                              // UpDown
+        ctlU.setArpRate(1); ctlU.setArpGate(0.5);
+        ctlU.setSeqTempo(120.0, 4); ctlU.clock().start();
+        ctlU.midiNoteOn(48); ctlU.midiNoteOn(52); ctlU.midiNoteOn(55);
+        std::vector<float> uBuf(Mb); ctlU.render(uBuf.data(), Mb);
+        auto onU = detectOnsets(uBuf);
+        const double expUd[4] = { f48, f52, f55, f52 };  // period 4
+        int hitsUd = 0;
+        for (int i = 0; i < (int)onU.size() && i < 6; ++i)
+            if (match(peakHzBuf(uBuf, onU[i] + 200), expUd[i % 4])) ++hitsUd;
+
+        // ---------- AsPlayed: insert NON-sorted, expect insertion order ---
+        PE engP; engP.prepare(sr, 4096);
+        para3::Controller ctlP; ctlP.prepare(engP, sr);
+        engP.setParamNorm(PE::Param::Sustain, 1.0);
+        engP.setParamNorm(PE::Param::Cutoff,  0.85);
+        engP.setParamNorm(PE::Param::Attack,  0.0);
+        engP.setParamNorm(PE::Param::DecRel,  0.05);
+        ctlP.setArpEnabled(true);
+        ctlP.setArpMode(3);                              // AsPlayed
+        ctlP.setArpRate(1); ctlP.setArpGate(0.5);
+        ctlP.setSeqTempo(120.0, 4); ctlP.clock().start();
+        // press order 52,48,55 — sort would give 48,52,55. AsPlayed must NOT sort.
+        ctlP.midiNoteOn(52); ctlP.midiNoteOn(48); ctlP.midiNoteOn(55);
+        std::vector<float> pBuf(Mb); ctlP.render(pBuf.data(), Mb);
+        auto onP = detectOnsets(pBuf);
+        const double expAp[3] = { f52, f48, f55 };
+        int hitsAp = 0;
+        for (int i = 0; i < (int)onP.size() && i < 6; ++i)
+            if (match(peakHzBuf(pBuf, onP[i] + 200), expAp[i % 3])) ++hitsAp;
+
+        const bool passDn  = (int)onD.size() >= 5 && hitsDn >= 4;
+        const bool passUd  = (int)onU.size() >= 5 && hitsUd >= 4;
+        const bool passAp  = (int)onP.size() >= 5 && hitsAp >= 4;
+        const bool pass = passDn && passUd && passAp;
+        std::printf("\nT32 EXT-ARP Block B  (Down / UpDown / AsPlayed sequences)\n");
+        std::printf("   Down    : onsets=%zu hits=%d/6 (expect 55,52,48,...)\n",
+                    onD.size(), hitsDn);
+        std::printf("   UpDown  : onsets=%zu hits=%d/6 (expect 48,52,55,52,...)\n",
+                    onU.size(), hitsUd);
+        std::printf("   AsPlayed: onsets=%zu hits=%d/6 (expect 52,48,55,... insertion order)\n",
+                    onP.size(), hitsAp);
+        std::printf("   -> %s   (Dn=%s UpDn=%s AsP=%s)\n",
+                    pass ? "PASS" : "FAIL",
+                    passDn ? "ok" : "FAIL",
+                    passUd ? "ok" : "FAIL",
+                    passAp ? "ok" : "FAIL");
+        if (!pass) ++failures;
+    }
+
+    // ---- T33  EXT-ARP Block B — Octave range 1..4 (Up, single-note pool) --
+    // Pool {48}, Up, octaves=2 → effective sequence length L=2:
+    // note(0) = 48 + 12*0 = 48; note(1) = 48 + 12*1 = 60. Alternation.
+    // We measure successive onset pitches and assert ratio ≈ 2.0 between
+    // them — clear octave step.
+    {
+        using PE = para3::ParaEngine;
+        PE engE; engE.prepare(sr, 4096);
+        para3::Controller ctlE; ctlE.prepare(engE, sr);
+        engE.setParamNorm(PE::Param::Sustain, 1.0);
+        engE.setParamNorm(PE::Param::Cutoff,  0.85);
+        engE.setParamNorm(PE::Param::Attack,  0.0);
+        engE.setParamNorm(PE::Param::DecRel,  0.0);      // 1.5 ms min — snappy gap
+        ctlE.setArpEnabled(true);
+        ctlE.setArpMode(0);                              // Up
+        ctlE.setArpRate(1);                              // 1/8
+        ctlE.setArpGate(0.5);
+        ctlE.setArpOctaves(2);                           // EXT-ARP Block B
+        ctlE.setSeqTempo(120.0, 4); ctlE.clock().start();
+        // Pool note chosen so the oct=2 sequence (36 → 36+12=48) avoids 60,
+        // which is the Step::note default in the (idle, all-gate-off) sequencer
+        // pattern. With note=36/48 the sequencer's per-step noteOff(60) is a
+        // no-op on the arp's voices. Spec §1.3 calls Arp+Seq "additive", and
+        // this is the test approach for "arp in isolation" until the user sets
+        // a real seq pattern.
+        ctlE.midiNoteOn(36);                              // single-note pool
+
+        const int Me = 96000;
+        std::vector<float> e(Me); ctlE.render(e.data(), Me);
+
+        // Direct measurement (skip onset-detection trouble for single-note pool):
+        // engine fires step 0 at sample 12000, step 1 at 24000, step 2 at 36000.
+        // Probe each step mid-gate (idx+1000) via a 4096-bin FFT — the low
+        // fundamental (note 36 = 65 Hz) is below the 1024-bin width of 47 Hz,
+        // so we need M=4096 → 11.7 Hz bin width for clean detection.
+        auto peakHzBufHi = [&](const std::vector<float>& v, int start) {
+            const int M = 4096; if (start + M > (int)v.size()) return 0.0;
+            std::vector<cd> sp(M);
+            for (int i = 0; i < M; ++i) {
+                const double w = 0.5 - 0.5*std::cos(2.0*M_PI*i/(M-1));
+                sp[i] = cd((double)v[start+i] * w, 0.0);
+            }
+            fft(sp);
+            int bk = 1; double best = 0.0;
+            for (int k = 1; k < M/2; ++k) {
+                const double m = std::abs(sp[k]);
+                if (m > best) { best = m; bk = k; }
+            }
+            double db = 0.0;
+            if (bk > 1 && bk < M/2-1) {
+                const double aL = std::abs(sp[bk-1]),
+                             bC = std::abs(sp[bk]),
+                             cR = std::abs(sp[bk+1]);
+                const double den = (aL - 2.0*bC + cR);
+                if (std::fabs(den) > 1e-18) db = 0.5 * (aL - cR) / den;
+            }
+            return (bk + db) * sr / (double)M;
+        };
+        // Pool {36} oct=2 expected: 36 (low), 48 (+12), 36, 48, ...
+        const double f36 = para3::semitonesToHz(36.0);
+        const double f48b = para3::semitonesToHz(48.0);
+        // mid-step probe at idx+1000 so 4096-sample FFT window stays inside
+        // the gate (gate=0.5 → 6000-sample on time).
+        const double p0 = peakHzBufHi(e, 12000 + 1000);   // step 0 -> 36
+        const double p1 = peakHzBufHi(e, 24000 + 1000);   // step 1 -> 48
+        const double p2 = peakHzBufHi(e, 36000 + 1000);   // step 2 -> 36
+        const double p3 = peakHzBufHi(e, 48000 + 1000);   // step 3 -> 48
+        const bool hit0 = std::fabs(p0 - f36 ) / f36  < 0.06;
+        const bool hit1 = std::fabs(p1 - f48b) / f48b < 0.06;
+        const bool hit2 = std::fabs(p2 - f36 ) / f36  < 0.06;
+        const bool hit3 = std::fabs(p3 - f48b) / f48b < 0.06;
+        const bool pass = hit0 && hit1 && hit2 && hit3;
+        std::printf("\nT33 EXT-ARP Block B  (Octave-range 2, single-note Up)\n");
+        std::printf("   mid-step pitches : %.2f / %.2f / %.2f / %.2f Hz\n", p0, p1, p2, p3);
+        std::printf("   expected        : %.2f / %.2f / %.2f / %.2f Hz (36,48,36,48)\n",
+                    f36, f48b, f36, f48b);
+        std::printf("   step-by-step    : [0]%s [1]%s [2]%s [3]%s\n",
+                    hit0?"ok":"FAIL", hit1?"ok":"FAIL", hit2?"ok":"FAIL", hit3?"ok":"FAIL");
+        std::printf("   -> %s\n", pass ? "PASS" : "FAIL");
+        if (!pass) ++failures;
+    }
+
     std::printf("\n==================================================\n");
     std::printf("%s  (%d failure%s)\n",
                 failures ? "OVERALL: FAIL" : "OVERALL: PASS",

@@ -1315,6 +1315,18 @@ public:
     void setArpGate(double g) noexcept {                         // EXT-ARP 0..1
         arpGate_ = (g < 0.0) ? 0.0 : (g > 1.0 ? 1.0 : g);
     }
+    void setArpOctaves(int oct) noexcept {                       // EXT-ARP Block B 1..4
+        const int o = (oct < 1) ? 1 : (oct > 4 ? 4 : oct);
+        if (o == arpOct_) return;
+        arpOct_ = o;
+        // Reclamp running indices modulo the new L so the next step lands in
+        // a valid slot of the new effective sequence. Pool may be empty here;
+        // arpStep_ guards on arpPoolN_==0 anyway.
+        const int L = (arpPoolN_ > 0) ? (arpPoolN_ * arpOct_) : 1;
+        const int period = (L > 1) ? (2*L - 2) : 1;
+        arpIdx_       = arpIdx_       % L;
+        arpUpDownCnt_ = arpUpDownCnt_ % period;
+    }
 
 private:
     void onStep() noexcept {
@@ -1404,32 +1416,64 @@ private:
         // OFF-before-ON discipline (mirrors E5, click-free via existing env).
         if (arpCur_ >= 0) { eng_->noteOff(arpCur_); arpCur_ = -1; }
         if (arpPoolN_ == 0) return;                    // idle, silence
-        // Block A: only Up implemented. Sort ascending into srt[], then
-        // note = srt[i % n] + 12*(i / n) with i = arpIdx_, n = arpPoolN_.
+        // Block B: sort ascending for Up/Down/UpDown (AsPlayed uses pool order).
         int srt[kArpCap];
         for (int i = 0; i < arpPoolN_; ++i) srt[i] = arpPool_[i];
-        for (int i = 1; i < arpPoolN_; ++i) {           // insertion sort (n<=16)
+        for (int i = 1; i < arpPoolN_; ++i) {          // insertion sort (n<=16)
             int x = srt[i], j = i;
             while (j > 0 && srt[j-1] > x) { srt[j] = srt[j-1]; --j; }
             srt[j] = x;
         }
-        const int n = arpPoolN_;
-        const int oct = 1;                              // Block A: range fixed at 1
-        const int L = n * oct;
-        const int i = arpIdx_;
+        const int n   = arpPoolN_;
+        const int oct = arpOct_;                       // EXT-ARP Block B 1..4
+        const int L   = n * oct;
+        // dispatch on mode; computes the "effective sequence" index i in [0,L).
+        // (note = base + 12 * (i / n) where base is from srt[] or pool[] per mode)
+        int i = 0;
+        switch (arpMode_) {
+            case 1: {                                   // EXT-ARP Down
+                i = (L - 1) - (arpIdx_ % L);
+                arpIdx_ = (arpIdx_ + 1) % L;
+                break;
+            }
+            case 2: {                                   // EXT-ARP UpDown (excl. endpoints)
+                // Period = 2L-2 for L>1; constant 0 for L==1.
+                const int period = (L > 1) ? (2*L - 2) : 1;
+                const int c = arpUpDownCnt_ % period;
+                i = (c < L) ? c : (2*L - 2 - c);
+                arpUpDownCnt_ = (arpUpDownCnt_ + 1) % period;
+                break;
+            }
+            case 3: {                                   // EXT-ARP AsPlayed
+                // Pool insertion order (no sort), with octave wrap.
+                const int j = arpIdx_;
+                arpIdx_ = (arpIdx_ + 1) % L;
+                const int note = arpPool_[j % n] + 12 * (j / n);
+                eng_->noteOn(note); arpCur_ = note;
+                arpGateAcc_ = arpGate_ * arpStepSamples_;
+                return;                                 // bypass sorted-path below
+            }
+            // case 4 (Random): added in Block C with xorshift seed.
+            default: {                                  // EXT-ARP Up (mode 0)
+                i = arpIdx_;
+                arpIdx_ = (arpIdx_ + 1) % L;
+                break;
+            }
+        }
         const int note = srt[i % n] + 12 * (i / n);
         eng_->noteOn(note); arpCur_ = note;
-        arpIdx_ = (i + 1) % L;
         arpGateAcc_ = arpGate_ * arpStepSamples_;
     }
-    // EXT-ARP state (Block A subset; Blocks B/C extend mode/oct/hold/rng).
+    // EXT-ARP state (Blocks A+B; Block C extends hold/rng).
     bool   arpEnabled_   = false;                       // EXT-ARP DEFAULT off
-    int    arpMode_      = 0;                           // EXT-ARP 0=Up (only Block A)
+    int    arpMode_      = 0;                           // EXT-ARP 0=Up 1=Dn 2=UpDn 3=AsPlayed (4=Rnd in Block C)
     int    arpRate_      = 3;                           // EXT-ARP DEFAULT 1/16
+    int    arpOct_       = 1;                           // EXT-ARP Block B DEFAULT 1..4 range
     int    arpPool_[kArpCap] = {0};                     // EXT-ARP held notes
     int    arpPoolN_     = 0;                           // EXT-ARP pool size
     int    arpPhysHeld_  = 0;                           // EXT-ARP physical key count (Block C latch)
     int    arpIdx_       = 0;                           // EXT-ARP running index
+    int    arpUpDownCnt_ = 0;                           // EXT-ARP Block B UpDown counter (period 2L-2)
     int    arpCur_       = -1;                          // EXT-ARP currently sounding note (-1 none)
     double arpStepSamples_ = 6000.0;                    // EXT-ARP recalc on tempo/rate
     double arpAcc_       = 0.0;                         // EXT-ARP sample accumulator
