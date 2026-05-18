@@ -46,8 +46,8 @@ const md5_baseline = {
   //                     para3-worklet.js  (new OPs + Controls methods)
   // The remaining 7 files (scope/parity/audio/ring/port_test, wasm_parity,
   // parity_seq, parity_native) stay byte-frozen.
-  'Para3Engine.hpp':                          'e3107bcdaa49c1ab78b93693b8f63d42',
-  'offline_test.cpp':                         'ea22c312895449a7dc935d07edb2cc85',
+  'Para3Engine.hpp':                          '214ed9dbcb9599afbe248e9a1381c979',
+  'offline_test.cpp':                         'ab0d5639cf85a5c2d20cd3ce14c45e3e',
   'wasm-bridge/para3_capi.h':                 '3f22daba53093885e12733aa3c54e1a4',
   'wasm-bridge/para3_capi.cpp':               '256340fc4dba8eade3488e134bc6e5fa',
   'wasm-bridge/capi_test.cpp':                'aa8182e52327f513fe0d23df6ad0c1a8',
@@ -414,20 +414,26 @@ const html = readFileSync(join(REPO, 'wasm-bridge/para3-responsive.html'), 'utf8
 // user idled on splash. User-reported symptom: cursor and audible note out
 // of phase until app reload. Engine pairs (T29/T30) prove step 0 fires at
 // t=t0 — the cursor must too.
+// EXT-ARP-FIX2 upgrade: the single seqStartT anchor jumped backward on
+// mid-play tdivVal changes (because the formula divided ALL elapsed time by
+// the NEW sm). Replaced with a regime snapshot pair (cursorBaseTime +
+// cursorBaseStep), re-snapped at Play AND on every tdiv change.
 {
   const checks = [
-    { re: /let\s+seqStartT\s*=\s*0\s*;/,
-      label: 'seqStartT declared (cursor anchor)' },
-    { re: /if\s*\(\s*playing\s*\)\s*seqStartT\s*=\s*audio\.ctx\s*\?\s*audio\.ctx\.currentTime\s*:\s*0\s*;/,
-      label: 'seqStartT captured on Play click (only when going to playing)' },
-    { re: /elapsed\s*=\s*Math\.max\(\s*0\s*,\s*t\s*-\s*seqStartT\s*\)/,
-      label: 'cursor formula uses (currentTime - seqStartT), not absolute time' },
-    { re: /Math\.floor\(\s*elapsed\s*\/\s*sm\s*\)/,
-      label: 'step index derived from elapsed/sm (not t/sm)' },
+    { re: /let\s+cursorBaseTime\s*=\s*0\s*;[\s\S]{0,200}?let\s+cursorBaseStep\s*=\s*0\s*;/,
+      label: 'cursorBaseTime + cursorBaseStep declared (tempo-regime anchor)' },
+    { re: /if\s*\(\s*playing\s*\)\s*\{[\s\S]*?cursorBaseTime\s*=\s*audio\.ctx[\s\S]*?cursorBaseStep\s*=\s*0/,
+      label: 'Play click captures base time and resets base step to 0' },
+    { re: /cursorBaseStep\s*=\s*\(\s*cursorBaseStep\s*\+\s*Math\.floor\(\s*\(\s*tNow\s*-\s*cursorBaseTime\s*\)\s*\/\s*smOld\s*\)\s*\)/,
+      label: 'tdiv handler re-snaps cursorBaseStep before changing tdivVal' },
+    { re: /elapsedInRegime\s*=\s*Math\.max\(\s*0\s*,\s*t\s*-\s*cursorBaseTime\s*\)/,
+      label: 'cursor formula uses (currentTime - cursorBaseTime) per-regime' },
+    { re: /total\s*=\s*cursorBaseStep\s*\+\s*Math\.floor\(\s*elapsedInRegime\s*\/\s*sm\s*\)/,
+      label: 'step index = cursorBaseStep + floor(elapsedInRegime/sm)' },
   ];
   const failed = checks.filter(c => !c.re.test(html));
   const pass = failed.length === 0;
-  console.log(`\nU-B8: B4 visual cursor anchored to seqStart (Volca-parity)`);
+  console.log(`\nU-B8: B4+EXT-ARP-FIX2 cursor anchor tracks tempo regime`);
   console.log(`   checks   : ${checks.length - failed.length}/${checks.length}`);
   if (failed.length) for (const f of failed) console.log(`      MISSING: ${f.label}`);
   console.log(`   -> ${pass ? 'PASS' : 'FAIL'}`);

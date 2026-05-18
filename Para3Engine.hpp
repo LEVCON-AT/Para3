@@ -1126,7 +1126,12 @@ public:
     // B4: Volca-parity Play=restart. Resetting stepIdx_=-1 here pairs with
     // Clock::primed_ — the first primed tick advances -1→0 so step 0 fires
     // immediately on every Play (no resume from where Stop happened). RT-safe.
-    void seqStart() noexcept { stepIdx_ = -1; clock_.start(); }
+    // EXT-ARP-FIX: also reset seqLastGatedNote_ so a previous run's last
+    // gated note doesn't get a phantom noteOff on the first gate-off step.
+    void seqStart() noexcept {
+        stepIdx_ = -1; seqLastGatedNote_ = -1;
+        clock_.start();
+    }
 
     // ---- E3 motion: ziel-parametric, lock-free (edit_ -> commit) ----------
     static bool motionCapable(int pid) noexcept {        // Resonance(1) refused
@@ -1360,8 +1365,23 @@ private:
             e.steps[stepIdx_].motionCut = recCC_;
             if (stepIdx_ == p.length - 1) bank_.commit();    // publish at loop end
         }
-        if (s.gate) eng_->noteOn(s.note);
-        else if (!stepTrig_) eng_->noteOff(s.note);          // E4.1 keep note if step-trig
+        // EXT-ARP-FIX: only release notes the SEQUENCER actually played. The
+        // legacy `noteOff(s.note)` on every gate-off step blindly killed any
+        // currently-allocated voice whose pitch happened to match s.note —
+        // which is fine when only the seq plays, but breaks "additive arp
+        // + seq" coexistence (spec §1.3): a held arp/keyboard note matching
+        // s.note got silenced after one tick. Track the last gated note; only
+        // release that. seqLastGatedNote_ resets to -1 in seqStart so a fresh
+        // Play doesn't carry over state from a previous run.
+        if (s.gate) {
+            eng_->noteOn(s.note);
+            seqLastGatedNote_ = s.note;
+        } else if (!stepTrig_) {
+            if (seqLastGatedNote_ >= 0) {
+                eng_->noteOff(seqLastGatedNote_);
+                seqLastGatedNote_ = -1;
+            }
+        }
         if (stepTrig_) eng_->retrigger();                    // E4.1 force EG every step
         if (s.motionOn)                                      // legacy cutoff lane
             eng_->setParamNorm(para3::ParaEngine::Param::Cutoff, s.motionCut);
@@ -1522,6 +1542,10 @@ private:
     int         stepIdx_ = -1;
     double      recCC_ = 0.5;
     bool        recording_ = false;
+    // EXT-ARP-FIX: tracked so onStep only releases notes the seq actually
+    // played (instead of blindly noteOff(s.note) every gate-off, which
+    // killed any matching arp/keyboard voice). See onStep + seqStart.
+    int         seqLastGatedNote_ = -1;
     bool        smooth_ = false;                 // E3 SMOOTH toggle
     bool        stepTrig_ = false;               // E4.1
     bool        metroOn_  = false;               // E4.4

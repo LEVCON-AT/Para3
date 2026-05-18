@@ -814,16 +814,25 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
     };
     stepsEl.appendChild(b);}
   const sN=[...stepsEl.children];let playing=false,cur=-1,seqT=0;
-  // B4: visual-cursor anchor. Captured at the moment of Play so the cursor
-  // formula in frame() measures elapsed time SINCE seqStart, not since
-  // AudioContext creation. Without this, the cursor's starting phase depends
-  // on how long the user idled on the splash before pressing Play.
-  let seqStartT = 0;
+  // B4 + EXT-ARP-FIX2: visual-cursor anchor tracks the CURRENT tempo regime.
+  // On Play and on every tdiv change we snapshot:
+  //   cursorBaseStep  = the step index the cursor is on right now
+  //   cursorBaseTime  = audio.ctx.currentTime at that snapshot
+  // The frame() formula reads:
+  //   c = (cursorBaseStep + floor((now - cursorBaseTime) / sm_current)) % 16
+  // which is monotonic across tdivVal changes (older anchors used a single
+  // seqStartT, which made the cursor jump backward whenever sm grew mid-play
+  // — the symptom the user reported).
+  let cursorBaseTime = 0;
+  let cursorBaseStep = 0;
   const playB=document.getElementById('play');
   playB.onclick=()=>{playing=!playing;playB.classList.toggle('on',playing);
     playB.textContent=playing?'■':'▶';
     if(!playing&&cur>=0){sN[cur].classList.remove('cur');laneB[cur].classList.remove('cur');cur=-1;}
-    if (playing) seqStartT = audio.ctx ? audio.ctx.currentTime : 0;   // B4 anchor
+    if (playing) {
+      cursorBaseTime = audio.ctx ? audio.ctx.currentTime : 0;
+      cursorBaseStep = 0;                                                  // Volca Play=restart-from-0
+    }
     emit((c) => playing ? c.seqStart() : c.seqStop());};
   document.getElementById('clr').onclick=()=>{onSteps.fill(false);
     sN.forEach(n=>n.classList.remove('on'));flushPattern();};
@@ -899,6 +908,17 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
   const tdiv=document.getElementById('tdiv');let tdivVal=1;
   tdiv.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
     const d=+b.dataset.d; if (d!==1 && d!==2 && d!==4) return;   // engine clamps
+    // EXT-ARP-FIX2: re-anchor the visual cursor BEFORE changing tdivVal.
+    // Compute how many steps have elapsed in the OLD tempo regime, fold that
+    // into cursorBaseStep, then reset cursorBaseTime to "now". After the
+    // assignment below the new sm is in effect; the cursor continues monotonic.
+    if (playing && audio.ctx) {
+      const bpm = K.tmp.get();
+      const smOld = (60 / (bpm * 4)) * tdivVal;
+      const tNow  = audio.ctx.currentTime;
+      cursorBaseStep = (cursorBaseStep + Math.floor((tNow - cursorBaseTime) / smOld)) | 0;
+      cursorBaseTime = tNow;
+    }
     tdivVal=d;[...tdiv.querySelectorAll('button')].forEach(x=>x.classList.remove('on'));
     b.classList.add('on');
     show('TEMPO DIV','1/'+d,'');
@@ -946,7 +966,17 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
   arpOnB.onclick = () => {
     arpOnState = !arpOnState;
     arpOnB.classList.toggle('on', arpOnState);
-    show('ARP', arpOnState ? 'ON' : 'OFF', arpOnState ? arpModeNames[arpModeVal] : '');
+    // EXT-ARP-FIX2: surface the clock-required constraint on the display.
+    // Engine spec §1.4: arp runs only when clock_.running() is true (HW-Arp
+    // parity, deterministic, no free-run). Without this hint the user gets
+    // silence when toggling ARP without first pressing Play — they reported
+    // exactly that. Don't auto-start Play (would also start the seq pattern).
+    const hint = arpOnState && !playing
+      ? 'PLAY drücken zum Hören'
+      : arpOnState
+        ? arpModeNames[arpModeVal]
+        : '';
+    show('ARP', arpOnState ? 'ON' : 'OFF', hint);
     emit((c) => c.arpEnable(arpOnState));
   };
   arpHoldB.onclick = () => {
@@ -1345,17 +1375,17 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
 
     // sequencer visual cursor (UI-soft estimate; engine drives the audio)
     if (playing) {
-      // B3: must honour tempoDiv. Without `* tdivVal` the cursor walks at
-      // 1/1 speed even when the engine is at 1/2 or 1/4 — the lit step no
-      // longer matches the audible note, which reads as "Noten nicht korrekt
-      // getimet" until the user toggles div back to 1/1.
-      // B4: must measure time SINCE seqStart (seqStartT), not since
-      // AudioContext creation. Engine fires step 0 immediately on Play
-      // (Clock::primed_) — at elapsed=0 the cursor must be on step 0.
+      // B3 honoured: sm scales by tdivVal so cursor speed matches engine.
+      // B4 honoured: anchor on Play moment so we don't drift from splash.
+      // EXT-ARP-FIX2: cursor uses the CURRENT tempo regime — base step +
+      // floor(elapsed-in-this-regime / sm). The base is re-snapshotted on
+      // every tdivVal change (see tdiv handler) so the cursor stays
+      // monotonic across mid-play div switches.
       const bpm = K.tmp.get(), sm = (60 / (bpm * 4)) * tdivVal;
       const t = audio.ctx ? audio.ctx.currentTime : 0;
-      const elapsed = Math.max(0, t - seqStartT);
-      const c = (Math.floor(elapsed / sm) % 16 + 16) % 16;
+      const elapsedInRegime = Math.max(0, t - cursorBaseTime);
+      const total = cursorBaseStep + Math.floor(elapsedInRegime / sm);
+      const c = ((total % 16) + 16) % 16;
       if (c !== cur) {
         if (cur >= 0) { sN[cur].classList.remove('cur'); laneB[cur].classList.remove('cur'); }
         cur = c; sN[cur].classList.add('cur'); laneB[cur].classList.add('cur');

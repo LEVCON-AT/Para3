@@ -2434,6 +2434,80 @@ int main() {
         if (!pass) ++failures;
     }
 
+    // ---- T36  EXT-ARP-FIX: Arp + Seq coexistence (no phantom noteOff) -----
+    // User-reported bug: with ARP ON, pressing a key produced no sound. Root
+    // cause was the legacy onStep `eng_->noteOff(s.note)` on every gate-off
+    // step — it killed any voice (arp- or keyboard-played) whose pitch matched
+    // s.note. With the lastGatedNote_ fix, the sequencer only releases notes
+    // it actually played. This test reproduces the exact user scenario:
+    // default pattern (all steps gate-off, s.note=lastNote=48), arp pool {48},
+    // expect 8 onsets over 1 second instead of silence.
+    {
+        using PE = para3::ParaEngine;
+        PE eng; eng.prepare(sr, 4096);
+        para3::Controller ctl; ctl.prepare(eng, sr);
+        eng.setParamNorm(PE::Param::Sustain, 1.0);
+        eng.setParamNorm(PE::Param::Cutoff,  0.85);
+        eng.setParamNorm(PE::Param::Attack,  0.0);
+        eng.setParamNorm(PE::Param::DecRel,  0.0);
+        // Engineer the worst case: pattern is the engine default, where
+        // every Step.note = 60 (legacy default). The arp pool we'll add is
+        // 60 — exactly the note that would have been killed by the
+        // pre-fix `noteOff(s.note)` on every gate-off step.
+        ctl.setArpEnabled(true);
+        ctl.setArpMode(0);                                // Up
+        ctl.setArpRate(1); ctl.setArpGate(0.5);
+        ctl.setSeqTempo(120.0, 4); ctl.seqStart();
+        ctl.midiNoteOn(60);                                // would collide pre-fix
+        const int Mc = 96000;                              // 1 s at 48k
+        std::vector<float> c(Mc); ctl.render(c.data(), Mc);
+
+        // Engine fires arpStep at sample 12000, 24000, ..., 84000 (eight 1/8
+        // beats @ 120 BPM). Probe each mid-gate via 4096-bin FFT and verify
+        // each carries the expected pitch (note 60 = 261.6 Hz).
+        auto peakHz = [&](int start) {
+            const int M = 4096; if (start + M > (int)c.size()) return 0.0;
+            std::vector<cd> sp(M);
+            for (int i = 0; i < M; ++i) {
+                const double w = 0.5 - 0.5*std::cos(2.0*M_PI*i/(M-1));
+                sp[i] = cd((double)c[start+i] * w, 0.0);
+            }
+            fft(sp);
+            int bk = 1; double best = 0.0;
+            for (int k = 1; k < M/2; ++k) {
+                const double m = std::abs(sp[k]);
+                if (m > best) { best = m; bk = k; }
+            }
+            double db = 0.0;
+            if (bk > 1 && bk < M/2-1) {
+                const double aL = std::abs(sp[bk-1]),
+                             bC = std::abs(sp[bk]),
+                             cR = std::abs(sp[bk+1]);
+                const double den = (aL - 2.0*bC + cR);
+                if (std::fabs(den) > 1e-18) db = 0.5 * (aL - cR) / den;
+            }
+            return (bk + db) * sr / (double)M;
+        };
+        const double f60 = para3::semitonesToHz(60.0);
+        int hits = 0;
+        for (int step = 0; step < 8; ++step) {
+            const int s = 12000 * (step + 1) - 9000;       // mid-gate window
+            const double pk = peakHz(s);
+            if (std::fabs(pk - f60) / f60 < 0.06) ++hits;
+        }
+        // Also check overall RMS to catch the pure-silence regression case.
+        double rms = 0.0;
+        for (float x : c) rms += (double)x * x;
+        rms = std::sqrt(rms / c.size());
+        const bool pass = hits >= 7 && rms > 0.05;
+        std::printf("\nT36 EXT-ARP-FIX  (Arp + Seq coexistence; no phantom noteOff)\n");
+        std::printf("   pool {60} + idle seq pattern (notes=60)\n");
+        std::printf("   pitch hits at expected onsets : %d / 8  (want >=7)\n", hits);
+        std::printf("   buffer RMS                    : %.3f   (want > 0.05)\n", rms);
+        std::printf("   -> %s\n", pass ? "PASS" : "FAIL");
+        if (!pass) ++failures;
+    }
+
     std::printf("\n==================================================\n");
     std::printf("%s  (%d failure%s)\n",
                 failures ? "OVERALL: FAIL" : "OVERALL: PASS",

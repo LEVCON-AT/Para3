@@ -14,7 +14,7 @@
 //  the worklet and needs no SAB.
 // =============================================================================
 
-const CACHE_VER  = 'para3-v14'; // EXT-ARP: arpeggiator (default off; bit-identical engine when disabled)
+const CACHE_VER  = 'para3-v15'; // EXT-ARP-FIX2: seq/arp coexistence + cursor-anchor tracks tempo regime
 const PRECACHE   = [
   './',
   './index.html',
