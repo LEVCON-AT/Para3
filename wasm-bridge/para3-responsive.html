@@ -82,6 +82,16 @@ body{
   background:var(--accent);box-shadow:0 0 5px var(--accent)}
 .pslot.active{color:#fff;background:linear-gradient(180deg,var(--accent2),var(--accent));
   box-shadow:0 0 14px color-mix(in srgb,var(--accent) 55%,transparent)}
+/* Demo-Track indicator (Sprint 1): P1-P5 carry a thin accent underline.
+   Three visual states matching the dirty/reset semantics:
+     .demo            — preset available (subtle ink-dim, low opacity)
+     .demo.loaded     — preset currently active (bright accent, full opacity)
+     .demo.loaded.dirty — loaded but user edited (dimmed accent) */
+.pslot.demo::before{content:"";position:absolute;left:6px;right:6px;bottom:4px;
+  height:2px;border-radius:1px;background:var(--ink-dim);opacity:.4;
+  transition:background .15s,opacity .15s}
+.pslot.demo.loaded::before{background:var(--accent);opacity:1}
+.pslot.demo.loaded.dirty::before{background:var(--accent-dim);opacity:.7}
 .psave{flex:0 0 auto;width:54px;height:36px;border:none;border-radius:8px;cursor:pointer;
   font-family:'Chakra Petch';font-size:10px;font-weight:700;letter-spacing:1px;color:var(--ink-dim);
   background:linear-gradient(180deg,var(--card1),var(--card2));box-shadow:var(--soft)}
@@ -562,7 +572,40 @@ let scopeBuf   = null;            // Float32Array(fftSize) — analyser output
 // PARAM.VOLUME so master-gain matches the rest of the funnel (smoothed,
 // bit-identical at unity per offline_test T24).
 let ready      = false;
-function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.warn(e); } }
+// ---- Sprint 1: Demo-Track state (P1-P5). loadedDemo holds the slot
+// currently active (1..5) or null. demoDirty tracks whether the user has
+// edited the loaded preset since load. inRestore/inTransport gate emit()
+// from triggering dirty for non-state-changing emits (preset load itself,
+// play/stop, keyboard noteOn/Off — these don't mutate the patch).
+let loadedDemo  = null;
+const demoDirty = {};
+let inRestore   = false;
+let inTransport = false;
+// Sprint 1 placeholder content. Real Track contents land in later sprints
+// (FLUX-HOP / BERLIN / VK-BRASS / ACID / RING-RND). Stubs carry a marker
+// param so a click visibly moves the engine + UI, proving the load path.
+const DEMO_TITLES  = { 1:'FLUX-HOP', 2:'BERLIN', 3:'VK-BRASS', 4:'ACID', 5:'RING-RND' };
+const DEMO_PRESETS = {
+  1: { title:'FLUX-HOP', k:{ cut:60 }, f:{}, v:0, w:0, st:new Array(16).fill(false), mo:{}, tg:'cut' },
+  2: { title:'BERLIN',   k:{ cut:45 }, f:{}, v:0, w:0, st:new Array(16).fill(false), mo:{}, tg:'cut' },
+  3: { title:'VK-BRASS', k:{ cut:70 }, f:{}, v:0, w:0, st:new Array(16).fill(false), mo:{}, tg:'cut' },
+  4: { title:'ACID',     k:{ cut:30 }, f:{}, v:0, w:0, st:new Array(16).fill(false), mo:{}, tg:'cut' },
+  5: { title:'RING-RND', k:{ cut:80 }, f:{}, v:0, w:0, st:new Array(16).fill(false), mo:{}, tg:'cut' },
+};
+function markDirty() {
+  if (!ready || loadedDemo === null || inRestore || inTransport) return;
+  if (demoDirty[loadedDemo]) return;
+  demoDirty[loadedDemo] = true;
+  // Direct DOM lookup — pE lives inside the patch-setup IIFE, out of reach here.
+  const el = document.querySelector('.pslot[data-s="' + loadedDemo + '"]');
+  if (el) el.classList.add('dirty');
+}
+function emit(fn) {
+  if (ready) {
+    try { fn(audio.controls); } catch (e) { console.warn(e); }
+    markDirty();
+  }
+}
 
 (function(){
   const app=document.getElementById('app');
@@ -908,7 +951,11 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
       cursorAccSec   = 0;
       cursorRegimeTs = audio.ctx ? audio.ctx.currentTime : 0;
     }
-    emit((c) => playing ? c.seqStart() : c.seqStop());};
+    // Sprint 1: Play/Stop is transport, not patch state — suppress dirty.
+    inTransport = true;
+    emit((c) => playing ? c.seqStart() : c.seqStop());
+    inTransport = false;
+  };
   document.getElementById('clr').onclick=()=>{onSteps.fill(false);
     sN.forEach(n=>n.classList.remove('on'));flushPattern();};
 
@@ -1079,14 +1126,42 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
   const patch=document.getElementById('patch'),psave=document.getElementById('psave');
   const slots={},NS=8;let saveArm=false;
   for(let i=1;i<=NS;i++){const b=document.createElement('button');b.className='pslot';
+    if (DEMO_PRESETS[i]) b.classList.add('demo');       // Sprint 1: demo line
     b.textContent='P'+i;b.dataset.s=i;
     b.onclick=()=>{const s=i;
+      // 3-way slot click semantics (priority order):
+      //   1) saveArm → existing save (writes user snapshot into slots[s])
+      //   2) user save in slots[s] → existing recall (user takes precedence over demo)
+      //   3) DEMO_PRESETS[s] exists → loadDemo (Sprint 1 new path)
       if(saveArm){slots[s]=snap();b.classList.add('filled');saveArm=false;
         psave.classList.remove('arm');mark(s);show('PATCH','SAVED P'+s,'');}
-      else if(slots[s]){restore(slots[s]);mark(s);show('PATCH','RECALL P'+s,'');}};
+      else if(slots[s]){restore(slots[s]);mark(s);show('PATCH','RECALL P'+s,'');}
+      else if(DEMO_PRESETS[s]){loadDemo(s);}
+    };
     patch.appendChild(b);}
   const pE=[...patch.querySelectorAll('.pslot')];
   function mark(s){pE.forEach(e=>e.classList.toggle('active',+e.dataset.s===s));}
+  // Sprint 1 — Demo load + visual state machine. Wraps restore() with
+  // inRestore so emits during the load don't mark dirty. Clears .loaded
+  // from siblings so only one demo carries the bright accent at a time.
+  // Re-clicking the same slot resets dirty (= "undo my edits").
+  function loadDemo(s){
+    const p = DEMO_PRESETS[s]; if (!p) return;
+    inRestore = true;
+    try { restore(p); } finally { inRestore = false; }
+    pE.forEach((e,i)=>{
+      const isThis = (i+1) === s;
+      if (DEMO_PRESETS[i+1]) {
+        e.classList.toggle('loaded', isThis);
+        if (!isThis) e.classList.remove('dirty');
+      }
+    });
+    loadedDemo = s;
+    demoDirty[s] = false;
+    pE[s-1].classList.remove('dirty');
+    mark(s);
+    show('PATCH', DEMO_TITLES[s] || ('DEMO P'+s), '');
+  }
   psave.onclick=()=>{saveArm=!saveArm;psave.classList.toggle('arm',saveArm);
     show('PATCH',saveArm?'PICK SLOT…':'READY','');};
   function snap(){return{k:Object.fromEntries(Object.entries(K).map(([i,o])=>[i,o.get()])),
@@ -1172,7 +1247,9 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
   function renderKeyboard(N) {
     // Release any held keys before destroying their elements (logic unchanged
     // — uses the existing emit/noteOff path, just preempts a dangling .dn).
+    inTransport = true;                                                  // Sprint 1: kbd ≠ patch
     for (const [, h] of held) emit((c) => c.noteOff(h.note));
+    inTransport = false;
     held.clear();
     // Remove only piano keys; the #octind label (added by U3) is a sibling
     // child of .kbd that must survive re-renders.
@@ -1247,15 +1324,20 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
     // engine adds +12*round(oct) internally. OOR-MIDI marked as "OOR".
     show('NOTE', midiToName(note + 12 * Math.round(K.oct.get())), '');
     lastNote = note; held.set(pid, { el: t, note });
+    // Sprint 1: keyboard input is transport (note events), not patch state.
+    // FLUX events ARE patch state (recorded into engine), so don't suppress
+    // the flux-note emit — but the noteOn itself doesn't change the preset.
+    inTransport = true;
     emit((c) => c.noteOn(note));
-    // E5: when FLUX mode is on AND REC armed, append event at the engine's
-    // live cursor. Engine also guards on fluxRec_, so this is doubly safe.
+    inTransport = false;
     if (fluxOn && fluxRecOn) emit((c) => c.seqFluxNote(note, true));
   }
   function keyUp(pid) {
     const h = held.get(pid); if (!h) return;
     h.el.classList.remove('dn'); held.delete(pid);
+    inTransport = true;
     emit((c) => c.noteOff(h.note));
+    inTransport = false;
     if (fluxOn && fluxRecOn) emit((c) => c.seqFluxNote(h.note, false));
   }
   kbd.addEventListener('pointerdown', (e) => {

@@ -100,7 +100,94 @@ Mess:   __para3Capture(96000): 8 Onsets im erwarteten Raster (Jitter 0);
         kein Klick (|dx|-Metrik).
 -->
 
-<!-- weitere User-Stories hier eintragen -->
+<!-- =================================================================== -->
+<!-- DEMO-TRACKS P1-P5 — vom Menschen freigegeben (Tempo 70→140 linear,
+     Akzent-Linie + Dirty-Indikator, alle Funktionen über die 5 Tracks
+     verteilt; Voice-Modi 5/6 abgedeckt, MOTION-REC-Targets 5/5
+     unterschiedlich, alle 3 LFO-Shapes, alle 5 ARP-Modi via P5-Motion). -->
+
+### US-DEMO-P1-FLUX — FLUX-HOP @ 70 BPM lädt + spielt + Motion-VOL-Swell
+Given:  Cold-Start, kein Bedienelement berührt. Audio gestartet (TAP TO START).
+When:   Klick auf Button `P1`. Anschließend Klick `▶` (Play).
+Then:   Display zeigt `P1: FLUX-HOP`. Akzent-Linie unter P1 in `--accent-dim`.
+        FLUX-Mode aktiv, METRO an, F·REC-Loop läuft, Tempo 70 BPM.
+        Audio swellt über ~2 s von leise nach laut (MOTION-REC auf VOLUME).
+Mess:   __para3Capture(~96000 Samples bei 48 kHz = 2 s):
+        - RMS-Verlauf monoton steigend von <0.02 (Start) auf >0.10 (Ende),
+        - METRO-Tick (Quarter-Note) erkennbar als kurze Hochfrequenz-Bursts,
+        - F·REC-Note-Onsets vorhanden (mindestens 4 Onsets im 2-s-Fenster).
+
+### US-DEMO-P2-BERLIN — BERLIN-Sequenz @ 88 BPM mit TEMPO DIV 1/2, FIFTH-Voice, MOTION-REC/PORTAMENTO
+Given:  Cold-Start, audio ready.
+When:   Klick `P2`, Klick `▶`.
+Then:   Display `P2: BERLIN`. FIFTH-Voice aktiv (zwei Pitches Quint auseinander).
+        TEMPO DIV 1/2 (effektiv 44 BPM), ACT-Skips auf Step 4 und 11.
+        LFO TRIANGLE+SYNC, sanfte Pitch-Modulation. Portamento glide
+        progressiv stärker über 16 Steps (MOTION-REC-Lane).
+Mess:   __para3Capture(192000 = 4 s):
+        - FFT zeigt Doppel-Peak (Note + Note+7 Halbtöne) → Quint-Stack-Beleg,
+        - Onset-Spacing 681 ms (= 88 BPM × 1/2 × 1/16 = 1/8 effektiv),
+        - Steps 4 und 11 zeigen messbare Audio-Lücken (RMS <0.01 dort),
+        - Pitch-Glide-Slope steigt über die 16 Steps an (Centroid-Drift).
+
+### US-DEMO-P3-VKBRASS — Volca-Keys-Brass-Arp @ 105 BPM, UNISON, ARP UP HOLD ×2 Oct, MOTION-REC/DETUNE+SMOOTH
+Given:  Cold-Start, audio ready.
+When:   Klick `P3`, Klick `▶`.
+Then:   Display `P3: VK-BRASS`. UNISON-Voice. ARP ON+HOLD, MODE UP, OCT×2,
+        GATE 0.7, RATE 1/16, Akkord Cm9 latched. LFO SAW, CUT_INT positiv.
+        MOTION-REC auf DETUNE mit SMOOTH on → kontinuierliche Detune-Drift.
+        DELAY 1/8 dotted FB 0.30.
+Mess:   __para3Capture(192000 = 4 s):
+        - 4 verschiedene Note-Frequenzen detektierbar (C-Eb-G-Bb-Cycle inkl. Oct×2),
+        - DETUNE-Drift: Spektral-Centroid wandert über die 16 Steps (SMOOTH-Interp),
+        - LFO-modulierte Cutoff: 16th-Note-Periodizität im Centroid-Spektrum,
+        - DELAY-Tail: nach abruptem Cutoff bleibt RMS >5 % des Peaks für >250 ms.
+
+### US-DEMO-P4-ACID — TB-303 Acid Bassline @ 122 BPM, STEP TRIGGER, MOTION-REC/CUTOFF
+Given:  Cold-Start, audio ready.
+When:   Klick `P4`, Klick `▶`.
+Then:   Display `P4: ACID`. POLY-Voice, 16-Step-Pattern (C2/C2/D#2/G1/C2/Bb1/...),
+        STEP TRIGGER on, Resonance hoch, EG_INT positiv, schnelles DECREL.
+        MOTION-REC auf CUTOFF: voller 16-Step-Sweep tief→hoch→tief.
+        DELAY 1/16 ping-pong.
+Mess:   __para3Capture(192000 = 4 s):
+        - 16 saubere Note-Onsets in 1.97 s (122 BPM × 1/16 = 8 Hz Onset-Rate),
+        - Spektral-Centroid wandert sinusoidal über 16 Steps (CUTOFF-Lane),
+        - Resonance-Peak detektierbar als schmaler Spektral-Peak bei Cutoff-Freq,
+        - STEP-TRIGGER-Beleg: jeder Onset hat Attack-Slope (kein verschmiertes Sustain).
+
+### US-DEMO-P5-RNG — Ring-Mod Random-Arp @ 140 BPM, MOTION-REC/ARP_MODE cycelt alle 5 Modi
+Given:  Cold-Start, audio ready.
+When:   Klick `P5`, Klick `▶`.
+Then:   Display `P5: RING-RND`. POLYRING-Voice, ARP ON+HOLD, OCT×3, GATE 0.5,
+        Akkord C-F#-G# (Ganztoncluster). LFO SQUARE+CUT_INT (Stepper-Effekt).
+        MOTION-REC auf ARP_MODE: 16-Step-Lane cyclt UP→DN→UPDN→AS→RND
+        (jeweils ~3-4 Steps pro Modus). Tempo 140 BPM.
+Mess:   __para3Capture(192000 = 4 s):
+        - inharmonische Spektren (Ring-Mod-Sidebands) bei nicht-musikalischen Frequenzen,
+        - 4 messbar verschiedene Spektral-Signaturen über die 16 Steps (4 Mode-Blöcke),
+        - Cross-Block-Diff der Spektren signifikant (Wechsel von sortiert zu zufällig),
+        - SQUARE-LFO-Cutoff: harte 1/16-Stepper-Transienten im Spektrogramm.
+
+### US-DEMO-DIRTY — Demo-Edit setzt Dirty-Indikator, Re-Click setzt zurück
+Given:  P1 wurde geladen (Akzent-Linie solid `--accent-dim`). Audio läuft.
+When:   Eine beliebige Knob/Fader-Bewegung (z. B. Cutoff +20 %).
+Then:   Akzent-Linie unter P1 dimmt auf `--accent-faint`. Display zeigt `P1: FLUX-HOP*`.
+When:   Erneuter Klick auf `P1`.
+Then:   Original-State wieder geladen, Akzent-Linie wieder solid, Display ohne `*`.
+Mess:   Spektrum nach Re-Click bitidentisch zum initialen Load (`max|d|<1e-6` über
+        eine 100-ms-Vergleichsfensterung).
+
+### US-DEMO-ISOLATION — Wechsel zwischen P1..P5 ohne Reststate-Verwicklung
+Given:  Cold-Start, audio ready.
+When:   Sequentiell P1 → P2 → P3 → P4 → P5 klicken, jeweils Play + 2 s Audio capturen,
+        Stop, nächste Demo. Am Ende erneut P1 klicken.
+Then:   Jeder Track produziert seine charakteristische Signatur, kein Rest aus dem
+        vorigen Track (z. B. kein Ring-Mod-Klang nach Wechsel auf POLY-Track).
+        Re-Load P1 am Ende bitidentisch zum ersten P1-Load.
+Mess:   5 verschiedene Spektral-Signaturen, paarweise Diff signifikant; finaler P1-Load
+        `max|d|<1e-6` zum ersten P1-Load über 100-ms-Fenster.
+
 
 ## §4 Ausführung & Akzeptanz
 

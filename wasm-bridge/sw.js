@@ -14,7 +14,7 @@
 //  the worklet and needs no SAB.
 // =============================================================================
 
-const CACHE_VER  = 'para3-v24'; // Handover process infra + warning-fix (Para3Engine.hpp split if/if on separate lines)
+const CACHE_VER  = 'para3-v25'; // Sprint 1: P1-P5 Demo-Indikator (Akzent-Linie + Dirty/Reset)
 const PRECACHE   = [
   './',
   './index.html',
