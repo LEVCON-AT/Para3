@@ -96,6 +96,15 @@ long para3_seq_flux_dropped  (Para3* p);                  // observable overflow
 // MIDI from the host/keyboard, applied at the next rendered sample
 void para3_midi_cc      (Para3* p, int cc, double norm01);
 
+// EXT-ARP Block A — design-extension over Volca-Keys parity (NOT a Keys feature).
+// Default off => engine output bit-identical to the pre-EXT build (T27a).
+// Modes: 0=Up (1=Down, 2=UpDown, 3=AsPlayed, 4=Random added in Block B/C).
+// Rates: index into {1/4, 1/8, 1/8T, 1/16, 1/16T, 1/32}.
+void para3_arp_enable(Para3* p, int on);                      // EXT-ARP
+void para3_arp_mode  (Para3* p, int mode);                    // EXT-ARP
+void para3_arp_rate  (Para3* p, int rate);                    // EXT-ARP
+void para3_arp_gate  (Para3* p, double gate01);               // EXT-ARP staccato 0..1
+
 // render n frames into out (mono). out is a pointer into the WASM heap.
 // real-time safe: no allocation, no locks, no syscalls.
 void para3_render(Para3* p, float* out, int n);

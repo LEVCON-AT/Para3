@@ -1898,6 +1898,174 @@ int main() {
         if (!pass) ++failures;
     }
 
+    // ---- T31  EXT-ARP Block A — bit-identical aus, Stille leer, Up exakt ---
+    // Spec numbered this T27, but T27-T30 are taken by B1/B2/B4 fixes — so
+    // EXT-ARP-Block-A test is T31. Three sub-tests, each independent.
+    // (a) is the hard anti-fake proof: arpEnabled_=false through
+    // Controller::midiNoteOn must give samples bit-identical to
+    // engine.noteOn direct. (b) shows arp-on with empty pool = total silence
+    // (no warm-up, no ghost). (c) drives the actual Up sequence and measures
+    // pitch + onset timing + click-free transition.
+    {
+        using PE = para3::ParaEngine;
+        const int warm = 4096, N = 4096;
+
+        // ---------- T27a: ARP OFF == bit-identical to direct engine ----------
+        // Build two paths from identical state and compare sample-by-sample.
+        PE engA; engA.prepare(sr, 4096);
+        PE engB; engB.prepare(sr, 4096);
+        para3::Controller ctlB; ctlB.prepare(engB, sr);
+        // identical patches + warmup. Sustain=1 to keep voice steady.
+        engA.setParamNorm(PE::Param::Sustain, 1.0);
+        engB.setParamNorm(PE::Param::Sustain, 1.0);
+        std::vector<float> warmA(warm), warmB(warm);
+        engA.process(warmA.data(), warm);
+        ctlB.render(warmB.data(), warm);          // arpEnabled_=false default
+        // identical gate
+        engA.noteOn(60);
+        ctlB.midiNoteOn(60);                       // routes through arpEnabled_=false
+        std::vector<float> a(N), b(N);
+        engA.process(a.data(), N);
+        ctlB.render(b.data(), N);
+        double maxD27a = 0.0;
+        for (int i = 0; i < N; ++i) maxD27a = std::max(maxD27a, (double)std::fabs(a[i] - b[i]));
+        const bool pass27a = maxD27a == 0.0;
+
+        // ---------- T27b: ARP ON, empty pool, clock running -> silence ------
+        PE engC; engC.prepare(sr, 4096);
+        para3::Controller ctlC; ctlC.prepare(engC, sr);
+        ctlC.setArpEnabled(true);
+        ctlC.clock().setTempo(120.0, 4);
+        ctlC.clock().start();
+        std::vector<float> warmC(warm), c(N);
+        ctlC.render(warmC.data(), warm);          // empty pool, no input — silent
+        ctlC.render(c.data(), N);
+        double peak27b = 0.0;
+        for (int i = 0; i < N; ++i) peak27b = std::max(peak27b, (double)std::fabs(c[i]));
+        const bool pass27b = peak27b < 1e-6;
+
+        // ---------- T27c: ARP ON, pool {48,52,55}, Up, Rate 1/8, Gate 0.5 ---
+        // Measure (i) onset count & spacing → rate-exact, (ii) per-onset
+        // pitch reproduces Up sequence, (iii) no click via T2-metric.
+        PE engD; engD.prepare(sr, 4096);
+        para3::Controller ctlD; ctlD.prepare(engD, sr);
+        engD.setParamNorm(PE::Param::Sustain, 1.0);
+        engD.setParamNorm(PE::Param::Cutoff,  0.85);   // open filter for clear pitch
+        engD.setParamNorm(PE::Param::Attack,  0.0);    // snappy onsets
+        engD.setParamNorm(PE::Param::DecRel,  0.05);
+        ctlD.setArpEnabled(true);
+        ctlD.setArpMode(0);                            // Up
+        ctlD.setArpRate(1);                            // 1/8
+        ctlD.setArpGate(0.5);
+        ctlD.setSeqTempo(120.0, 4);                    // 6000 smp/16th -> 12000/8th
+        ctlD.clock().start();
+        ctlD.midiNoteOn(48);
+        ctlD.midiNoteOn(52);
+        ctlD.midiNoteOn(55);
+        // 8 eighth-notes worth = 8 * 12000 = 96000 samples. Render that.
+        const int Md = 96000;
+        std::vector<float> d(Md);
+        ctlD.render(d.data(), Md);
+
+        // onset detection via amplitude envelope (Hann-windowed RMS, hop 64)
+        const int env_W = 256, env_H = 64;
+        std::vector<double> env;
+        for (int s = 0; s + env_W <= Md; s += env_H) {
+            double sum = 0.0;
+            for (int i = 0; i < env_W; ++i) {
+                const double w = 0.5 - 0.5 * std::cos(2.0*M_PI*i/(env_W-1));
+                const double v = (double)d[s+i] * w;
+                sum += v * v;
+            }
+            env.push_back(std::sqrt(sum / env_W));
+        }
+        double envMx = 0.0; for (double v : env) envMx = std::max(envMx, v);
+        // rising-edge onsets above 30% of max
+        std::vector<int> onsetSamp;                     // sample index of each onset
+        bool below = true;
+        for (size_t k = 0; k < env.size(); ++k) {
+            if (below && env[k] > 0.30 * envMx) {
+                onsetSamp.push_back((int)(k * env_H + env_W/2));
+                below = false;
+            } else if (env[k] < 0.10 * envMx) below = true;
+        }
+        // expected: 8 onsets (one per eighth in 1s window).
+        const int onsetN = (int)onsetSamp.size();
+
+        // pitch per onset: FFT 1024 samples starting at onset.
+        auto peakHzD = [&](int start) {
+            const int M = 1024; if (start + M > Md) return 0.0;
+            std::vector<cd> sp(M);
+            for (int i = 0; i < M; ++i) {
+                const double w = 0.5 - 0.5 * std::cos(2.0*M_PI*i/(M-1));
+                sp[i] = cd((double)d[start+i] * w, 0.0);
+            }
+            fft(sp);
+            int bk = 1; double best = 0.0;
+            for (int k = 1; k < M/2; ++k) {
+                const double m = std::abs(sp[k]);
+                if (m > best) { best = m; bk = k; }
+            }
+            double db = 0.0;
+            if (bk > 1 && bk < M/2-1) {
+                const double aL = std::abs(sp[bk-1]),
+                             bC = std::abs(sp[bk]),
+                             cR = std::abs(sp[bk+1]);
+                const double den = (aL - 2.0*bC + cR);
+                if (std::fabs(den) > 1e-18) db = 0.5 * (aL - cR) / den;
+            }
+            return (bk + db) * sr / (double)M;
+        };
+        const double f48 = para3::semitonesToHz(48.0);
+        const double f52 = para3::semitonesToHz(52.0);
+        const double f55 = para3::semitonesToHz(55.0);
+        const double expHz[3] = { f48, f52, f55 };
+        // Up cycles: 48,52,55,48,52,55,48,52 — first 8 onsets.
+        int orderHits = 0;
+        for (int i = 0; i < onsetN && i < 8; ++i) {
+            const double pk = peakHzD(onsetSamp[i] + 200);     // ~4ms post-onset, settled
+            const double want = expHz[i % 3];
+            // tolerance ±1 semitone (linear ≈ ±5.9%): conservative for FFT-bin
+            if (std::fabs(pk - want) / want < 0.06) ++orderHits;
+        }
+        // rate: median spacing between onsets ~ 12000 samples (1/8 @ 120 BPM/48k)
+        double spaceMed = 0.0;
+        if (onsetN >= 4) {
+            std::vector<int> gaps;
+            for (int i = 1; i < onsetN; ++i) gaps.push_back(onsetSamp[i] - onsetSamp[i-1]);
+            std::sort(gaps.begin(), gaps.end());
+            spaceMed = (double)gaps[gaps.size()/2];
+        }
+        const double spaceExp = 12000.0;
+        const bool rateOK = std::fabs(spaceMed - spaceExp) < 200.0;     // <1.7% of step
+        // click-free: T2-style global |dx| vs steady (samples 20000..30000 ≈ mid-loop)
+        auto dx = [&](int s, int n) {
+            double mx = 0.0;
+            for (int i = 0; i < n-1; ++i) mx = std::max(mx, (double)std::fabs(d[s+i+1]-d[s+i]));
+            return mx;
+        };
+        const double gD = dx(0, Md - 1);
+        const double sD = dx(40000, 4000);
+        const bool clickFree = gD <= sD * 1.6 && std::isfinite(gD) && std::isfinite(sD);
+
+        const bool pass27c = onsetN >= 7 && orderHits >= 6
+                          && rateOK && clickFree;
+        const bool pass = pass27a && pass27b && pass27c;
+        std::printf("\nT31 EXT-ARP Block A  (bit-id off / silence empty / Up exact)\n");
+        std::printf("   (a) arp off vs direct engine  : max|d| = %.3e  (== 0)\n", maxD27a);
+        std::printf("   (b) arp on, empty pool        : peak   = %.3e  (< 1e-6)\n", peak27b);
+        std::printf("   (c) onsets / order hits       : %d / 8 onsets, %d/8 pitch hits\n",
+                    onsetN, orderHits);
+        std::printf("   (c) rate spacing (1/8@120bpm) : median %.0f smp  (want 12000)\n", spaceMed);
+        std::printf("   (c) click-free  glob/steady   : %.5f / %.5f  (glob<=steady*1.6)\n", gD, sD);
+        std::printf("   -> %s   (a=%s b=%s c=%s)\n",
+                    pass ? "PASS" : "FAIL",
+                    pass27a ? "ok" : "FAIL",
+                    pass27b ? "ok" : "FAIL",
+                    pass27c ? "ok" : "FAIL");
+        if (!pass) ++failures;
+    }
+
     std::printf("\n==================================================\n");
     std::printf("%s  (%d failure%s)\n",
                 failures ? "OVERALL: FAIL" : "OVERALL: PASS",

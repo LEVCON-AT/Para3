@@ -68,12 +68,18 @@ void para3_set_lfo_shape(Para3* p, int s) {
          : (s == 3) ? S::Square   : S::Sine;
     p->engine.setLfoShape(sh);
 }
-void para3_note_on (Para3* p, int n)  { if (p) p->engine.noteOn(n);  }
-void para3_note_off(Para3* p, int n)  { if (p) p->engine.noteOff(n); }
+// EXT-ARP Block A: keyboard/MIDI notes now route through Controller::midiNoteOn/Off
+// so the arp can transform them when enabled. When arpEnabled_=false (default)
+// Controller::midiNoteOn calls eng_->noteOn(n) directly — same as before, with
+// one extra function-call hop the optimiser inlines. T27a proves bit-identity.
+void para3_note_on (Para3* p, int n)  { if (p) p->ctrl.midiNoteOn(n);  }
+void para3_note_off(Para3* p, int n)  { if (p) p->ctrl.midiNoteOff(n); }
 void para3_set_lfo_sync(Para3* p, int on) { if (p) p->engine.setLfoSync(on != 0); } // E1.2
 void para3_set_octave  (Para3* p, int oct){ if (p) p->engine.setOctave(oct); }       // E6.2
 
-void para3_seq_set_tempo (Para3* p, double bpm)  { if (p) p->ctrl.clock().setTempo(bpm,4); }
+// EXT-ARP Block A: route tempo through Controller::setSeqTempo so arp's own
+// step-samples accumulator is refreshed on every BPM change (spec §2.3 / §1.4).
+void para3_seq_set_tempo (Para3* p, double bpm)  { if (p) p->ctrl.setSeqTempo(bpm,4); }
 void para3_seq_set_swing (Para3* p, double s)    { if (p) p->ctrl.clock().setSwing(s); }
 void para3_seq_start     (Para3* p)              { if (p) p->ctrl.seqStart(); } // B4 restart-from-0
 // B2-fix: Stop must panic the engine BEFORE halting the clock. Otherwise any
@@ -133,6 +139,14 @@ void para3_seq_flux_commit  (Para3* p)                    { if (p) p->ctrl.fluxC
 long para3_seq_flux_dropped (Para3* p) { return p ? p->ctrl.fluxDropped() : 0; }
 
 void para3_midi_cc(Para3* p, int cc, double n) { if (p) p->ctrl.midiCC(cc, n); }
+
+// EXT-ARP Block A: controller-level settings (NOT in setParamNorm trichter —
+// no taper, no smoothing). Each call is RT-safe (one assignment + optional
+// step-samples recalc). All defaults are design defaults, NOT CALIB(E8).
+void para3_arp_enable(Para3* p, int on)        { if (p) p->ctrl.setArpEnabled(on != 0); }
+void para3_arp_mode  (Para3* p, int mode)      { if (p) p->ctrl.setArpMode(mode); }
+void para3_arp_rate  (Para3* p, int rate)      { if (p) p->ctrl.setArpRate(rate); }
+void para3_arp_gate  (Para3* p, double g)      { if (p) p->ctrl.setArpGate(g); }
 
 void para3_render(Para3* p, float* out, int n) {
     if (!p) return;

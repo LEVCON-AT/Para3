@@ -1087,6 +1087,7 @@ public:
         return false;
     }
     double phase() const noexcept { return curDur_ > 0.0 ? acc_ / curDur_ : 0.0; } // E3 [0,1)
+    double sixteenthSamples() const noexcept { return stepSamples_; }   // EXT-ARP read-only getter (Block A)
 private:
     double sr_ = 48000.0, acc_ = 0.0, stepSamples_ = 6000.0, swing_ = 0.0;
     double curDur_ = 6000.0;
@@ -1221,8 +1222,22 @@ public:
             eng_->setParamNorm(para3::ParaEngine::Param::Cutoff, norm);
         }
     }
-    void midiNoteOn (int n) noexcept { eng_->noteOn(n);  }
-    void midiNoteOff(int n) noexcept { eng_->noteOff(n); }
+    // EXT-ARP Block A: routing point for keyboard/MIDI notes. When arpEnabled_
+    // is false (default), behaviour is byte-identical to direct engine.noteOn —
+    // T27(a) proves max|d|=0 over a full render. When true, notes go to the
+    // arp pool instead and the per-sample arp scheduler drives the engine.
+    void midiNoteOn (int n) noexcept {
+        if (arpEnabled_) { arpAdd_(n); ++arpPhysHeld_; }   // EXT-ARP Block A
+        else             { eng_->noteOn(n); }
+    }
+    void midiNoteOff(int n) noexcept {
+        if (arpEnabled_) {                                  // EXT-ARP Block A
+            if (arpPhysHeld_ > 0) --arpPhysHeld_;
+            arpRemove_(n);                                  // pool unchanged if Hold (Block C)
+        } else {
+            eng_->noteOff(n);
+        }
+    }
 
     // Render n samples, applying sequencer + sorted MIDI events sample-accurately.
     void render(float* out, int n,
@@ -1254,10 +1269,52 @@ public:
                 if (clock_.tick(&stepIdx_)) onStep();
                 if (smooth_ && stepIdx_ >= 0) applySmoothLanes();   // E3 SMOOTH on
             }
+            // EXT-ARP Block A: per-sample arp scheduler. Runs only when enabled
+            // AND the clock is running (HW-arp parity §1.4). When disabled this
+            // block is dead code; T27(a) proves bit-identity vs. no-arp build.
+            if (arpEnabled_ && clock_.running()) {
+                arpAcc_ += 1.0;                                  // EXT-ARP
+                if (arpAcc_ >= arpStepSamples_) {                // EXT-ARP
+                    arpAcc_ -= arpStepSamples_;                  // EXT-ARP
+                    arpStep_();                                  // EXT-ARP
+                }
+                if (arpCur_ >= 0 && arpGateAcc_ > 0.0) {         // EXT-ARP gate
+                    arpGateAcc_ -= 1.0;                          // EXT-ARP
+                    if (arpGateAcc_ <= 0.0 && arpGate_ < 1.0) {  // EXT-ARP staccato
+                        eng_->noteOff(arpCur_); arpCur_ = -1;    // EXT-ARP
+                    }
+                }
+            }
             eng_->process(out + i, 1);
         }
     }
     int currentStep() const noexcept { return stepIdx_; }
+    // EXT-ARP Block A: observable + setters (no taper trichter — Controller settings).
+    long arpDropped() const noexcept { return arpDropped_; }     // EXT-ARP
+    void setArpEnabled(bool on) noexcept {                       // EXT-ARP
+        if (on == arpEnabled_) return;
+        arpEnabled_ = on;
+        if (!on && arpCur_ >= 0) { eng_->noteOff(arpCur_); arpCur_ = -1; }
+        arpAcc_ = 0.0; arpGateAcc_ = 0.0; arpIdx_ = 0;           // EXT-ARP clean transition
+        if (on) arpRecalcStepSamples_();                          // EXT-ARP pick up current tempo
+    }
+    // EXT-ARP: tempo entry-point that also refreshes arpStepSamples_.
+    // Wraps clock_.setTempo so the arp accumulator stays in sync after a
+    // BPM change. Existing C-API for seqTempo routes through here.
+    void setSeqTempo(double bpm, int stepsPerBeat = 4) noexcept { // EXT-ARP
+        clock_.setTempo(bpm, stepsPerBeat);
+        arpRecalcStepSamples_();
+    }
+    void setArpMode(int m) noexcept {                            // EXT-ARP (Block A: only Up=0)
+        arpMode_ = (m >= 0 && m <= 4) ? m : 0;
+    }
+    void setArpRate(int r) noexcept {                            // EXT-ARP rate index
+        arpRate_ = (r >= 0 && r < 6) ? r : 3;                    // EXT-ARP default 1/16
+        arpRecalcStepSamples_();
+    }
+    void setArpGate(double g) noexcept {                         // EXT-ARP 0..1
+        arpGate_ = (g < 0.0) ? 0.0 : (g > 1.0 ? 1.0 : g);
+    }
 
 private:
     void onStep() noexcept {
@@ -1321,6 +1378,65 @@ private:
                 eng_->setParamNorm(pr, a + (b - a) * ph);
         }
     }
+    // ============================ EXT-ARP Block A ============================
+    // Note-source transform sitting between keyboard/MIDI and the engine.
+    // Default OFF — every byte of the audio path is identical to the pre-EXT
+    // build when arpEnabled_==false (T27a is the proof). All controller
+    // settings, no taper/funnel. RT-safe: no allocation, no rand(), bounded.
+    static constexpr int kArpCap = 16;                 // EXT-ARP pool capacity
+    void arpAdd_(int n) noexcept {                     // EXT-ARP dedupe + bounded
+        for (int i = 0; i < arpPoolN_; ++i) if (arpPool_[i] == n) return;
+        if (arpPoolN_ >= kArpCap) { ++arpDropped_; return; }   // Pool full
+        arpPool_[arpPoolN_++] = n;
+    }
+    void arpRemove_(int n) noexcept {                  // EXT-ARP stable filter
+        int w = 0;
+        for (int r = 0; r < arpPoolN_; ++r)
+            if (arpPool_[r] != n) arpPool_[w++] = arpPool_[r];
+        arpPoolN_ = w;
+    }
+    void arpRecalcStepSamples_() noexcept {            // EXT-ARP rate table
+        // 16th-multipliers per §2.3 (1/4, 1/8, 1/8T, 1/16, 1/16T, 1/32).
+        static constexpr double mul[6] = { 4.0, 2.0, 4.0/3.0, 1.0, 2.0/3.0, 0.5 };
+        arpStepSamples_ = clock_.sixteenthSamples() * mul[arpRate_];
+    }
+    void arpStep_() noexcept {                         // EXT-ARP one beat
+        // OFF-before-ON discipline (mirrors E5, click-free via existing env).
+        if (arpCur_ >= 0) { eng_->noteOff(arpCur_); arpCur_ = -1; }
+        if (arpPoolN_ == 0) return;                    // idle, silence
+        // Block A: only Up implemented. Sort ascending into srt[], then
+        // note = srt[i % n] + 12*(i / n) with i = arpIdx_, n = arpPoolN_.
+        int srt[kArpCap];
+        for (int i = 0; i < arpPoolN_; ++i) srt[i] = arpPool_[i];
+        for (int i = 1; i < arpPoolN_; ++i) {           // insertion sort (n<=16)
+            int x = srt[i], j = i;
+            while (j > 0 && srt[j-1] > x) { srt[j] = srt[j-1]; --j; }
+            srt[j] = x;
+        }
+        const int n = arpPoolN_;
+        const int oct = 1;                              // Block A: range fixed at 1
+        const int L = n * oct;
+        const int i = arpIdx_;
+        const int note = srt[i % n] + 12 * (i / n);
+        eng_->noteOn(note); arpCur_ = note;
+        arpIdx_ = (i + 1) % L;
+        arpGateAcc_ = arpGate_ * arpStepSamples_;
+    }
+    // EXT-ARP state (Block A subset; Blocks B/C extend mode/oct/hold/rng).
+    bool   arpEnabled_   = false;                       // EXT-ARP DEFAULT off
+    int    arpMode_      = 0;                           // EXT-ARP 0=Up (only Block A)
+    int    arpRate_      = 3;                           // EXT-ARP DEFAULT 1/16
+    int    arpPool_[kArpCap] = {0};                     // EXT-ARP held notes
+    int    arpPoolN_     = 0;                           // EXT-ARP pool size
+    int    arpPhysHeld_  = 0;                           // EXT-ARP physical key count (Block C latch)
+    int    arpIdx_       = 0;                           // EXT-ARP running index
+    int    arpCur_       = -1;                          // EXT-ARP currently sounding note (-1 none)
+    double arpStepSamples_ = 6000.0;                    // EXT-ARP recalc on tempo/rate
+    double arpAcc_       = 0.0;                         // EXT-ARP sample accumulator
+    double arpGate_      = 0.5;                         // EXT-ARP DEFAULT staccato-50%
+    double arpGateAcc_   = 0.0;                         // EXT-ARP samples until NoteOff
+    long   arpDropped_   = 0;                           // EXT-ARP observable pool-overflow
+    // =========================================================================
     para3::ParaEngine* eng_ = nullptr;
     double      sr_ = 48000.0;
     Clock       clock_;
