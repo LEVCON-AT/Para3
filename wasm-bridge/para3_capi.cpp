@@ -75,7 +75,7 @@ void para3_set_octave  (Para3* p, int oct){ if (p) p->engine.setOctave(oct); }  
 
 void para3_seq_set_tempo (Para3* p, double bpm)  { if (p) p->ctrl.clock().setTempo(bpm,4); }
 void para3_seq_set_swing (Para3* p, double s)    { if (p) p->ctrl.clock().setSwing(s); }
-void para3_seq_start     (Para3* p)              { if (p) p->ctrl.clock().start(); }
+void para3_seq_start     (Para3* p)              { if (p) p->ctrl.seqStart(); } // B4 restart-from-0
 // B2-fix: Stop must panic the engine BEFORE halting the clock. Otherwise any
 // voice the sequencer started with a gate-on step that hasn't reached its
 // matching gate-off step yet stays gated forever (the observed "stuck note"

@@ -33,16 +33,17 @@ const REPO = join(__dirname, '..');
 // --- baseline of untouched files (md5; captured immediately after the worklet
 // memory fix landed, i.e. just before the U-sprints begin) ---------------
 const md5_baseline = {
-  // B1+B2 update: setOctave panic refactored to share ParaEngine::allNotesOff
-  // (new engine primitive). para3_seq_stop now calls engine.allNotesOff before
-  // clock.stop so a sequencer voice held by a gate-on step is released on Stop
-  // (proven by T28's negative test: without the fix tail RMS ≈ 0.37). Baseline
-  // bumped on Para3Engine.hpp + offline_test.cpp + para3_capi.cpp; the OTHER
-  // 14 engine/bridge files stay frozen.
-  'Para3Engine.hpp':                          '07a585e00685f20edd10b864154d0630',
-  'offline_test.cpp':                         '6175a6f9e00b9b66347b0b9a88a3f4ea',
+  // B4 update: Volca-parity Play=restart-from-step-1. Clock gains a `primed_`
+  // flag (first tick after start() fires immediately, no warm-up silence);
+  // Controller::seqStart resets stepIdx_=-1 before clock.start so the primed
+  // tick advances -1→0. para3_seq_start now routes through Controller::seqStart.
+  // Proven by T29 (immediate-fire) + T30 (Stop+Start = restart, not resume);
+  // T20 regression-clean. Baseline bumped on Para3Engine.hpp + offline_test.cpp
+  // + para3_capi.cpp; the OTHER 14 engine/bridge files stay frozen.
+  'Para3Engine.hpp':                          'ad10927c78d848f9948de81f810eb376',
+  'offline_test.cpp':                         'c7d4cbd14bed326f2a2ac6253095ec7c',
   'wasm-bridge/para3_capi.h':                 'f3ab5d6b0ae2c0258b12caa044cfa616',
-  'wasm-bridge/para3_capi.cpp':               '49d7e663934f9ef35e553e11b908a450',
+  'wasm-bridge/para3_capi.cpp':               'c93019a695e8e02ac86444187c32d965',
   'wasm-bridge/capi_test.cpp':                '867d8965127af1015ca1b56ac5b2b417',
   'wasm-bridge/scope_source_test.cpp':        '646828487b3a002a565b9ec87a7abe55',
   'wasm-bridge/parity_native.cpp':            'ffdb9666262ae54961d58dc7ec19d4b0',
@@ -391,6 +392,31 @@ const html = readFileSync(join(REPO, 'wasm-bridge/para3-responsive.html'), 'utf8
   const failed = checks.filter(c => !c.re.test(html));
   const pass = failed.length === 0;
   console.log(`\nU-B7: B3 visual cursor honours tempoDiv (1/2, 1/4 alignment)`);
+  console.log(`   checks   : ${checks.length - failed.length}/${checks.length}`);
+  if (failed.length) for (const f of failed) console.log(`      MISSING: ${f.label}`);
+  console.log(`   -> ${pass ? 'PASS' : 'FAIL'}`);
+  if (!pass) fails++;
+}
+
+// ----- (b8) B4 VISUAL CURSOR ANCHORED TO seqStart MOMENT -----------------
+// Without this anchor the cursor's starting phase depends on how long the
+// user idled on splash. User-reported symptom: cursor and audible note out
+// of phase until app reload. Engine pairs (T29/T30) prove step 0 fires at
+// t=t0 — the cursor must too.
+{
+  const checks = [
+    { re: /let\s+seqStartT\s*=\s*0\s*;/,
+      label: 'seqStartT declared (cursor anchor)' },
+    { re: /if\s*\(\s*playing\s*\)\s*seqStartT\s*=\s*audio\.ctx\s*\?\s*audio\.ctx\.currentTime\s*:\s*0\s*;/,
+      label: 'seqStartT captured on Play click (only when going to playing)' },
+    { re: /elapsed\s*=\s*Math\.max\(\s*0\s*,\s*t\s*-\s*seqStartT\s*\)/,
+      label: 'cursor formula uses (currentTime - seqStartT), not absolute time' },
+    { re: /Math\.floor\(\s*elapsed\s*\/\s*sm\s*\)/,
+      label: 'step index derived from elapsed/sm (not t/sm)' },
+  ];
+  const failed = checks.filter(c => !c.re.test(html));
+  const pass = failed.length === 0;
+  console.log(`\nU-B8: B4 visual cursor anchored to seqStart (Volca-parity)`);
   console.log(`   checks   : ${checks.length - failed.length}/${checks.length}`);
   if (failed.length) for (const f of failed) console.log(`      MISSING: ${f.label}`);
   console.log(`   -> ${pass ? 'PASS' : 'FAIL'}`);

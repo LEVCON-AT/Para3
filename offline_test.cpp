@@ -1812,6 +1812,92 @@ int main() {
         if (!pass) ++failures;
     }
 
+    // ---- T29  Volca-parity: seqStart fires step 0 immediately (B4) -------
+    // Without the primed_ mechanism the engine spent one full step duration
+    // (≈125 ms at 120 BPM) silent before step 1 was audible. Volca hardware
+    // does not warm up — Play = step 1 NOW. We assert that after the very
+    // first render sample post-start, currentStep() == 0 (not -1).
+    {
+        using PE = para3::ParaEngine;
+        PE eng; eng.prepare(sr, 4096);
+        para3::Controller ctrl; ctrl.prepare(eng, sr);
+        para3::Pattern p;
+        for (int s = 0; s < 16; ++s) { p.steps[s].gate = true; p.steps[s].note = 48; }
+        ctrl.bank().seedBoth(p);
+        ctrl.clock().setTempo(120.0, 4);                  // 6000 smp/step
+
+        // Pre-start: stepIdx must report -1 (no step has fired yet).
+        const int preStart = ctrl.currentStep();
+
+        ctrl.seqStart();                                  // B4 entry point
+        std::vector<float> one(1);
+        ctrl.render(one.data(), 1);                       // primed tick fires here
+        const int firstSample = ctrl.currentStep();
+
+        // After ~5999 more samples the engine should STILL be on step 0
+        // (step duration = 6000). Then sample 6000 takes us to step 1.
+        std::vector<float> nearEnd(5998);
+        ctrl.render(nearEnd.data(), 5998);
+        const int beforeBoundary = ctrl.currentStep();    // expect 0
+        std::vector<float> overBoundary(2);
+        ctrl.render(overBoundary.data(), 2);
+        const int afterBoundary = ctrl.currentStep();     // expect 1
+
+        const bool pass = preStart == -1
+                       && firstSample == 0
+                       && beforeBoundary == 0
+                       && afterBoundary  == 1;
+        std::printf("\nT29 seqStart immediate-fire  (Volca-parity, B4)\n");
+        std::printf("   pre-start      currentStep : %d  (want -1)\n", preStart);
+        std::printf("   after 1 sample currentStep : %d  (want 0  — primed)\n", firstSample);
+        std::printf("   at 5999 samples            : %d  (want 0  — same step)\n", beforeBoundary);
+        std::printf("   at 6001 samples            : %d  (want 1  — boundary crossed)\n", afterBoundary);
+        std::printf("   -> %s\n", pass ? "PASS" : "FAIL");
+        if (!pass) ++failures;
+    }
+
+    // ---- T30  Volca-parity: Stop+Start restarts at step 0 (no resume, B4) -
+    // Hardware idiom: Play always = step 1. The classic Stop-then-Play does
+    // NOT continue from where Stop happened. Before B4 the engine carried
+    // stepIdx_ across Stop and resumed wherever it was.
+    {
+        using PE = para3::ParaEngine;
+        PE eng; eng.prepare(sr, 4096);
+        para3::Controller ctrl; ctrl.prepare(eng, sr);
+        para3::Pattern p;
+        for (int s = 0; s < 16; ++s) { p.steps[s].gate = true; p.steps[s].note = 48; }
+        ctrl.bank().seedBoth(p);
+        ctrl.clock().setTempo(120.0, 4);                  // 6000 smp/step
+
+        // First play: walk ~3.5 steps in (well past step 0).
+        ctrl.seqStart();
+        std::vector<float> walk(21000);                   // 3.5 * 6000
+        ctrl.render(walk.data(), 21000);
+        const int midWalk = ctrl.currentStep();           // expect ~3
+
+        // Stop, then a small silent gap to make sure no ghost ticks leak.
+        ctrl.clock().stop();
+        std::vector<float> gap(2000);
+        ctrl.render(gap.data(), 2000);
+        const int afterStop = ctrl.currentStep();         // expect unchanged (3)
+
+        // Second play must restart at 0 (not resume at 4).
+        ctrl.seqStart();
+        std::vector<float> one(1);
+        ctrl.render(one.data(), 1);
+        const int restart = ctrl.currentStep();           // expect 0
+
+        const bool pass = midWalk == 3
+                       && afterStop == 3        // stop alone does not reset
+                       && restart  == 0;        // start does
+        std::printf("\nT30 Stop+Start = restart-from-0  (Volca-parity, B4)\n");
+        std::printf("   mid first-play (3.5 steps) : %d  (want 3)\n", midWalk);
+        std::printf("   after stop  (state frozen) : %d  (want 3 — unchanged)\n", afterStop);
+        std::printf("   after second start         : %d  (want 0 — restart)\n", restart);
+        std::printf("   -> %s\n", pass ? "PASS" : "FAIL");
+        if (!pass) ++failures;
+    }
+
     std::printf("\n==================================================\n");
     std::printf("%s  (%d failure%s)\n",
                 failures ? "OVERALL: FAIL" : "OVERALL: PASS",

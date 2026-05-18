@@ -767,10 +767,16 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
     };
     stepsEl.appendChild(b);}
   const sN=[...stepsEl.children];let playing=false,cur=-1,seqT=0;
+  // B4: visual-cursor anchor. Captured at the moment of Play so the cursor
+  // formula in frame() measures elapsed time SINCE seqStart, not since
+  // AudioContext creation. Without this, the cursor's starting phase depends
+  // on how long the user idled on the splash before pressing Play.
+  let seqStartT = 0;
   const playB=document.getElementById('play');
   playB.onclick=()=>{playing=!playing;playB.classList.toggle('on',playing);
     playB.textContent=playing?'■':'▶';
     if(!playing&&cur>=0){sN[cur].classList.remove('cur');laneB[cur].classList.remove('cur');cur=-1;}
+    if (playing) seqStartT = audio.ctx ? audio.ctx.currentTime : 0;   // B4 anchor
     emit((c) => playing ? c.seqStart() : c.seqStop());};
   document.getElementById('clr').onclick=()=>{onSteps.fill(false);
     sN.forEach(n=>n.classList.remove('on'));flushPattern();};
@@ -1232,13 +1238,17 @@ function emit(fn) { if (ready) try { fn(audio.controls); } catch (e) { console.w
 
     // sequencer visual cursor (UI-soft estimate; engine drives the audio)
     if (playing) {
-      // Bug-fix: must honour tempoDiv. Without `* tdivVal` the cursor walks at
+      // B3: must honour tempoDiv. Without `* tdivVal` the cursor walks at
       // 1/1 speed even when the engine is at 1/2 or 1/4 — the lit step no
       // longer matches the audible note, which reads as "Noten nicht korrekt
       // getimet" until the user toggles div back to 1/1.
+      // B4: must measure time SINCE seqStart (seqStartT), not since
+      // AudioContext creation. Engine fires step 0 immediately on Play
+      // (Clock::primed_) — at elapsed=0 the cursor must be on step 0.
       const bpm = K.tmp.get(), sm = (60 / (bpm * 4)) * tdivVal;
       const t = audio.ctx ? audio.ctx.currentTime : 0;
-      const c = (Math.floor(t / sm) % 16 + 16) % 16;
+      const elapsed = Math.max(0, t - seqStartT);
+      const c = (Math.floor(elapsed / sm) % 16 + 16) % 16;
       if (c !== cur) {
         if (cur >= 0) { sN[cur].classList.remove('cur'); laneB[cur].classList.remove('cur'); }
         cur = c; sN[cur].classList.add('cur'); laneB[cur].classList.add('cur');

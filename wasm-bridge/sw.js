@@ -14,7 +14,7 @@
 //  the worklet and needs no SAB.
 // =============================================================================
 
-const CACHE_VER  = 'para3-v12'; // B3: visual step cursor now honours tempoDiv (1/2, 1/4 alignment)
+const CACHE_VER  = 'para3-v13'; // B4: Play=restart-from-step-1 (Volca-parity); cursor anchored to seqStart
 const PRECACHE   = [
   './',
   './index.html',

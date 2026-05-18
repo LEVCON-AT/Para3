@@ -1058,13 +1058,22 @@ public:
     }
     void setDiv(int d) noexcept { div_ = (d==2||d==4)? d : 1; }   // E4.2 1/1,1/2,1/4
     void setSwing(double s) noexcept { swing_ = clamp(s, 0.0, 0.7); } // CALIB(sprint1)
-    void start() noexcept { running_ = true;  acc_ = 0.0; }
+    // B4: Volca-parity Play = restart from step 1. `primed_` makes the FIRST
+    // tick after start() fire immediately (no one-step warm-up silence), so
+    // step 0 is audible at t=t0 instead of t=t0+stepDuration. RT-safe: one
+    // bool write.
+    void start() noexcept { running_ = true;  acc_ = 0.0; primed_ = true; }
     void stop()  noexcept { running_ = false; }
     bool running() const noexcept { return running_; }
 
     // returns true exactly on the sample a new step begins; *stepIdxIo advances
     inline bool tick(int* stepIdxIo) noexcept {
         if (!running_) return false;
+        if (primed_) {                                       // B4: first tick after start()
+            primed_ = false;
+            *stepIdxIo = (*stepIdxIo + 1) & 15;              // -1 → 0 (paired with Controller::seqStart)
+            return true;
+        }
         acc_ += 1.0;
         const bool odd = ((*stepIdxIo) & 1) != 0;
         const double dur = stepSamples_ * (odd ? (1.0 - swing_) : (1.0 + swing_))
@@ -1083,6 +1092,7 @@ private:
     double curDur_ = 6000.0;
     int    div_ = 1;                                          // E4.2
     bool   running_ = false;
+    bool   primed_  = false;                                  // B4 Volca-parity Play=restart
 };
 
 // One incoming MIDI-ish event, sample-offset within the next render block.
@@ -1112,6 +1122,10 @@ public:
     Pattern&     editPattern() noexcept { return edit_; }
     void         commitEdit()  noexcept { bank_.edit() = edit_; bank_.commit(); }
     void armRecord(bool on) noexcept { recording_ = on; }
+    // B4: Volca-parity Play=restart. Resetting stepIdx_=-1 here pairs with
+    // Clock::primed_ — the first primed tick advances -1→0 so step 0 fires
+    // immediately on every Play (no resume from where Stop happened). RT-safe.
+    void seqStart() noexcept { stepIdx_ = -1; clock_.start(); }
 
     // ---- E3 motion: ziel-parametric, lock-free (edit_ -> commit) ----------
     static bool motionCapable(int pid) noexcept {        // Resonance(1) refused
