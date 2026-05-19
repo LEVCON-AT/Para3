@@ -14,7 +14,7 @@
 //  the worklet and needs no SAB.
 // =============================================================================
 
-const CACHE_VER  = 'para3-v38'; // UX: motion-rec glow ring inside cap (no rect outline) + keyboard touch-glide (touch-action:none)
+const CACHE_VER  = 'para3-v39'; // LAB-10 polish: --accent-grad CSS variable (replaces 7× linear-gradient on-state)
 const PRECACHE   = [
   './',
   './index.html',
