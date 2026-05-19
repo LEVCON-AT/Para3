@@ -3132,6 +3132,78 @@ int main() {
         if (!pass) ++failures;
     }
 
+    // ---- T47  EXT-FLUX-GATE: per-step gate-length shortens note duration ---
+    // Neutral test (anti-blender): gateLen=1.0 (struct default) must produce
+    // output bit-identical to a pattern with gateLen never written.
+    // Effect test: gateLen=0.3 fires noteOff mid-step → late-window RMS drops
+    // far below the early-window RMS (release tail decayed).
+    {
+        const double sr_ = sr; using PE=para3::ParaEngine;
+        const int W = 24000;   // 0.5 s @ 48k
+        std::vector<float> a(W), b(W), c0(W);
+
+        auto run = [&](double gateLen, bool writeGate, std::vector<float>& out){
+            PE e; e.prepare(sr_, W);
+            e.setParamNorm(PE::Param::Cutoff,   0.8);
+            e.setParamNorm(PE::Param::Resonance,0.3);
+            e.setParamNorm(PE::Param::Attack,   0.0);
+            e.setParamNorm(PE::Param::DecRel,   0.08);
+            e.setParamNorm(PE::Param::Sustain,  0.85);
+            e.setParamNorm(PE::Param::Volume,   1.0);
+            e.setParamNorm(PE::Param::DelayMix, 0.0);
+            para3::Controller c; c.prepare(e, sr_);
+            para3::Pattern& ep = c.editPattern();
+            ep.length = 16;
+            ep.steps[0].gate = true; ep.steps[0].note = 60;
+            if (writeGate) ep.steps[0].gateLen = gateLen;
+            c.commitEdit();
+            c.setSeqTempo(60, 4);                 // 1 step ≈ 250 ms @ 60 BPM 1/16
+            c.seqStart();
+            c.render(out.data(), W);
+        };
+
+        run(1.0, false, c0);   // never write gateLen
+        run(1.0, true,  a);    // explicit gateLen=1.0
+        run(0.3, true,  b);    // explicit gateLen=0.3 (note off after ~75 ms)
+
+        // Bit identity between defaulted-vs-explicit gateLen=1.0
+        double maxNeutral = 0;
+        for (int i=0;i<W;++i) maxNeutral = std::max(maxNeutral,
+            std::fabs((double)a[i]-(double)c0[i]));
+
+        // Compare RMS in two windows: early (50..100 ms) vs late (200..245 ms)
+        const int win = (int)(sr_ * 0.020);
+        auto rmsAt = [&](const std::vector<float>& y, int sStart, int sEnd){
+            double s=0; int n=0;
+            for (int j=sStart; j+win<sEnd; j+=win) {
+                double acc=0;
+                for (int k=0;k<win;++k) acc += (double)y[j+k]*y[j+k];
+                s += std::sqrt(acc/win); ++n;
+            }
+            return n>0 ? s/n : 0.0;
+        };
+        const int eS = (int)(sr_ * 0.050), eE = (int)(sr_ * 0.100);
+        const int lS = (int)(sr_ * 0.200), lE = (int)(sr_ * 0.245);
+        const double earlyFull = rmsAt(a, eS, eE), lateFull = rmsAt(a, lS, lE);
+        const double earlyCut  = rmsAt(b, eS, eE), lateCut  = rmsAt(b, lS, lE);
+        // gateLen=1.0: late ≈ early (sustained). gateLen=0.3: late << early.
+        const double ratioFull = lateFull / std::max(earlyFull, 1e-9);
+        const double ratioCut  = lateCut  / std::max(earlyCut,  1e-9);
+
+        const bool neutral = maxNeutral == 0.0;
+        const bool effect  = ratioCut < 0.5 * ratioFull;     // gate-off pulls late far below
+        const bool pass    = neutral && effect && earlyFull > 0.05;
+
+        std::printf("\nT47 EXT-FLUX-GATE  (per-step gate-length shortens note)\n");
+        std::printf("   gateLen=1.0 vs neutral max|d|: %.3e  (want == 0)\n", maxNeutral);
+        std::printf("   gateLen=1.0  early/late RMS  : %.4f / %.4f  ratio %.3f\n",
+                    earlyFull, lateFull, ratioFull);
+        std::printf("   gateLen=0.3  early/late RMS  : %.4f / %.4f  ratio %.3f\n",
+                    earlyCut,  lateCut,  ratioCut);
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if (!pass) ++failures;
+    }
+
     std::printf("\n==================================================\n");
     std::printf("%s  (%d failure%s)\n",
                 failures ? "OVERALL: FAIL" : "OVERALL: PASS",

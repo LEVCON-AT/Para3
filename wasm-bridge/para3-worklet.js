@@ -39,7 +39,8 @@ const OP = {
   SEQ_FLUX_PARAM:37,         // EXT-FLUX — i0=pid (0..15) d=norm01
   SEQ_FLUX_CLEAR:38,         // EXT-FLUX — drop queued+published events
   SEQ_FLUX_QUANTIZE:39,      // EXT-FLUX — i0=on (1/16 snap; off=F·FINE)
-  SEQ_STEP_VEL:40,           // EXT-FLUX-VEL — i0=idx d=norm 0..1
+  SEQ_STEP_VEL:40,           // EXT-FLUX-VEL  — i0=idx d=norm 0..1
+  SEQ_STEP_GATE:41,          // EXT-FLUX-GATE — i0=idx d=norm 0..1
 };
 
 function makeImports(memory) {
@@ -135,6 +136,7 @@ class Para3Processor extends AudioWorkletProcessor {
         case OP.SEQ_FLUX_CLEAR:    x.para3_seq_flux_clear(p); break;            // EXT-FLUX
         case OP.SEQ_FLUX_QUANTIZE: x.para3_seq_flux_quantize(p, i0); break;     // EXT-FLUX
         case OP.SEQ_STEP_VEL:      x.para3_seq_step_vel(p, i0, d); break;       // EXT-FLUX-VEL
+        case OP.SEQ_STEP_GATE:     x.para3_seq_step_gate(p, i0, d); break;      // EXT-FLUX-GATE
         case OP.SEQ_FLUX_COMMIT:   x.para3_seq_flux_commit(p); break;           // E5
         case OP.SET_OCTAVE:        x.para3_set_octave(p, i0); break;            // E6.2
         case OP.ARP_ENABLE:        x.para3_arp_enable (p, i0); break;           // EXT-ARP

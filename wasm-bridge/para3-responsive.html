@@ -238,6 +238,16 @@ body{
   box-shadow:0 0 4px color-mix(in srgb,var(--accent) 60%,transparent)}
 .step.velMode{cursor:ns-resize}
 .step.velMode::after{display:none}
+/* EXT-FLUX-GATE — per-step gate-length bar at the bottom of each step.
+   Width = gateLen × full step width (--accent-dim). Horizontal drag in
+   GATE mode (ew-resize cursor). */
+.step .gat{position:absolute;bottom:3px;left:5px;right:5px;height:3px;
+  background:color-mix(in srgb,var(--ink-dim) 35%,transparent);
+  border-radius:2px;pointer-events:none}
+.step .gat .gf{position:absolute;top:0;left:0;height:100%;width:100%;
+  background:var(--accent-dim);border-radius:2px;opacity:.95}
+.step.gateMode{cursor:ew-resize}
+.step.gateMode::after{display:none}
 .seg{display:inline-flex;border-radius:8px;overflow:hidden;box-shadow:var(--soft)}
 .seg .tbtn{border-radius:0;padding:9px 11px;box-shadow:0 1px 0 rgba(255,255,255,.06) inset}
 /* E5 FLUX disabled state for step grid + lane: visually inert, click-inert.
@@ -557,6 +567,7 @@ body{
         <button class="tbtn" id="stp"   title="STEP TRIGGER · EG retrigger every step">STP</button>
         <button class="tbtn" id="astep" title="ACTIVE-STEP MODE · click steps to skip">ACT</button>
         <button class="tbtn" id="vmode" title="VEL MODE · drag vertically on a step to set its velocity (Korg-Volca-Bass / Minilogue per-step accent)">VEL</button>
+        <button class="tbtn" id="gmode" title="GATE MODE · drag horizontally on a step to set its gate length (Electribe / Minilogue per-step gate)">GATE</button>
         <button class="tbtn" id="metro" title="METRONOME · delay bypassed engine-side">METRO</button>
         <span class="seg" id="tdiv">
           <button class="tbtn on" data-d="1">1/1</button>
@@ -1181,17 +1192,27 @@ function emit(fn) {
   // EXT-FLUX-VEL — per-step velocity 0..1 (Volca-Bass / Minilogue per-step
   // accent). Default 1.0 = bit-identical to pre-EXT-FLUX-VEL audio output.
   const stepVel = new Array(16).fill(1.0);
+  // EXT-FLUX-GATE — per-step gate-length 0..1. Default 1.0 = legacy hold-
+  // until-next-step path (Engine T47 proves bit-identity to pre-EXT-stand).
+  const stepGate = new Array(16).fill(1.0);
   let astepMode=false;
   let velMode=false;
+  let gateMode=false;
   function setStepVelDisplay(i) {
     const vf = stepsEl.children[i].querySelector('.vf');
     if (vf) vf.style.width = (stepVel[i] * 100).toFixed(1) + '%';
   }
+  function setStepGateDisplay(i) {
+    const gf = stepsEl.children[i].querySelector('.gf');
+    if (gf) gf.style.width = (stepGate[i] * 100).toFixed(1) + '%';
+  }
   for(let i=0;i<16;i++){const b=document.createElement('button');
     b.className='step'+(onSteps[i]?' on':'');
-    b.innerHTML='<span class="vel"><span class="vf"></span></span><span class="n">'+(i+1)+'</span>';
+    b.innerHTML='<span class="vel"><span class="vf"></span></span>'
+               +'<span class="gat"><span class="gf"></span></span>'
+               +'<span class="n">'+(i+1)+'</span>';
     b.onclick=()=>{
-      if (velMode) return;     // drag-handler owns interaction in VEL mode
+      if (velMode || gateMode) return;     // drag-handler owns interaction
       if (astepMode) {
         // E4.3: in active-step mode the grid edits the skip state.
         actStep[i]=!actStep[i];
@@ -1204,17 +1225,19 @@ function emit(fn) {
         flushPattern();
       }
     };
-    // VEL-mode pointer drag: vertical position maps to velocity 0..1.
-    // Down=0, Up=1. Default cursor switches to ns-resize via .velMode class.
-    let dragV = false;
+    // VEL/GATE-mode pointer drag. Vertical position maps to velocity, horiz.
+    // position maps to gate-length. Default cursor switches via velMode/gateMode.
+    let dragV = false, dragG = false;
     b.addEventListener('pointerdown', (e) => {
-      if (!velMode) return;
-      dragV = true; b.setPointerCapture(e.pointerId);
-      updateVel(e);
+      if (velMode)       { dragV = true; b.setPointerCapture(e.pointerId); updateVel(e); }
+      else if (gateMode) { dragG = true; b.setPointerCapture(e.pointerId); updateGate(e); }
     });
-    b.addEventListener('pointermove', (e) => { if (dragV) updateVel(e); });
-    b.addEventListener('pointerup',   (e) => {
-      if (!dragV) return; dragV = false;
+    b.addEventListener('pointermove', (e) => {
+      if (dragV) updateVel(e); else if (dragG) updateGate(e);
+    });
+    b.addEventListener('pointerup', (e) => {
+      if (!dragV && !dragG) return;
+      dragV = false; dragG = false;
       try { b.releasePointerCapture(e.pointerId); } catch (_) {}
     });
     function updateVel(e) {
@@ -1225,7 +1248,17 @@ function emit(fn) {
       show('VEL ' + (i+1), Math.round(v*100), '%');
       emit((c) => c.seqStepVel(i, v));
     }
-    stepsEl.appendChild(b); setStepVelDisplay(i);}
+    function updateGate(e) {
+      const r = b.getBoundingClientRect();
+      const g = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+      stepGate[i] = g;
+      setStepGateDisplay(i);
+      show('GATE ' + (i+1), Math.round(g*100), '%');
+      emit((c) => c.seqStepGate(i, g));
+    }
+    stepsEl.appendChild(b);
+    setStepVelDisplay(i);
+    setStepGateDisplay(i);}
   const sN=[...stepsEl.children];let playing=false,cur=-1,seqT=0;
   // B4 + EXT-ARP-FIX3: visual-cursor mirrors engine state EXACTLY by tracking
   // the same two quantities the engine clock uses: an integer step + a
@@ -1308,16 +1341,22 @@ function emit(fn) {
   // E4.3 — active-step *mode* is a UI mode (which state the grid edits).
   // The engine just receives per-step seqActiveStep events on grid clicks.
   const astepB=document.getElementById('astep');
-  astepB.onclick=()=>{astepMode=!astepMode;astepB.classList.toggle('on',astepMode);
-    // Re-render the step grid in the active mode: highlight 'skip' state when on,
-    // 'gate-on' state when off. Both states are preserved independently.
+  astepB.onclick=()=>{
+    const want = !astepMode;
+    // ACT mode is mutually exclusive with VEL/GATE — clear those first so
+    // their visual state doesn't bleed into the active-step rendering.
+    if (vModeB && gModeB) {
+      if (velMode)  { velMode = false; vModeB.classList.remove('on');
+        sN.forEach(b => b.classList.remove('velMode')); }
+      if (gateMode) { gateMode = false; gModeB.classList.remove('on');
+        sN.forEach(b => b.classList.remove('gateMode')); }
+    }
+    astepMode = want;
+    astepB.classList.toggle('on', astepMode);
     sN.forEach((b,i)=>{
       b.classList.toggle('on',  !astepMode && onSteps[i]);
       b.classList.toggle('skip', astepMode && !actStep[i]);
     });
-    // VEL mode is mutually exclusive with ACT mode (clicks/drags own the grid).
-    if (astepMode && velMode) { velMode = false; vModeB.classList.remove('on');
-      sN.forEach(b => b.classList.remove('velMode')); }
     show('STEP MODE', astepMode ? 'ACTIVE-STEP (skip edit)' : 'GATE', '');
   };
   // EXT-FLUX-VEL — VEL mode toggle. Activates per-step vertical drag on the
@@ -1325,16 +1364,32 @@ function emit(fn) {
   // gain .velMode class so the cursor shows ns-resize and the ::after dot
   // is hidden in favour of the velocity strip readout.
   const vModeB = document.getElementById('vmode');
+  const gModeB = document.getElementById('gmode');
+  function clearModeFlags() {
+    if (astepMode) { astepMode = false; astepB.classList.remove('on');
+      sN.forEach((b,i) => { b.classList.toggle('on', onSteps[i]); b.classList.remove('skip'); }); }
+    if (velMode)  { velMode = false; vModeB.classList.remove('on');
+      sN.forEach(b => b.classList.remove('velMode')); }
+    if (gateMode) { gateMode = false; gModeB.classList.remove('on');
+      sN.forEach(b => b.classList.remove('gateMode')); }
+  }
   vModeB.onclick = () => {
-    velMode = !velMode;
+    const want = !velMode;
+    clearModeFlags();
+    velMode = want;
     vModeB.classList.toggle('on', velMode);
     sN.forEach(b => b.classList.toggle('velMode', velMode));
-    if (velMode && astepMode) { astepMode = false; astepB.classList.remove('on');
-      sN.forEach((b,i) => {
-        b.classList.toggle('on',  onSteps[i]);
-        b.classList.toggle('skip', false);
-      }); }
     show('VEL MODE', velMode ? 'ON (drag steps)' : 'OFF', '');
+  };
+  // EXT-FLUX-GATE — GATE mode toggle. Horizontal drag in a step sets its
+  // gate-length 0..1. Mutually exclusive with VEL and ACT.
+  gModeB.onclick = () => {
+    const want = !gateMode;
+    clearModeFlags();
+    gateMode = want;
+    gModeB.classList.toggle('on', gateMode);
+    sN.forEach(b => b.classList.toggle('gateMode', gateMode));
+    show('GATE MODE', gateMode ? 'ON (drag steps)' : 'OFF', '');
   };
 
   const metroB=document.getElementById('metro');let metroOn=false;

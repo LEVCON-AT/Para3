@@ -138,6 +138,14 @@ void para3_seq_step_vel    (Para3* p, int idx, double n) {
     if (n > 1.0) n = 1.0;
     p->ctrl.editPattern().steps[idx].vel = n;
 }
+void para3_seq_step_gate   (Para3* p, int idx, double n) {
+    // EXT-FLUX-GATE: schedules a sample-accurate noteOff at step+n*stepLen.
+    // 1.0 = legacy hold-until-next-step (bit-identical to pre-EXT-stand).
+    if (!p || idx < 0 || idx >= 16) return;
+    if (n < 0.0) n = 0.0;
+    if (n > 1.0) n = 1.0;
+    p->ctrl.editPattern().steps[idx].gateLen = n;
+}
 
 void para3_seq_flux_mode    (Para3* p, int on)            { if (p) p->ctrl.setFluxMode(on!=0); }
 void para3_seq_flux_loop_len(Para3* p, unsigned int s)    { if (p) p->ctrl.fluxSetLoopLen(s); }

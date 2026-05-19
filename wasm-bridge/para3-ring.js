@@ -66,7 +66,8 @@ export const OP = Object.freeze({
   SEQ_FLUX_PARAM:    37, // i0 = pid (0..15), d = norm01
   SEQ_FLUX_CLEAR:    38, // -- drop queued+published flux events
   SEQ_FLUX_QUANTIZE: 39, // i0 = on (0|1)  -- 1/16-step snap (default 1 Korg)
-  SEQ_STEP_VEL:      40, // EXT-FLUX-VEL i0 = idx (0..15), d = norm 0..1
+  SEQ_STEP_VEL:      40, // EXT-FLUX-VEL  i0 = idx (0..15), d = norm 0..1
+  SEQ_STEP_GATE:     41, // EXT-FLUX-GATE i0 = idx (0..15), d = norm 0..1
 });
 
 const HDR = 2;                       // header int32 count
@@ -145,7 +146,8 @@ export class Para3Ring {
                        { return this._push(OP.SEQ_FLUX_PARAM, pid | 0, 0, norm01); }
   seqFluxClear()       { return this._push(OP.SEQ_FLUX_CLEAR, 0, 0, 0); }
   seqFluxQuantize(on)  { return this._push(OP.SEQ_FLUX_QUANTIZE, on ? 1 : 0, 0, 0); }
-  seqStepVel(idx, n)   { return this._push(OP.SEQ_STEP_VEL, idx | 0, 0, n); }
+  seqStepVel(idx, n)   { return this._push(OP.SEQ_STEP_VEL,  idx | 0, 0, n); }
+  seqStepGate(idx, n)  { return this._push(OP.SEQ_STEP_GATE, idx | 0, 0, n); }
   seqFluxCommit()      { return this._push(OP.SEQ_FLUX_COMMIT, 0, 0, 0); }
   setOctave(oct)       { return this._push(OP.SET_OCTAVE, oct | 0, 0, 0); }
   // EXT-ARP producers — controller settings (no taper trichter).

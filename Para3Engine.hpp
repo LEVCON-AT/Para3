@@ -1005,6 +1005,10 @@ struct Step {
     bool   active    = true;    // E4.3 false => step skipped (play AND record)
     double vel       = 1.0;     // EXT-FLUX-VEL per-step velocity 0..1 (default 1.0
                                 // = bitidentisch zum pre-EXT-FLUX-VEL-Stand).
+    double gateLen   = 1.0;     // EXT-FLUX-GATE per-step gate-length fraction
+                                // 0..1 (default 1.0 = legacy "hold until next
+                                // step"; <1 schedules sample-accurate noteOff
+                                // at step+gateLen*stepLen).
 };
 // E3: per-parameter motion lanes (sparse). Indexed directly by param id;
 // size covers all current + planned ids. Resonance(1)/Tempo refused upstream.
@@ -1366,6 +1370,18 @@ public:
                 if (L > 0) { if (++fcur_ >= L) { fcur_ = 0; fpos_ = 0; } } // click-free wrap
                 else       { ++fcur_; }
             } else {
+                // EXT-FLUX-GATE: per-step gate-length scheduler. Decrement the
+                // pending sample countdown before the next tick so a gateOff
+                // fires on the right sample even when it lands at a step
+                // boundary. Default -1 keeps this branch a one-cycle no-op.
+                if (seqGateOffSamples_ > 0) {
+                    if (--seqGateOffSamples_ == 0 && seqGateOffNote_ >= 0) {
+                        const int gn = seqGateOffNote_;
+                        eng_->noteOff(gn);
+                        if (seqLastGatedNote_ == gn) seqLastGatedNote_ = -1;
+                        seqGateOffNote_ = -1;
+                    }
+                }
                 if (clock_.tick(&stepIdx_)) onStep();
                 if (smooth_ && stepIdx_ >= 0) applySmoothLanes();   // E3 SMOOTH on
             }
@@ -1526,6 +1542,19 @@ private:
             // the velocity of their original hit (Volca-Bass/Minilogue semantic).
             // Default vel=1.0 = bitidentisch (anti-blender T46-NEU).
             stepVelGain_ = s.vel;
+            // EXT-FLUX-GATE — schedule sample-accurate noteOff at gateLen
+            // fraction of the step. gateLen=1.0 (default) → leave scheduler
+            // disarmed (-1); the legacy next-step noteOff path keeps full
+            // bit-identity to the pre-EXT-FLUX-GATE stand.
+            if (s.gateLen < 1.0) {
+                const int len = (int)clock_.sixteenthSamples();
+                int n = (int)(len * (s.gateLen < 0.0 ? 0.0 : s.gateLen));
+                if (n < 1) n = 1;          // gateLen>0 always fires at least 1 sample
+                seqGateOffSamples_ = n;
+                seqGateOffNote_    = s.note;
+            } else {
+                seqGateOffSamples_ = -1;
+            }
         } else if (!stepTrig_) {
             if (seqLastGatedNote_ >= 0) {
                 eng_->noteOff(seqLastGatedNote_);
@@ -1722,6 +1751,8 @@ private:
     bool        fluxRec_      = false;           // E5
     bool        fluxQuantize_ = true;            // EXT-FLUX default 1/16 (Korg)
     double      stepVelGain_  = 1.0;             // EXT-FLUX-VEL (default 1.0)
+    int         seqGateOffSamples_ = -1;         // EXT-FLUX-GATE pending noteOff countdown
+    int         seqGateOffNote_    = -1;         // EXT-FLUX-GATE note awaiting gate-off
     unsigned int fcur_ = 0;                      // E5 sample cursor
     unsigned short fpos_ = 0;                     // E5 next-event index
     long        fluxDropped_ = 0;                // E5 observable overflow

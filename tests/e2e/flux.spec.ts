@@ -282,6 +282,66 @@ test.describe('FLUX-2 — Note + Param events, Timeline UI, Clear', () => {
     await page.locator('#vmode').click();   // off again
   });
 
+  test('US-STEP-GATE — per-step gate-length shortens note decay', async ({ page }) => {
+    await bootstrap(page);
+    const fs = await page.evaluate(() => (window as any).__para3CaptureSampleRate());
+
+    // Tempo 30 BPM × 1/16 = 500 ms / step. gateLen=0.3 fires noteOff at 150 ms;
+    // capture window 170-350 ms post-Start gets full sustain for gateLen=1.0
+    // but only the decayed tail for gateLen=0.3.
+    async function gatePeak(gateLen: number): Promise<number> {
+      return await page.evaluate(async (gl) => {
+        const c = (window as any).__para3Debug().audio.controls;
+        c.seqStop();
+        await new Promise(r => setTimeout(r, 300));
+        c.setParam(0, 0.8); c.setParam(11, 0.85); c.setParam(9, 0.0);
+        c.setParam(10, 0.06); c.setParam(4, 0.0); c.setParam(15, 1.0);
+        for (let i = 0; i < 16; ++i) c.seqStep(i, 60, 0, 0, 0.5);
+        c.seqStep(0, 60, 1, 0, 0.5);
+        c.seqStepGate(0, gl);
+        c.seqCommit();
+        c.seqTempo(30);
+        c.seqStart();
+        await new Promise(r => setTimeout(r, 350));
+        const fs = (window as any).__para3CaptureSampleRate();
+        const samp = Array.from((window as any).__para3Capture(Math.round(fs * 0.18)));
+        c.seqStop();
+        await new Promise(r => setTimeout(r, 400));
+        const W = Math.round(fs * 0.020);
+        let m = 0;
+        for (let j = 0; j + W < samp.length; j += W) {
+          let a = 0;
+          for (let k = 0; k < W; ++k) a += samp[j+k] * samp[j+k];
+          m = Math.max(m, Math.sqrt(a / W));
+        }
+        return m;
+      }, gateLen);
+    }
+
+    const full = await gatePeak(1.0);
+    const cut  = await gatePeak(0.3);
+    expect(full).toBeGreaterThan(0.05);
+    // gateLen=0.3 audio is < 30 % of gateLen=1.0 audio in this late window.
+    expect(cut).toBeLessThan(full * 0.3);
+  });
+
+  test('US-STEP-GATE-MODE-UI — GATE button toggles class on step buttons', async ({ page }) => {
+    await bootstrap(page);
+    expect(await page.locator('.step').first().evaluate(b => b.classList.contains('gateMode'))).toBe(false);
+    await page.locator('#gmode').click();
+    await page.waitForTimeout(120);
+    expect(await page.locator('.step').first().evaluate(b => b.classList.contains('gateMode'))).toBe(true);
+    expect(await page.locator('#gmode').evaluate(b => b.classList.contains('on'))).toBe(true);
+
+    // Mutual exclusion: clicking VEL turns GATE off
+    await page.locator('#vmode').click();
+    await page.waitForTimeout(120);
+    expect(await page.locator('.step').first().evaluate(b => b.classList.contains('gateMode'))).toBe(false);
+    expect(await page.locator('.step').first().evaluate(b => b.classList.contains('velMode'))).toBe(true);
+
+    await page.locator('#vmode').click();   // cleanup
+  });
+
   test('US-FLUX-TIMELINE-UI — Timeline shows when fluxOn, step grid hides', async ({ page }) => {
     await bootstrap(page);
 

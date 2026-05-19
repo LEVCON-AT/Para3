@@ -14,7 +14,7 @@
 //  the worklet and needs no SAB.
 // =============================================================================
 
-const CACHE_VER  = 'para3-v34'; // FLUX-4: per-step velocity (EXT-FLUX-VEL) + VEL mode + Velocity strip per step
+const CACHE_VER  = 'para3-v35'; // FLUX-5: per-step gate-length (EXT-FLUX-GATE) + GATE mode + Gate-bar per step
 const PRECACHE   = [
   './',
   './index.html',

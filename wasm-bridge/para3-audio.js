@@ -72,6 +72,9 @@ export class Para3Controls {
   // EXT-FLUX-VEL — per-step velocity 0..1 (Volca-Bass/Minilogue standard).
   // Default 1.0 = bitidentisch zum pre-EXT-FLUX-VEL-Stand.
   seqStepVel(idx, norm01)   { return this._do(() => this.ring.seqStepVel(idx, norm01)); }
+  // EXT-FLUX-GATE — per-step gate-length 0..1 (Volca-Bass/Electribe/Minilogue).
+  // Default 1.0 = legacy hold-until-next-step (bit-identical pre-EXT path).
+  seqStepGate(idx, norm01)  { return this._do(() => this.ring.seqStepGate(idx, norm01)); }
   // E6.2 — engine pitch offset (integer semitones × 12). Replaces host-side
   // +oct*12 in midiOfKey so the engine owns the pitch path (band-limited).
   setOctave(oct)            { return this._do(() => this.ring.setOctave(oct)); }
