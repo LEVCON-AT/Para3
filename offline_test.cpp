@@ -3620,13 +3620,15 @@ int main() {
     {
         auto rmsStdDev = [&](double pwmDepthNorm) {
             para3::ParaEngine eng; eng.prepare(sr, 4096);
-            eng.setMode(para3::ParaAllocator::Mode::Unison);
+            // Mode::Poly with single noteOn → only voice 0 active → no Unison
+            // detune beats. Pure pulse audio, clean baseline for PWM-detection.
+            eng.setMode(para3::ParaAllocator::Mode::Poly);
             eng.setOscWave(0,1); eng.setOscWave(1,1); eng.setOscWave(2,1);
             eng.setParamNorm(para3::ParaEngine::Param::Cutoff, 1.0);
             eng.setParamNorm(para3::ParaEngine::Param::Resonance, 0.0);
             eng.setParamNorm(para3::ParaEngine::Param::Sustain, 1.0);
             eng.setParamNorm(para3::ParaEngine::Param::Attack, 0.0);
-            eng.setParamNorm(para3::ParaEngine::Param::LfoRate, 0.5);    // moderate Hz
+            eng.setParamNorm(para3::ParaEngine::Param::LfoRate, 0.5);    // ≈1 Hz post-taper
             eng.setParamNorm(para3::ParaEngine::Param::LfoCutDepth, 0.0);
             eng.setParamNorm(para3::ParaEngine::Param::LfoPitchDepth, 0.0);
             eng.setParamNorm(para3::ParaEngine::Param::DelayMix, 0.0);
@@ -3634,7 +3636,7 @@ int main() {
             eng.setParamNorm(para3::ParaEngine::Param::BassPwmDepth, pwmDepthNorm);
             eng.noteOn(60);
             std::vector<float> ramp(8192); eng.process(ramp.data(), 8192);
-            const int N = 96000;                 // 2s
+            const int N = 96000;                 // 2s ≈ 2 LFO cycles
             std::vector<float> y(N); eng.process(y.data(), N);
             // windowed RMS over 1024-sample windows (≈ 21 ms)
             const int W = 1024;
@@ -3683,6 +3685,14 @@ int main() {
             for (int i = 0; i < 8192; ++i) osc.process(f0, pw);
             std::vector<double> buf(N);
             for (int i = 0; i < N; ++i) buf[i] = osc.process(f0, pw);
+            // AC-couple: asymmetric pulses carry a strong DC offset (mean ≠ 0
+            // for PW ≠ 0.5). Without removing it, spectral leakage from the
+            // DC bin into adjacent bins gets falsely labelled "alias" — the
+            // same numerical signature as the simpler symmetric pulse case
+            // would show if we hadn't AC-coupled. Subtracting the empirical
+            // mean is the cleanest fix that keeps the harmonic alignment.
+            double mean = 0.0; for (double v : buf) mean += v; mean /= (double)N;
+            for (int i = 0; i < N; ++i) buf[i] -= mean;
             std::vector<cd> sp(N);
             for (int i = 0; i < N; ++i) sp[i] = cd(buf[i], 0.0);
             fft(sp);

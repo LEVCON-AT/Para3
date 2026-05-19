@@ -49,7 +49,7 @@ const md5_baseline = {
   // existierendes para3_set_param) → build_wasm.sh / bridge JS / scope /
   // transport-Dateien byte-frozen.
   'Para3Engine.hpp':                            '17a8281d2f83b3ce2d728bb0a1852a94',
-  'offline_test.cpp':                           '2047f7f3393be57fdd7ad80a05826e64',
+  'offline_test.cpp':                           'b1331892bfbff0a611f0acfd4d114ae1',
   'wasm-bridge/para3_capi.h':                   '4a4067aee93fea15fa4bc668eec00e9b',
   'wasm-bridge/para3_capi.cpp':                 '5fa4354e1fba917d2b72c7501edb3e14',
   'wasm-bridge/capi_test.cpp':                  '0da50e274112f2af23ca92a26ac159ca',
