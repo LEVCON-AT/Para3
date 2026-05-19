@@ -81,7 +81,9 @@ Der VPS-Zugang ist sensibel: gehört in eine private/gitignored Ops-Datei
 (z. B. `CLAUDE.local.md`), nicht in ein öffentliches Repo.
 
 Akzeptanz: alle Suiten `OVERALL: PASS (0 failures)`, **0 Compilerwarnungen**.
-T1–T26 und WA1–WA6 sind die bestehende Baseline und müssen **unverändert**
+Die **aktuelle volle Test-Suite des Repos** (derzeit ≥52 `T…`-Blöcke +
+`WA…`, plus scope/ring/audio/port/ui) ist die Baseline — die im Repo
+vorhandene Anzahl gilt, NICHT eine feste Zahl. Sie muss **unverändert**
 PASS bleiben — jede Abweichung ist ein echter Regressionsdefekt.
 
 Jede neue C-API-Funktion MUSS in `build_wasm.sh` `EXPORTED_FUNCTIONS`
@@ -97,7 +99,11 @@ Klassen-Zeilenlandkarte: siehe `docs/specs/ENGINE_E1-E7_HANDOVER.md`.
 
 ## Stand & Specs (kanonisch in `docs/specs/`)
 
-- E1–E7 (KORG-Parity) **fertig, gemessen, grün** — `ENGINE_E1-E7_HANDOVER.md`
+- **Repo = Source of Truth.** Stand ist deutlich über E1–E7: KORG-Parität
+  E1–E7 **plus** EXT-ARP, EXT-FLUX u. a. (~30 Commits über E1–E7). Der
+  `ENGINE_E1-E7_HANDOVER.md` dokumentiert NUR den historischen E1–E7-
+  Meilenstein, nicht den aktuellen Stand. Baseline = die im Repo
+  vorhandene grüne Suite (Anzahl aus dem Repo lesen, nicht annehmen).
 - DSP-exakte Regeln: `CLAUDE_KORG_PARITY_DSP.md` (Anhang A Datei-Politik,
   Anhang B Andock-Stellen, Anhang C E8-Messprotokoll, Anhang D Bindungen)
 - Frontend-Deltas: `CLAUDE_FRONTEND_PARITY.md`
@@ -105,6 +111,7 @@ Klassen-Zeilenlandkarte: siehe `docs/specs/ENGINE_E1-E7_HANDOVER.md`.
 - User-Story-Gate via Playwright (vom Menschen definiert, exakt geprüft):
   `CLAUDE_USER_SCENARIOS.md`
 - Erweiterung Arpeggiator (NICHT Parität): `CLAUDE_EXT_ARP.md`
+- Erweiterung Bass-Charakter (NICHT Parität): `CLAUDE_EXT_BASS.md`
 - Lab-Validation Methodologie (10-Sprint-Workflow für Datenblatt + Bericht +
   Audit + Polish, reproduziert die Qualität der LAB-1..10-Serie):
   `CLAUDE_LAB_VALIDATION.md`

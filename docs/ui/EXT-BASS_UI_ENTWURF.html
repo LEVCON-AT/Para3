@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PARA·3 — EXT·BASS · UI-Entwurf</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#070608; --panel:#0d0b0e; --panel2:#121015; --edge:rgba(255,238,210,.10);
+    --ink:#e6ddc9; --ink-dim:#9b9485; --ink-faint:#6b6457;
+    --accent:#ff6a18; --accent2:#ff8a3d; --accent-dim:#b07a4e;
+    --ext:#ffbf3d; --ext-deep:#7a5410; --ext-glow:rgba(255,191,61,.16);
+    --ok:#7fd6a2; --rule:rgba(255,238,210,.07);
+    --mono:'IBM Plex Mono',ui-monospace,monospace;
+    --disp:'Saira Condensed',system-ui,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:var(--bg);color:var(--ink);font-family:var(--mono);
+    -webkit-font-smoothing:antialiased}
+  body{min-height:100vh;padding:40px 18px 70px;
+    background:
+      radial-gradient(900px 500px at 78% -8%,rgba(255,106,24,.07),transparent 60%),
+      radial-gradient(700px 600px at 8% 108%,rgba(255,191,61,.05),transparent 55%),
+      var(--bg);}
+  .wrap{max-width:1080px;margin:0 auto}
+
+  /* ---- doc header ---- */
+  .doc{display:flex;flex-wrap:wrap;align-items:flex-end;gap:14px;
+    justify-content:space-between;margin-bottom:26px;
+    border-bottom:1px solid var(--rule);padding-bottom:16px}
+  .doc h1{font-family:var(--disp);font-weight:700;letter-spacing:.06em;
+    font-size:30px;line-height:1;color:var(--ink)}
+  .doc h1 b{color:var(--accent)}
+  .doc .sub{font-size:11.5px;color:var(--ink-dim);margin-top:7px;letter-spacing:.04em}
+  .doc .meta{font-size:10.5px;color:var(--ink-faint);text-align:right;line-height:1.7}
+  .btn{font-family:var(--mono);font-size:11px;letter-spacing:.08em;
+    color:var(--ink);background:#16131a;border:1px solid var(--edge);
+    padding:9px 13px;border-radius:7px;cursor:pointer;text-transform:uppercase}
+  .btn:hover{border-color:var(--ext);color:var(--ext)}
+  .btn.on{background:var(--ext-deep);border-color:var(--ext);color:#1a1206}
+
+  /* ---- the EXT module ---- */
+  .module{position:relative;border-radius:16px;
+    background:linear-gradient(176deg,#15110c,#0c0a0d 60%,#0a080b);
+    box-shadow:0 30px 70px -30px #000, inset 0 1px 0 rgba(255,238,210,.05);
+    padding:0;overflow:hidden;transition:opacity .35s,filter .35s}
+  /* hazard frame = "this is an EXTENSION, not Volca-faithful" */
+  .module::before{content:"";position:absolute;inset:0;border-radius:16px;
+    padding:2px;pointer-events:none;
+    background:repeating-linear-gradient(135deg,
+      var(--ext-deep) 0 11px, transparent 11px 22px);
+    -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+    -webkit-mask-composite:xor;mask-composite:exclude;opacity:.65}
+
+  .modhead{display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+    padding:18px 22px;border-bottom:1px solid var(--rule);
+    background:linear-gradient(180deg,rgba(255,191,61,.05),transparent)}
+  .badge{font-family:var(--disp);font-weight:700;font-size:13px;
+    letter-spacing:.16em;color:#15110a;background:var(--ext);
+    padding:6px 11px 5px;border-radius:5px;white-space:nowrap;
+    box-shadow:0 0 0 1px rgba(0,0,0,.4),0 0 22px var(--ext-glow)}
+  .modhead .ttl{font-family:var(--disp);font-weight:600;font-size:22px;
+    letter-spacing:.05em;color:var(--ink)}
+  .modhead .warn{font-size:11px;color:var(--ext);letter-spacing:.03em;
+    margin-top:3px}
+  .grow{flex:1}
+
+  /* master row */
+  .master{display:flex;align-items:center;gap:18px;flex-wrap:wrap;
+    padding:16px 22px;border-bottom:1px solid var(--rule);
+    background:var(--panel2)}
+  .pwr{display:flex;align-items:center;gap:12px;cursor:pointer;user-select:none}
+  .led{width:13px;height:13px;border-radius:50%;background:#2a221a;
+    box-shadow:inset 0 0 4px #000;transition:.3s}
+  .on .led, .module.live .led{background:var(--ext);
+    box-shadow:0 0 12px var(--ext),0 0 3px #fff inset}
+  .pwr .lab{font-family:var(--disp);font-size:17px;letter-spacing:.08em}
+  .switch{width:52px;height:26px;border-radius:20px;background:#1b1620;
+    border:1px solid var(--edge);position:relative;transition:.3s}
+  .switch i{position:absolute;top:2px;left:2px;width:20px;height:20px;
+    border-radius:50%;background:#4a4138;transition:.28s}
+  .module.live .switch{background:var(--ext-deep);border-color:var(--ext)}
+  .module.live .switch i{left:28px;background:var(--ext)}
+  .preset{margin-left:auto}
+  .preset button{font-family:var(--disp);letter-spacing:.07em;font-size:15px;
+    color:#1a1206;background:linear-gradient(180deg,var(--ext),#d99a23);
+    border:none;padding:11px 20px;border-radius:8px;cursor:pointer;
+    box-shadow:0 6px 18px -8px var(--ext)}
+  .preset button:active{transform:translateY(1px)}
+  .hint{font-size:10.5px;color:var(--ink-faint);max-width:230px;line-height:1.5}
+
+  /* off veil */
+  .veil{position:absolute;inset:0;z-index:6;display:flex;align-items:center;
+    justify-content:center;text-align:center;
+    background:linear-gradient(180deg,rgba(7,6,8,.62),rgba(7,6,8,.80));
+    backdrop-filter:grayscale(.7) blur(.5px);transition:.35s}
+  .module.live .veil{opacity:0;pointer-events:none}
+  .veil .vbox{max-width:430px;padding:0 26px}
+  .veil .vt{font-family:var(--disp);font-size:21px;letter-spacing:.05em;
+    color:var(--ink);margin-bottom:8px}
+  .veil .vd{font-size:11.5px;color:var(--ink-dim);line-height:1.65}
+  .veil code{color:var(--ok)}
+
+  /* control grid */
+  .body{padding:24px 22px 26px;
+    background:
+      radial-gradient(600px 300px at 50% -20%,rgba(255,191,61,.04),transparent),
+      var(--panel)}
+  .grid{display:grid;gap:14px;
+    grid-template-columns:repeat(auto-fit,minmax(168px,1fr))}
+  .cell{background:linear-gradient(180deg,#141016,#0e0b10);
+    border:1px solid var(--edge);border-radius:11px;padding:15px 14px 13px;
+    position:relative}
+  .cell .clab{font-family:var(--disp);font-size:13px;letter-spacing:.11em;
+    color:var(--ink-dim);text-transform:uppercase}
+  .cell .cval{font-size:11px;color:var(--ext);margin-top:2px;min-height:14px}
+  .cell.span2{grid-column:span 2}
+
+  /* knob */
+  .knob{--p:.5;width:78px;height:78px;margin:12px auto 8px;border-radius:50%;
+    background:
+      radial-gradient(circle at 50% 38%,#26201a,#0c0a09 70%),
+      conic-gradient(from -135deg,var(--accent) calc(var(--p)*270deg),
+        #221c16 0 270deg, transparent 0);
+    padding:7px;cursor:ns-resize;position:relative;
+    box-shadow:0 8px 16px -8px #000,inset 0 0 0 1px rgba(255,238,210,.06)}
+  .knob .cap{position:absolute;inset:9px;border-radius:50%;
+    background:radial-gradient(circle at 50% 35%,#322a20,#100d0b);
+    box-shadow:inset 0 2px 4px rgba(0,0,0,.6)}
+  .knob .ptr{position:absolute;left:50%;top:8px;width:3px;height:24px;
+    background:var(--accent2);border-radius:2px;transform-origin:50% 31px;
+    transform:translateX(-50%) rotate(calc(var(--p)*270deg - 135deg));
+    box-shadow:0 0 8px var(--accent)}
+  /* segmented */
+  .seg{display:flex;gap:6px;margin:12px 0 8px;flex-wrap:wrap}
+  .seg button{flex:1;min-width:44px;font-family:var(--mono);font-size:11px;
+    letter-spacing:.05em;color:var(--ink-dim);background:#161219;
+    border:1px solid var(--edge);padding:9px 6px;border-radius:7px;
+    cursor:pointer}
+  .seg button.sel{color:#1a1206;background:var(--accent);border-color:var(--accent)}
+  /* toggle small */
+  .tg{display:flex;align-items:center;gap:10px;margin:14px 0 6px;cursor:pointer}
+  .tg .sw{width:42px;height:22px;border-radius:14px;background:#1b1620;
+    border:1px solid var(--edge);position:relative;transition:.25s}
+  .tg .sw i{position:absolute;top:2px;left:2px;width:16px;height:16px;
+    border-radius:50%;background:#4a4138;transition:.24s}
+  .tg.on .sw{background:var(--accent-dim);border-color:var(--accent)}
+  .tg.on .sw i{left:22px;background:var(--accent)}
+  .tg .tl{font-size:12px;color:var(--ink)}
+
+  .ovr{font-size:10px;color:var(--ext);margin-top:6px;display:none}
+  .cell.overriding .ovr{display:block}
+
+  /* character meter (read-only indicator, NOT a fidelity score) */
+  .meter{grid-column:1/-1;background:linear-gradient(180deg,#120f14,#0b0910);
+    border:1px solid var(--edge);border-radius:11px;padding:14px 16px;
+    display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+  .meter .mt{font-family:var(--disp);font-size:13px;letter-spacing:.1em;
+    color:var(--ink-dim);text-transform:uppercase}
+  .bars{display:flex;align-items:flex-end;gap:4px;height:38px;flex:1;
+    min-width:160px}
+  .bars span{flex:1;background:linear-gradient(180deg,var(--ext),#7a5410);
+    border-radius:2px 2px 0 0;height:14%;transition:height .25s}
+  .meter .note{font-size:10px;color:var(--ink-faint);max-width:260px;
+    line-height:1.5}
+
+  /* annotation overlay */
+  .anno{display:none;margin-top:18px;border:1px dashed var(--ext-deep);
+    border-radius:11px;padding:16px 18px;background:rgba(255,191,61,.03)}
+  body.show-anno .anno{display:block}
+  .anno h3{font-family:var(--disp);font-size:14px;letter-spacing:.12em;
+    color:var(--ext);text-transform:uppercase;margin-bottom:12px}
+  .anno table{width:100%;border-collapse:collapse;font-size:11px}
+  .anno td{padding:7px 8px;border-top:1px solid var(--rule);
+    vertical-align:top;color:var(--ink-dim)}
+  .anno td:first-child{color:var(--ink);white-space:nowrap;
+    font-family:var(--disp);letter-spacing:.04em;font-size:12.5px}
+  .anno td code{color:var(--ok);font-size:10.5px}
+  .anno .neu{color:var(--ext)}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;margin-top:14px;
+    font-size:10.5px;color:var(--ink-faint)}
+  .legend b{color:var(--ink-dim);font-weight:600}
+  footer{max-width:1080px;margin:26px auto 0;font-size:10.5px;
+    color:var(--ink-faint);line-height:1.7}
+  footer b{color:var(--ink-dim)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="doc">
+    <div>
+      <h1>PARA·3 — <b>EXT·BASS</b> · UI-Entwurf</h1>
+      <div class="sub">Entwurf zur Umsetzung — begleitet <code>CLAUDE_EXT_BASS.md §5</code>.
+        Kein Audio, reine Design-/Mapping-Vorlage.</div>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center">
+      <button class="btn" id="annoBtn">Annotationen</button>
+      <div class="meta">Erweiterung, nicht Volca-Keys-Parität<br>
+        Default AUS ⇒ Engine bitidentisch<br>v0 Entwurf</div>
+    </div>
+  </div>
+
+  <div class="module" id="mod">
+    <div class="modhead">
+      <span class="badge">EXT · BASS CHARACTER</span>
+      <div>
+        <div class="ttl">Fetter Bass-Charakter</div>
+        <div class="warn">▲ Erweiterung – nicht Teil der Volca-Keys-Treue</div>
+      </div>
+    </div>
+
+    <div class="master">
+      <div class="pwr" id="pwr">
+        <span class="led"></span>
+        <div class="switch"><i></i></div>
+        <span class="lab">BASS-MODE</span>
+      </div>
+      <div class="preset">
+        <button id="preset">◇ FAT PRESET</button>
+      </div>
+      <div class="hint">Master aus = Panel inaktiv ⇒ Engine spielt exakt wie
+        der getreue Keys-Kern (bitidentisch). „Fat Preset" setzt eine
+        kohärente fette Grundkonfiguration.</div>
+    </div>
+
+    <div class="body">
+      <div class="grid" id="grid">
+
+        <div class="cell" data-k="wave">
+          <div class="clab">Waveform / Osz</div>
+          <div class="cval" id="v-wave">SAW · SAW · SAW</div>
+          <div class="seg" id="seg-wave">
+            <button data-w="0" class="sel">SAW</button>
+            <button data-w="1">PULSE</button>
+          </div>
+          <div style="font-size:10px;color:var(--ink-faint)">pro Osz 1·2·3 — Default SAW = bitidentisch</div>
+        </div>
+
+        <div class="cell" data-k="pw">
+          <div class="clab">Pulse Width</div>
+          <div class="cval" id="v-pw">0.50</div>
+          <div class="knob" id="k-pw" style="--p:.5"><span class="cap"></span><span class="ptr"></span></div>
+        </div>
+
+        <div class="cell" data-k="pwm">
+          <div class="clab">PWM Depth</div>
+          <div class="cval" id="v-pwm">0.00</div>
+          <div class="knob" id="k-pwm" style="--p:0"><span class="cap"></span><span class="ptr"></span></div>
+          <div class="seg" id="seg-pwmsrc" style="margin-top:2px">
+            <button data-s="0" class="sel">LFO</button>
+            <button data-s="1">EG</button>
+            <button data-s="2">DRIFT</button>
+          </div>
+        </div>
+
+        <div class="cell" data-k="spread">
+          <div class="clab">Bass Spread</div>
+          <div class="cval" id="v-spread">0.00</div>
+          <div class="knob" id="k-spread" style="--p:0"><span class="cap"></span><span class="ptr"></span></div>
+          <div style="font-size:10px;color:var(--ink-faint)">additiv auf DETUNE (E2.1 bleibt unberührt)</div>
+        </div>
+
+        <div class="cell" data-k="drate">
+          <div class="clab">Drift Rate</div>
+          <div class="cval" id="v-drate">0.20</div>
+          <div class="knob" id="k-drate" style="--p:.2"><span class="cap"></span><span class="ptr"></span></div>
+        </div>
+
+        <div class="cell" data-k="ddepth">
+          <div class="clab">Drift Depth</div>
+          <div class="cval" id="v-ddepth">0.00</div>
+          <div class="knob" id="k-ddepth" style="--p:0"><span class="cap"></span><span class="ptr"></span></div>
+          <div style="font-size:10px;color:var(--ink-faint)">analoger Pitch-Wander · Default 0 = bitidentisch</div>
+        </div>
+
+        <div class="cell" data-k="sub">
+          <div class="clab">Sub Level</div>
+          <div class="cval" id="v-sub">0.00</div>
+          <div class="knob" id="k-sub" style="--p:0"><span class="cap"></span><span class="ptr"></span></div>
+          <div class="seg" id="seg-suboct" style="margin-top:2px">
+            <button data-o="-12" class="sel">−12</button>
+            <button data-o="-24">−24</button>
+          </div>
+        </div>
+
+        <div class="cell" data-k="stack" id="cell-stack">
+          <div class="clab">Allocator</div>
+          <div class="cval" id="v-stack">PARAPHON (Keys-Modi aktiv)</div>
+          <div class="tg" id="tg-stack">
+            <span class="sw"><i></i></span>
+            <span class="tl">STACK / MONO (3 Osz gestapelt)</span>
+          </div>
+          <div class="ovr">▲ übersteuert den Voice-Mode-Wähler, solange aktiv</div>
+        </div>
+
+        <div class="meter">
+          <div class="mt">Character</div>
+          <div class="bars" id="bars">
+            <span></span><span></span><span></span><span></span><span></span>
+            <span></span><span></span><span></span><span></span><span></span>
+            <span></span><span></span><span></span><span></span></div>
+          <div class="note"><b>Indikator</b>, kein Treue-Score: zeigt
+            Spektralfülle / Schwebung — belegt, dass die fettmachende DSP da
+            ist, nicht perzeptive Äquivalenz zur echten Volca&nbsp;Bass.</div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="veil">
+      <div class="vbox">
+        <div class="vt">BASS-MODE ist AUS</div>
+        <div class="vd">Panel inaktiv (ausgegraut). Die Engine spielt exakt
+          wie der originalgetreue Volca-Keys-Kern —
+          <code>max|d| = 0.000e+00</code>. Schalter oben aktivieren, um den
+          fetten Charakter zuzuschalten.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="anno">
+    <h3>Implementierungs-Mapping (für Claude Code)</h3>
+    <table>
+      <tr><td>BASS-MODE</td><td><code>para3_bass_mode(p,on)</code> — Controller-Setting (kein Param-Trichter). AUS ⇒ <span class="neu">alle Teilblöcke neutral ⇒ bitidentisch</span>.</td></tr>
+      <tr><td>FAT PRESET</td><td><code>para3_bass_preset(p)</code> — setzt kohärente Konfig NUR über die u. g. Setter/Params (kein Sonderpfad).</td></tr>
+      <tr><td>Waveform/Osz</td><td><code>para3_osc_wave(p,osc,wave)</code> 0=Saw <span class="neu">(Default = bitidentisch)</span>, 1=Pulse · bandlimitiert, Alias ≤ −74 dBc.</td></tr>
+      <tr><td>Pulse Width</td><td>Param <code>BassPulseWidth</code> via <code>para3_set_param</code> · Default 0.5 · wirkt nur bei Pulse.</td></tr>
+      <tr><td>PWM Depth + Src</td><td>Param <code>BassPwmDepth</code> (Default 0) · Quelle <code>para3_bass_pwm_src</code> (LFO/EG/Drift).</td></tr>
+      <tr><td>Bass Spread</td><td>Param <code>BassSpread</code> (Default 0) · <span class="neu">additiv auf E2.1-<code>ds</code>; <code>detune_</code> bleibt unberührt</span>.</td></tr>
+      <tr><td>Drift Rate/Depth</td><td>Params <code>BassDriftRate</code>/<code>BassDriftDepth</code> (Depth Default 0) · seedbar <code>para3_bass_drift_seed</code>.</td></tr>
+      <tr><td>Sub Level/Oct</td><td>Param <code>BassSubLevel</code> (Default 0 ⇒ <span class="neu"><code>mix+=0</code> exakt</span>) · Oktave −12/−24 Controller-Setting.</td></tr>
+      <tr><td>Stack/Mono</td><td><code>para3_bass_stack(p,on)</code> — neuer Allocator-Modus; übersteuert Voice-Mode; AUS ⇒ Modi unverändert.</td></tr>
+      <tr><td>Character-Meter</td><td>Read-only Indikator (Schwebung/Spektralfülle), <span class="neu">kein</span> Treue-Score.</td></tr>
+    </table>
+    <div class="legend">
+      <span><b>Trichter-Params</b> (Knöpfe): PW · PWM · Spread · Drift · Sub — <code>setParamNorm</code>, nur im EXT-Panel, NICHT in Keys-<code>KNOB_PARAM</code></span>
+      <span><b>Controller-Hooks</b> (diskret): Mode · Preset · Waveform · Stack · Quellen/Oktave</span>
+    </div>
+  </div>
+
+  <footer>
+    <b>Disziplin (aus dem Runbook):</b> separates EXT-Panel, kein Umbau der
+    bestehenden Oberfläche · Default AUS ⇒ bitidentisch (Haupt-Akzeptanz) ·
+    bandlimitiert/klickfrei, gemessen · Defaults sind
+    <code>// EXT-BASS DEFAULT</code>, nicht <code>CALIB(E8)</code> ·
+    Playwright-Stories US-BASS-COLD/ENABLE/NOCLICK auf dem VPS grün.
+    <br><b>Hinweis:</b> reiner UI-Entwurf — Werte/Bewegung sind Attrappe,
+    kein Audio. Maßgeblich bleibt <code>CLAUDE_EXT_BASS.md</code>.
+  </footer>
+</div>
+
+<script>
+(function(){
+  var mod=document.getElementById('mod'), pwr=document.getElementById('pwr');
+  var live=false;
+  function setLive(v){live=v;mod.classList.toggle('live',v);pwr.classList.toggle('on',v);drawMeter();}
+  pwr.addEventListener('click',function(){setLive(!live);});
+
+  // knobs (visual only)
+  function bindKnob(id,vid,fmt){
+    var k=document.getElementById(id),v=document.getElementById(vid);
+    var p=parseFloat(k.style.getPropertyValue('--p'))||0;
+    function show(){v.textContent=fmt?fmt(p):p.toFixed(2);
+      k.style.setProperty('--p',p);drawMeter();}
+    show();
+    var drag=false,sy=0,sp=0;
+    k.addEventListener('pointerdown',function(e){drag=true;sy=e.clientY;sp=p;
+      k.setPointerCapture(e.pointerId);});
+    k.addEventListener('pointermove',function(e){if(!drag)return;
+      p=Math.max(0,Math.min(1,sp+(sy-e.clientY)/170));show();});
+    k.addEventListener('pointerup',function(){drag=false;});
+    return {get:function(){return p;},set:function(x){p=x;show();}};
+  }
+  var K={
+    pw:bindKnob('k-pw','v-pw'),
+    pwm:bindKnob('k-pwm','v-pwm'),
+    spread:bindKnob('k-spread','v-spread'),
+    drate:bindKnob('k-drate','v-drate'),
+    ddepth:bindKnob('k-ddepth','v-ddepth'),
+    sub:bindKnob('k-sub','v-sub')
+  };
+
+  // segmented selectors
+  function seg(id,cb){var g=document.getElementById(id);
+    g.addEventListener('click',function(e){var b=e.target.closest('button');
+      if(!b)return;[].forEach.call(g.children,function(x){x.classList.remove('sel');});
+      b.classList.add('sel');cb&&cb(b);});}
+  var waveState=[0,0,0],wi=0;
+  seg('seg-wave',function(b){ // demo: cycles which osc you're editing 1->2->3
+    waveState[wi]=+b.dataset.w; wi=(wi+1)%3;
+    document.getElementById('v-wave').textContent=
+      waveState.map(function(w){return w?'PULSE':'SAW';}).join(' · ');
+    drawMeter();});
+  seg('seg-pwmsrc');seg('seg-suboct');
+
+  // stack toggle
+  var tg=document.getElementById('tg-stack'),cs=document.getElementById('cell-stack');
+  tg.addEventListener('click',function(){var on=tg.classList.toggle('on');
+    cs.classList.toggle('overriding',on);
+    document.getElementById('v-stack').textContent=
+      on?'STACK · MONO (Voice-Mode übersteuert)':'PARAPHON (Keys-Modi aktiv)';
+    drawMeter();});
+
+  // fat preset
+  document.getElementById('preset').addEventListener('click',function(){
+    if(!live)setLive(true);
+    waveState=[1,1,1];wi=0;
+    document.getElementById('v-wave').textContent='PULSE · PULSE · PULSE';
+    [].forEach.call(document.querySelectorAll('#seg-wave button'),function(x,i){
+      x.classList.toggle('sel',i===1);});
+    K.pw.set(.42);K.pwm.set(.28);K.spread.set(.46);
+    K.drate.set(.30);K.ddepth.set(.22);K.sub.set(.55);
+    if(!tg.classList.contains('on'))tg.click();
+  });
+
+  // character meter (purely illustrative of "DSP present", not fidelity)
+  var bars=document.getElementById('bars').children;
+  function drawMeter(){
+    var energy=live?(0.18
+      +K.spread.get()*.22+K.ddepth.get()*.16+K.sub.get()*.24
+      +K.pwm.get()*.12+(waveState.reduce(function(a,b){return a+b;},0)/3)*.14
+      +(tg.classList.contains('on')?.12:0)):0;
+    for(var i=0;i<bars.length;i++){
+      var w=Math.sin(i*0.7)*0.5+0.5;
+      var h=live?(8+energy*86*(0.55+0.45*w)):6;
+      bars[i].style.height=Math.min(100,h)+'%';
+    }
+  }
+  // annotations toggle
+  document.getElementById('annoBtn').addEventListener('click',function(){
+    document.body.classList.toggle('show-anno');
+    this.classList.toggle('on');
+    if(document.body.classList.contains('show-anno'))
+      this.scrollIntoView===undefined||document.querySelector('.anno').scrollIntoView({behavior:'smooth',block:'start'});
+  });
+
+  drawMeter();
+})();
+</script>
+</body>
+</html>

@@ -10,7 +10,8 @@ paths:
 **Maßgeblich: `docs/specs/CLAUDE_PARITY_E2E_GATE.md`.**
 
 Ein Sprint/Block ist erst **gemeinsam „done"**, wenn ALLE drei grün sind:
-1. **Engine** — alle neuen `T…` + Regression T1–T26, 0 Warnungen.
+1. **Engine** — alle neuen `T…` + die **volle vorhandene Repo-Suite**
+   (Anzahl aus dem Repo, nicht fest), 0 Warnungen.
 2. **Frontend** — die UI-Deltas steuern die korrekten C-API-Hooks.
 3. **E2E** — über echten Ring/Port/Worklet:
    - die erwartete Wirkung ist messbar vorhanden,

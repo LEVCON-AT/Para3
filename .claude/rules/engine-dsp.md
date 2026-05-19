@@ -26,4 +26,5 @@ Pflicht:
   `// CALIB(E8) …`. Nie nach Gehör. E8 ist menschseitig.
 - Neuer Test `T<n>` in `offline_test.cpp` vor dem Summary-Block; misst
   Wirkung **und** Neutral-Bitidentität **und** Klickfreiheit. Danach volle
-  Prüfroutine (siehe Root-`CLAUDE.md`), 0 Warnungen, T1–T26 unverändert PASS.
+  Prüfroutine (siehe Root-`CLAUDE.md`), 0 Warnungen, die **volle vorhandene
+  Repo-Suite** unverändert PASS (Anzahl aus dem Repo lesen, nicht annehmen).
