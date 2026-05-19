@@ -60,6 +60,11 @@ export class Para3Controls {
   seqFluxLoopLen(samples)   { return this._do(() => this.ring.seqFluxLoopLen(samples)); }
   seqFluxRec(on)            { return this._do(() => this.ring.seqFluxRec(on)); }
   seqFluxNote(note, on)     { return this._do(() => this.ring.seqFluxNote(note, on)); }
+  // EXT-FLUX — param events recorded into the FLUX bank (sample-accurate at
+  // replay). pid 0..15 = PARAM ids (Cutoff..Volume). Used while fluxRecOn is
+  // true (engine guards via fluxRec_, calls outside REC are no-ops).
+  seqFluxParam(pid, norm01) { return this._do(() => this.ring.seqFluxParam(pid, norm01)); }
+  seqFluxClear()            { return this._do(() => this.ring.seqFluxClear()); }
   seqFluxCommit()           { return this._do(() => this.ring.seqFluxCommit()); }
   // E6.2 — engine pitch offset (integer semitones × 12). Replaces host-side
   // +oct*12 in midiOfKey so the engine owns the pitch path (band-limited).

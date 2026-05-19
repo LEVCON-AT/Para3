@@ -229,11 +229,32 @@ body{
 .step.skip .n{color:var(--ink-dim)}
 .seg{display:inline-flex;border-radius:8px;overflow:hidden;box-shadow:var(--soft)}
 .seg .tbtn{border-radius:0;padding:9px 11px;box-shadow:0 1px 0 rgba(255,255,255,.06) inset}
-/* E5 FLUX disabled state for step grid + lane: visually inert, click-inert. */
+/* E5 FLUX disabled state for step grid + lane: visually inert, click-inert.
+   When fluxOn (app[data-flux="on"]), the step grid + motion lane are hidden
+   entirely and the .fluxtl timeline visualizer takes over. */
 .fluxoff{opacity:.32;pointer-events:none;filter:saturate(.4)}
+.app[data-flux="on"] .sec-seq .steps{display:none}
+.app[data-flux="on"] .sec-seq .lane{display:none}
+.app[data-flux="on"] .sec-seq .mhead .mt{display:none}
+.app[data-flux="on"] .sec-seq .mhead .fmt{display:inline}
+/* EXT-FLUX timeline visualizer — Korg-style event view: 1/16 ticks with bolder
+   1/4 emphasis, note-ON/OFF + param markers, glowing playhead. */
+.fluxtl{display:none;width:100%;height:88px;border-radius:7px;box-sizing:border-box;
+  background:linear-gradient(180deg,var(--bg2),var(--bg1));border:1px solid var(--line);
+  position:relative}
+.app[data-flux="on"] .fluxtl{display:block}
+.fluxtl svg{width:100%;height:100%;display:block}
+.fluxtl .tick16{stroke:var(--ink-dim);stroke-width:1;opacity:.20}
+.fluxtl .tick4 {stroke:var(--ink-dim);stroke-width:1;opacity:.55}
+.fluxtl .ev-on {stroke:var(--accent);    stroke-width:3;stroke-linecap:round}
+.fluxtl .ev-off{stroke:var(--accent-dim);stroke-width:2;stroke-linecap:round;opacity:.75}
+.fluxtl .ev-par{fill:var(--accent-dim);opacity:.85}
+.fluxtl .ph    {stroke:var(--accent);    stroke-width:2;stroke-linecap:round;
+  filter:drop-shadow(0 0 4px color-mix(in srgb,var(--accent) 90%,transparent))}
 .mhead{display:flex;justify-content:space-between;align-items:center;margin:16px 0 9px}
-.mhead .mt{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:1px;color:var(--ink-dim)}
-.mhead .mt b{color:var(--accent)}
+.mhead .mt {font-family:'DM Mono',monospace;font-size:10px;letter-spacing:1px;color:var(--ink-dim)}
+.mhead .fmt{display:none;font-family:'DM Mono',monospace;font-size:10px;letter-spacing:1px;color:var(--ink-dim)}
+.mhead .mt b,.mhead .fmt b{color:var(--accent)}
 .mbtn{font-family:'Chakra Petch';font-size:9px;font-weight:700;letter-spacing:1px;border:none;
   border-radius:7px;padding:7px 11px;color:var(--ink-dim);cursor:pointer;
   background:linear-gradient(180deg,var(--card1),var(--card2));box-shadow:var(--soft)}
@@ -531,12 +552,27 @@ body{
           <button class="tbtn"    data-d="4">1/4</button>
         </span>
         <button class="tbtn" id="flux"   title="FLUX MODE · sample-accurate event sequence">FLUX</button>
-        <button class="tbtn" id="flxrec" title="FLUX REC · arm event capture (engine T23)">F·REC</button>
+        <button class="tbtn" id="flxrec" title="FLUX REC · arm event capture (engine T23/T42)">F·REC</button>
+        <button class="tbtn" id="flxclr" title="FLUX CLEAR · drop queued+published events">F·CLR</button>
       </div>
       <div class="steps" id="steps"></div>
-      <div class="mhead"><span class="mt">MOTION → <b id="mTgt">CUTOFF</b></span>
+      <!-- EXT-FLUX timeline: 16×1/16 ticks (4× emphasized), note + param event
+           markers (note-ON --accent, note-OFF --accent-dim, param-set --accent-dim
+           circle), glowing playhead. SVG viewBox 0..1600 horizontal so positions
+           = (event.off / loopLen) * 1600. Shown only when fluxOn. -->
+      <div class="fluxtl" id="fluxtl">
+        <svg viewBox="0 0 1600 200" preserveAspectRatio="none">
+          <g id="fluxgrid"></g>
+          <g id="fluxevs"></g>
+          <line id="fluxph" class="ph" x1="0" y1="6" x2="0" y2="194"/>
+        </svg>
+      </div>
+      <div class="mhead">
+        <span class="mt">MOTION → <b id="mTgt">CUTOFF</b></span>
+        <span class="fmt">FLUX → <b id="fluxCount">0</b> EVENTS · LOOP <b id="fluxLoop">1</b> BAR · DROP <b id="fluxDrop">0</b></span>
         <button class="mbtn" id="mSmooth" title="SMOOTH (E3 KORG-parity)">SMOOTH</button>
-        <button class="mbtn" id="mArm">MOTION REC</button></div>
+        <button class="mbtn" id="mArm">MOTION REC</button>
+      </div>
       <div class="lane" id="lane"></div></div>
   </div>
 
@@ -859,7 +895,17 @@ function emit(fn) {
       emit((c) => { c.arpMode(m); c.seqMotionVal(PARAM.ARP_MODE, m * 0.2 + 0.1); });
       return;
     }
-    if (id in KNOB_PARAM) emit((c) => c.setParam(KNOB_PARAM[id], n));
+    if (id in KNOB_PARAM) {
+      const pid = KNOB_PARAM[id];
+      emit((c) => c.setParam(pid, n));
+      // EXT-FLUX: capture knob movement as a sample-accurate param event
+      // when FLUX-REC is armed (pid < 16 = audio Param range; ARP_MODE=16
+      // is a controller setting and handled by motionVal above).
+      if (fluxOn && fluxRecOn && pid < 16) {
+        emit((c) => c.seqFluxParam(pid, n));
+        fluxRecordEvent(2, pid, n);
+      }
+    }
     else if (id === 'tmp') emit((c) => c.seqTempo(val));
     else if (id === 'oct') {
       const o = Math.round(val);
@@ -950,7 +996,16 @@ function emit(fn) {
     sus: PARAM.SUSTAIN,
   };
   function emitFader(id, val) {
-    if (id in FADER_PARAM) emit((c) => c.setParam(FADER_PARAM[id], val / 100));
+    if (id in FADER_PARAM) {
+      const pid = FADER_PARAM[id];
+      const n = val / 100;
+      emit((c) => c.setParam(pid, n));
+      // EXT-FLUX: same capture path as emitKnob.
+      if (fluxOn && fluxRecOn && pid < 16) {
+        emit((c) => c.seqFluxParam(pid, n));
+        fluxRecordEvent(2, pid, n);
+      }
+    }
   }
   const F={};
   document.querySelectorAll('.fader').forEach(f=>{
@@ -1245,30 +1300,127 @@ function emit(fn) {
     show('TEMPO DIV','1/'+d,'');
     emit((c) => c.seqTempoDiv(d));});
 
-  // ---- E5 FLUX mode --------------------------------------------------------
+  // ---- E5 FLUX mode + EXT-FLUX Timeline-Visualizer ------------------------
   // Switching the mode is click-free engine-side (running notes continue via
-  // the shared gate logic). UI only flips: visual state of #steps + #lane and
-  // suppresses flushPattern while flux is on. NO new step-logic — the step
-  // grid is the wrong model for flux (events-driven, not slot-driven).
-  const fluxB=document.getElementById('flux');let fluxOn=false;
-  const flxRecB=document.getElementById('flxrec');let fluxRecOn=false;
+  // the shared gate logic). UI flips data-flux on .app so CSS swaps the step
+  // grid + motion-lane out for the SVG timeline (.fluxtl). The timeline
+  // mirrors the engine's FluxBank for display only — the engine is the
+  // authoritative replay source. Event marker positions are computed from
+  // audio.ctx.currentTime relative to fluxStartTime; drift vs engine cursor
+  // is sub-millisecond and only affects visualization.
+  const fluxB    = document.getElementById('flux');     let fluxOn    = false;
+  const flxRecB  = document.getElementById('flxrec');   let fluxRecOn = false;
+  const flxClrB  = document.getElementById('flxclr');
+  const fluxGrid = document.getElementById('fluxgrid');
+  const fluxEvs  = document.getElementById('fluxevs');
+  const fluxPh   = document.getElementById('fluxph');
+  const fluxCountEl = document.getElementById('fluxCount');
+  const fluxLoopEl  = document.getElementById('fluxLoop');
+  const fluxDropEl  = document.getElementById('fluxDrop');
+
+  const fluxEvents = [];          // {off, type, data, val} — JS mirror for display
+  let   fluxLoopLen   = 0;        // samples; engine-side authoritative copy
+  let   fluxLoopBars  = 1;        // for the status line display
+  let   fluxStartTime = 0;        // audio.ctx.currentTime when fluxOn flipped
+  let   fluxAnimRaf   = 0;
+
   function fluxLoopLenSamples() {
     // 1 bar (4 beats) at current tempo, audio.ctx.sampleRate if available.
     const bpm = (K.tmp && K.tmp.get) ? K.tmp.get() : 120;
     const sr  = (audio && audio.ctx) ? audio.ctx.sampleRate : 48000;
-    return Math.max(1, Math.round((60.0 / bpm) * 4.0 * sr));
+    return Math.max(1, Math.round((60.0 / bpm) * 4.0 * sr * fluxLoopBars));
   }
-  fluxB.onclick=()=>{fluxOn=!fluxOn;fluxB.classList.toggle('on',fluxOn);
+  function fluxCurOffset() {
+    if (!audio || !audio.ctx || fluxLoopLen === 0) return 0;
+    const sr      = audio.ctx.sampleRate;
+    const elapsed = (audio.ctx.currentTime - fluxStartTime) * sr;
+    const m = elapsed % fluxLoopLen;
+    return Math.round((m + fluxLoopLen) % fluxLoopLen);
+  }
+  // Append a JS-side event mirror for the timeline. Called alongside the
+  // engine emit (which writes the authoritative bank).
+  function fluxRecordEvent(type, data, val) {
+    if (!fluxOn || !fluxRecOn || fluxLoopLen === 0) return;
+    fluxEvents.push({ off: fluxCurOffset(), type, data, val });
+    drawFluxEvents();
+  }
+  function drawFluxGrid() {
+    let s = '';
+    // 16 ticks × 1/16, every 4th emphasized (1/4 = beat).
+    for (let i = 0; i < 16; ++i) {
+      const x = (i / 16) * 1600;
+      const cls = (i % 4 === 0) ? 'tick4' : 'tick16';
+      s += '<line class="' + cls + '" x1="' + x + '" y1="14" x2="' + x + '" y2="186"/>';
+    }
+    fluxGrid.innerHTML = s;
+  }
+  function drawFluxEvents() {
+    if (fluxLoopLen === 0) { fluxEvs.innerHTML = ''; return; }
+    let s = '';
+    for (const e of fluxEvents) {
+      const x = (e.off / fluxLoopLen) * 1600;
+      if      (e.type === 0) s += '<line class="ev-on"  x1="'+x+'" y1="30"  x2="'+x+'" y2="120"/>';
+      else if (e.type === 1) s += '<line class="ev-off" x1="'+x+'" y1="80"  x2="'+x+'" y2="120"/>';
+      else if (e.type === 2) s += '<circle class="ev-par" cx="'+x+'" cy="160" r="5"/>';
+    }
+    fluxEvs.innerHTML = s;
+    fluxCountEl.textContent = String(fluxEvents.length);
+  }
+  function fluxAnimTick() {
+    if (!fluxOn) { fluxAnimRaf = 0; return; }
+    if (fluxLoopLen > 0) {
+      const x = (fluxCurOffset() / fluxLoopLen) * 1600;
+      fluxPh.setAttribute('x1', x);
+      fluxPh.setAttribute('x2', x);
+    }
+    fluxAnimRaf = requestAnimationFrame(fluxAnimTick);
+  }
+
+  fluxB.onclick = () => {
+    fluxOn = !fluxOn;
+    fluxB.classList.toggle('on', fluxOn);
+    app.dataset.flux = fluxOn ? 'on' : 'off';
     show('FLUX', fluxOn ? 'ON (event sequence)' : 'OFF (step grid)', '');
+    // Legacy .fluxoff dim still applied for sanity (CSS now hides via [data-flux]
+    // selector — the class is harmless when display:none takes over).
     stepsEl.classList.toggle('fluxoff', fluxOn);
     laneEl.classList.toggle('fluxoff', fluxOn);
-    if (fluxOn) emit((c) => { c.seqFluxLoopLen(fluxLoopLenSamples()); c.seqFluxMode(true); });
-    else        emit((c) => c.seqFluxMode(false));
+    if (fluxOn) {
+      fluxLoopLen   = fluxLoopLenSamples();
+      fluxStartTime = (audio && audio.ctx) ? audio.ctx.currentTime : 0;
+      fluxLoopEl.textContent = String(fluxLoopBars);
+      drawFluxGrid(); drawFluxEvents();
+      emit((c) => { c.seqFluxLoopLen(fluxLoopLen); c.seqFluxMode(true); });
+      if (!fluxAnimRaf) fluxAnimRaf = requestAnimationFrame(fluxAnimTick);
+    } else {
+      emit((c) => c.seqFluxMode(false));
+      if (fluxAnimRaf) { cancelAnimationFrame(fluxAnimRaf); fluxAnimRaf = 0; }
+    }
   };
-  flxRecB.onclick=()=>{fluxRecOn=!fluxRecOn;flxRecB.classList.toggle('on',fluxRecOn);
+  flxRecB.onclick = () => {
+    fluxRecOn = !fluxRecOn;
+    flxRecB.classList.toggle('on', fluxRecOn);
     show('FLUX REC', fluxRecOn ? 'ARMED' : 'OFF', '');
-    if (!fluxRecOn) emit((c) => { c.seqFluxRec(false); c.seqFluxCommit(); });
-    else            emit((c) => c.seqFluxRec(true));
+    if (fluxRecOn) {
+      // Re-sync visualizer start to the rec-arm moment so JS offsets match the
+      // engine's fcur_ (engine resets fpos_ on bank-commit; record-cursor
+      // continues from current fcur_, but we don't have read-access to that
+      // value — close enough for visualization, the engine is authoritative).
+      fluxStartTime = (audio && audio.ctx) ? audio.ctx.currentTime : 0;
+      emit((c) => c.seqFluxRec(true));
+    } else {
+      emit((c) => { c.seqFluxRec(false); c.seqFluxCommit(); });
+    }
+  };
+  flxClrB.onclick = () => {
+    // Clears engine + JS mirror. Held notes (if any) decay through envelope
+    // release per E5 design — no engine click.
+    fluxEvents.length = 0;
+    drawFluxEvents();
+    fluxCountEl.textContent = '0';
+    fluxDropEl.textContent  = '0';
+    emit((c) => c.seqFluxClear());
+    show('FLUX', 'cleared', '');
   };
 
   // EXT-ARP UI2: only ON / HOLD are toggles. MODE / RATE / OCT / GATE are
@@ -1641,7 +1793,10 @@ function emit(fn) {
     inTransport = true;
     emit((c) => c.noteOn(note));
     inTransport = false;
-    if (fluxOn && fluxRecOn) emit((c) => c.seqFluxNote(note, true));
+    if (fluxOn && fluxRecOn) {
+      emit((c) => c.seqFluxNote(note, true));
+      fluxRecordEvent(0, note, 0);
+    }
   }
   function keyUp(pid) {
     const h = held.get(pid); if (!h) return;
@@ -1649,7 +1804,10 @@ function emit(fn) {
     inTransport = true;
     emit((c) => c.noteOff(h.note));
     inTransport = false;
-    if (fluxOn && fluxRecOn) emit((c) => c.seqFluxNote(h.note, false));
+    if (fluxOn && fluxRecOn) {
+      emit((c) => c.seqFluxNote(h.note, false));
+      fluxRecordEvent(1, h.note, 0);
+    }
   }
   kbd.addEventListener('pointerdown', (e) => {
     // Tapping the closed grip opens the drawer instead of triggering a note.

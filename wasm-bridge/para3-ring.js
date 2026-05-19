@@ -62,6 +62,9 @@ export const OP = Object.freeze({
   ARP_OCTAVES:       34, // i0 = octaves (1..4)
   ARP_HOLD:          35, // i0 = on (0|1)  -- Latch
   ARP_SEED:          36, // i0 = seed (uint32, reproducibility for Random)
+  // EXT-FLUX param-event extension (FLUX-1 sprint).
+  SEQ_FLUX_PARAM:    37, // i0 = pid (0..15), d = norm01
+  SEQ_FLUX_CLEAR:    38, // -- drop queued+published flux events
 });
 
 const HDR = 2;                       // header int32 count
@@ -136,6 +139,9 @@ export class Para3Ring {
                        { return this._push(OP.SEQ_FLUX_LOOP_LEN, samples | 0, 0, 0); }
   seqFluxRec(on)       { return this._push(OP.SEQ_FLUX_REC, on ? 1 : 0, 0, 0); }
   seqFluxNote(note, on){ return this._push(OP.SEQ_FLUX_NOTE, note | 0, on ? 1 : 0, 0); }
+  seqFluxParam(pid, norm01)
+                       { return this._push(OP.SEQ_FLUX_PARAM, pid | 0, 0, norm01); }
+  seqFluxClear()       { return this._push(OP.SEQ_FLUX_CLEAR, 0, 0, 0); }
   seqFluxCommit()      { return this._push(OP.SEQ_FLUX_COMMIT, 0, 0, 0); }
   setOctave(oct)       { return this._push(OP.SET_OCTAVE, oct | 0, 0, 0); }
   // EXT-ARP producers — controller settings (no taper trichter).

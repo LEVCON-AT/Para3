@@ -14,7 +14,7 @@
 //  the worklet and needs no SAB.
 // =============================================================================
 
-const CACHE_VER  = 'para3-v31'; // Sprint 7: E2E-TAP test-only hook (window.__para3Capture, gated by ?e2e=1)
+const CACHE_VER  = 'para3-v32'; // FLUX-2: ParamSet C-API + Timeline-Visualizer + F·CLR + .mhead status
 const PRECACHE   = [
   './',
   './index.html',
