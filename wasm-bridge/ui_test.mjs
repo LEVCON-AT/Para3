@@ -39,24 +39,21 @@ const REPO = join(__dirname, '..');
 // commit. This is NOT a frozen "never change" gate, it is a "no-stealth-
 // change" gate.
 const md5_baseline = {
-  // EXT-BASS B2 rebaseline: Param-Enum erweitert (BassPulseWidth=17,
-  // BassPwmDepth=18, springt über kArpModePid=16), Oscillator::process
-  // bekommt pw-Param (Default 0.5 ⇒ Saw bit-identisch, Pulse identisch zur
-  // B1 hardcoded 0.5), ParaEngine.pulseWidth_/pwmDepth_ RampParams,
-  // setParamNorm-Trichter + Taper + paramOfId-Map ergänzt. C-API:
-  // PARA3_P_BASS_PULSE_WIDTH=17, PARA3_P_BASS_PWM_DEPTH=18, mapParam-Cases.
-  // Tests: T54-T58 + WA10. KEINE neuen C-API-Funktionen (Werte gehen über
-  // existierendes para3_set_param) → build_wasm.sh / bridge JS / scope /
-  // transport-Dateien byte-frozen.
-  'Para3Engine.hpp':                            '9342dcfd4dd227d2092cf079f346230a',
-  'offline_test.cpp':                           'd7c183de1eeab66973f2ec83a86d82af',
-  'wasm-bridge/para3_capi.h':                   '4a4067aee93fea15fa4bc668eec00e9b',
-  'wasm-bridge/para3_capi.cpp':                 '5fa4354e1fba917d2b72c7501edb3e14',
-  'wasm-bridge/capi_test.cpp':                  '0da50e274112f2af23ca92a26ac159ca',
+  // EXT-BASS B3 rebaseline: drei neue Params (BassSpread=19, BassDriftRate=20,
+  // BassDriftDepth=21) + para3_bass_drift_seed-C-API. Spread additiv zu E2.1
+  // ds, Drift per-OSC xorshift→LP→Depth. Defaults (Spread=0, Depth=0) ⇒ Engine
+  // bit-identisch zum B2-Stand (T59). Tests: T59-T64 + WA11. build_wasm.sh
+  // bekommt _para3_bass_drift_seed in EXPORTED_FUNCTIONS. Bridge JS / scope /
+  // transport-Dateien bleiben byte-frozen.
+  'Para3Engine.hpp':                            '667059a3057a198b355714961f2a8ad4',
+  'offline_test.cpp':                           'ff8540b41960561abe535393599a1065',
+  'wasm-bridge/para3_capi.h':                   'b94fee0f4896d457c5c1bafa5003e827',
+  'wasm-bridge/para3_capi.cpp':                 'f82e4113ee88d45076ccff0377ba8e6c',
+  'wasm-bridge/capi_test.cpp':                  '45ec016495e2173d2f55336eabd345f6',
   'wasm-bridge/scope_source_test.cpp':          '646828487b3a002a565b9ec87a7abe55',
   'wasm-bridge/parity_native.cpp':              'ffdb9666262ae54961d58dc7ec19d4b0',
   'wasm-bridge/parity_seq.h':                   '9043aba77b26cecb2aa1324ba805e07a',
-  'wasm-bridge/build_wasm.sh':                  '90f00f13bde8b77db0b38e5352243271',
+  'wasm-bridge/build_wasm.sh':                  'c127787f731c2ebd4b8f28696d4d0b87',
   'wasm-bridge/wasm_parity.mjs':                '9a396e68954d830a3aac0bde40b887cb',
   'wasm-bridge/para3-audio.js':                 'af6597f5c9ebb2f3965064673284e9c0',
   'wasm-bridge/para3-ring.js':                  'ebefab2358f25164c735d15e78c0cfdf',

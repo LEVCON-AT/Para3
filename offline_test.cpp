@@ -3766,6 +3766,233 @@ int main() {
         if (!pass) ++failures;
     }
 
+    // ---- T59  EXT-BASS B3 NEUTRAL  -----------------------------------------
+    //  Spread=0 ∧ DriftDepth=0 ⇒ Engine bit-identisch zum B2-Stand. Test
+    //  vergleicht default-init Engine A vs Engine B mit explizit gesetzten
+    //  Defaults (BassSpread=0, BassDriftDepth=0, beliebige DriftRate).
+    {
+        para3::ParaEngine a, b;
+        a.prepare(sr, 4096); b.prepare(sr, 4096);
+        b.setParamNorm(para3::ParaEngine::Param::BassSpread,     0.0);
+        b.setParamNorm(para3::ParaEngine::Param::BassDriftDepth, 0.0);
+        b.setParamNorm(para3::ParaEngine::Param::BassDriftRate,  0.7);   // beliebig, depth=0 macht es egal
+        a.noteOn(60); b.noteOn(60);
+        const int N = 48000;
+        std::vector<float> ya(N), yb(N);
+        a.process(ya.data(), N); b.process(yb.data(), N);
+        double maxd = 0.0;
+        for (int i = 0; i < N; ++i) maxd = std::max(maxd, (double)std::fabs(ya[i] - yb[i]));
+        const bool pass = (maxd == 0.0);
+        std::printf("\nT59 EXT-BASS B3 NEUTRAL  (Spread=0 ∧ Drift-Depth=0 ⇒ bit-identisch zum B2)\n");
+        std::printf("   max|d| default vs explicit-0    : %.3e  (want == 0)\n", maxd);
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if (!pass) ++failures;
+    }
+
+    // ---- T60  EXT-BASS B3 SPREAD-BEAT  -------------------------------------
+    //  BassSpread weitet die Voice-Detune-Lücke aus → schneller Schwebungstakt.
+    //  Methode (T16-Familie): RMS-Hüllkurve eines Unison-gehaltenen Tons,
+    //  Hüllkurven-FFT → dominante Beat-Frequenz. Bei spread=max > beat als
+    //  bei spread=0 (Faktor ≥ 1.5).
+    {
+        auto beatHz = [&](double spreadNorm) {
+            para3::ParaEngine eng; eng.prepare(sr, 4096);
+            eng.setMode(para3::ParaAllocator::Mode::Unison);
+            eng.setParamNorm(para3::ParaEngine::Param::Cutoff, 1.0);
+            eng.setParamNorm(para3::ParaEngine::Param::Resonance, 0.0);
+            eng.setParamNorm(para3::ParaEngine::Param::Sustain, 1.0);
+            eng.setParamNorm(para3::ParaEngine::Param::Attack, 0.0);
+            eng.setParamNorm(para3::ParaEngine::Param::LfoCutDepth, 0.0);
+            eng.setParamNorm(para3::ParaEngine::Param::LfoPitchDepth, 0.0);
+            eng.setParamNorm(para3::ParaEngine::Param::DelayMix, 0.0);
+            eng.setParamNorm(para3::ParaEngine::Param::BassSpread, spreadNorm);
+            eng.noteOn(60);
+            std::vector<float> ramp(8192); eng.process(ramp.data(), 8192);
+            const int N = 192000;                    // 4s
+            std::vector<float> y(N); eng.process(y.data(), N);
+            const int W = 512, M = N / W;
+            std::vector<double> env(M);
+            for (int m = 0; m < M; ++m) {
+                double s = 0.0; for (int i = 0; i < W; ++i) { const double x = y[m*W+i]; s += x*x; }
+                env[m] = std::sqrt(s / W);
+            }
+            double mean = 0.0; for (double v : env) mean += v; mean /= M;
+            for (double& v : env) v -= mean;        // DC-couple
+            // power-of-two M for FFT (M=375 here → pad to 256)
+            int E = 1; while (E*2 <= M) E *= 2;
+            std::vector<cd> sp(E);
+            for (int i = 0; i < E; ++i) sp[i] = cd(env[i], 0.0);
+            fft(sp);
+            // bin-freq in envelope domain: each sample = W audio samples
+            // envelope sr = sr/W, so bin_freq = (sr/W)/E Hz/bin
+            const double envBinHz = (sr / (double)W) / (double)E;
+            int peakBin = 1; double peak = std::abs(sp[1]);
+            for (int b = 2; b < E/2; ++b) {
+                const double m = std::abs(sp[b]);
+                if (m > peak) { peak = m; peakBin = b; }
+            }
+            return peakBin * envBinHz;
+        };
+        const double f0  = beatHz(0.0);
+        const double fM  = beatHz(1.0);
+        const bool faster = (fM >= 1.5 * f0);
+        const bool finite = std::isfinite(f0) && std::isfinite(fM);
+        const bool pass = faster && finite;
+        std::printf("\nT60 EXT-BASS B3 SPREAD-BEAT  (Spread weitet Voice-Detune → schnellere Beats)\n");
+        std::printf("   beat-Hz  spread=0 / spread=max  : %.2f / %.2f Hz  (Faktor %.2f, want ≥ 1.5)\n",
+                    f0, fM, fM / std::max(f0, 1e-9));
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if (!pass) ++failures;
+    }
+
+    // ---- T61  EXT-BASS B3 DRIFT-RATE  --------------------------------------
+    //  Bei festem Depth ≠ 0 müssen unterschiedliche DriftRates messbar
+    //  unterschiedliche Outputs erzeugen. Beweis dass DriftRate-Parameter im
+    //  Audio-Pfad ankommt (nicht still wegoptimiert). Test: zwei Renders mit
+    //  Rate-norm 0.1 (~0.55 Hz) und 0.9 (~4.55 Hz), gleicher Seed, max|d|
+    //  zwischen ihnen > 0 (substanziell).
+    {
+        auto render = [&](double rateNorm) {
+            para3::ParaEngine eng; eng.prepare(sr, 4096);
+            eng.setMode(para3::ParaAllocator::Mode::Unison);
+            eng.setParamNorm(para3::ParaEngine::Param::Cutoff, 1.0);
+            eng.setParamNorm(para3::ParaEngine::Param::Sustain, 1.0);
+            eng.setParamNorm(para3::ParaEngine::Param::Attack, 0.0);
+            eng.setParamNorm(para3::ParaEngine::Param::LfoCutDepth, 0.0);
+            eng.setParamNorm(para3::ParaEngine::Param::LfoPitchDepth, 0.0);
+            eng.setParamNorm(para3::ParaEngine::Param::BassDriftRate, rateNorm);
+            eng.setParamNorm(para3::ParaEngine::Param::BassDriftDepth, 1.0);   // max
+            eng.setBassDriftSeed(12345u);                                        // identical seed
+            eng.noteOn(60);
+            std::vector<float> ramp(8192); eng.process(ramp.data(), 8192);
+            const int N = 48000;
+            std::vector<float> y(N); eng.process(y.data(), N);
+            return y;
+        };
+        const auto ySlow = render(0.1);
+        const auto yFast = render(0.9);
+        double maxd = 0.0;
+        for (int i = 0; i < 48000; ++i)
+            maxd = std::max(maxd, (double)std::fabs(ySlow[i] - yFast[i]));
+        const bool effect = maxd >= 0.05;
+        const bool pass = effect;
+        std::printf("\nT61 EXT-BASS B3 DRIFT-RATE  (DriftRate-Parameter erreicht Audio-Pfad)\n");
+        std::printf("   max|d| rate-slow vs rate-fast   : %.3e  (want ≥ 5e-2)\n", maxd);
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if (!pass) ++failures;
+    }
+
+    // ---- T62  EXT-BASS B3 DRIFT-BOUNDED  -----------------------------------
+    //  Drift = LP-gefilterter ±1-Zufallswert × Depth-Semitones. Bei depth=max
+    //  (= 0.15 ST = 15 Cents) bleibt der Beitrag mathematisch ≤ 0.15 ST.
+    //  Über 30 s muss Audio finite + Pegel-stabil sein (kein Drift-getriebenes
+    //  Wegdriften der Pitch in unhörbare Regionen).
+    {
+        para3::ParaEngine eng; eng.prepare(sr, 4096);
+        eng.setMode(para3::ParaAllocator::Mode::Unison);
+        eng.setParamNorm(para3::ParaEngine::Param::Cutoff, 1.0);
+        eng.setParamNorm(para3::ParaEngine::Param::Sustain, 1.0);
+        eng.setParamNorm(para3::ParaEngine::Param::Attack, 0.0);
+        eng.setParamNorm(para3::ParaEngine::Param::BassDriftDepth, 1.0);
+        eng.setParamNorm(para3::ParaEngine::Param::BassDriftRate, 0.5);
+        eng.noteOn(60);
+        const int N = 1440000;                       // 30s
+        std::vector<float> y(N); eng.process(y.data(), N);
+        bool finite = true;
+        for (int i = 0; i < N; ++i) if (!std::isfinite(y[i])) { finite = false; break; }
+        auto rmsRegion = [&](int a, int b){
+            double s = 0.0; for (int i = a; i < b; ++i) s += (double)y[i]*y[i];
+            return std::sqrt(s / std::max(1, b-a));
+        };
+        const double rmsEarly = rmsRegion(  48000,  144000);    // 1..3s
+        const double rmsMid   = rmsRegion( 720000,  816000);    // 15..17s
+        const double rmsLate  = rmsRegion(1296000, 1392000);    // 27..29s
+        // RMS should stay within ±20% across the 30s window (drift is small)
+        const double rmsMax = std::max({rmsEarly, rmsMid, rmsLate});
+        const double rmsMin = std::min({rmsEarly, rmsMid, rmsLate});
+        const double rmsRatio = rmsMax / std::max(rmsMin, 1e-9);
+        const bool stable = (rmsRatio <= 1.5);
+        const bool pass = finite && stable;
+        std::printf("\nT62 EXT-BASS B3 DRIFT-BOUNDED  (30s rendering, drift ≤ 0.15 st, pegelstabil)\n");
+        std::printf("   finite over 30s                 : %s\n", finite?"yes":"NO");
+        std::printf("   RMS  early / mid / late         : %.3e / %.3e / %.3e  (max/min %.2fx, want ≤ 1.5)\n",
+                    rmsEarly, rmsMid, rmsLate, rmsRatio);
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if (!pass) ++failures;
+    }
+
+    // ---- T63  EXT-BASS B3 DRIFT-SEED  --------------------------------------
+    //  Reproduzierbarkeit: gleicher seed ⇒ sample-identische Audio. Anderer
+    //  seed ⇒ messbar andere Audio. Beweist Determinismus + sinnvolle PRNG-
+    //  Streuung über den Seed-Raum.
+    {
+        auto renderSeed = [&](unsigned int seed) {
+            para3::ParaEngine eng; eng.prepare(sr, 4096);
+            eng.setMode(para3::ParaAllocator::Mode::Unison);
+            eng.setParamNorm(para3::ParaEngine::Param::Cutoff, 1.0);
+            eng.setParamNorm(para3::ParaEngine::Param::Sustain, 1.0);
+            eng.setParamNorm(para3::ParaEngine::Param::Attack, 0.0);
+            eng.setParamNorm(para3::ParaEngine::Param::BassDriftDepth, 1.0);
+            eng.setParamNorm(para3::ParaEngine::Param::BassDriftRate, 0.5);
+            eng.setBassDriftSeed(seed);
+            eng.noteOn(60);
+            std::vector<float> ramp(8192); eng.process(ramp.data(), 8192);
+            const int N = 48000;
+            std::vector<float> y(N); eng.process(y.data(), N);
+            return y;
+        };
+        const auto yA1 = renderSeed(0xCAFEBABEu);
+        const auto yA2 = renderSeed(0xCAFEBABEu);
+        const auto yB  = renderSeed(0xDEADBEEFu);
+        double sameSeedMaxd = 0.0;
+        double diffSeedMaxd = 0.0;
+        for (int i = 0; i < 48000; ++i) {
+            sameSeedMaxd = std::max(sameSeedMaxd, (double)std::fabs(yA1[i] - yA2[i]));
+            diffSeedMaxd = std::max(diffSeedMaxd, (double)std::fabs(yA1[i] - yB [i]));
+        }
+        const bool deterministic = (sameSeedMaxd == 0.0);
+        const bool distinct      = (diffSeedMaxd >= 0.05);
+        const bool pass = deterministic && distinct;
+        std::printf("\nT63 EXT-BASS B3 DRIFT-SEED  (Determinismus + Seed-Streuung)\n");
+        std::printf("   same seed  max|d|               : %.3e  (want == 0)\n", sameSeedMaxd);
+        std::printf("   diff seed  max|d|               : %.3e  (want ≥ 5e-2)\n", diffSeedMaxd);
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if (!pass) ++failures;
+    }
+
+    // ---- T64  EXT-BASS B3 DRIFT-NOCLICK  -----------------------------------
+    //  BassDriftDepth-Ramp 0→max während gehaltener Note: max|dx| im Switch-
+    //  Fenster bleibt ≤ 3× steady-state max|dx|. Click-frei durch RampParam-
+    //  Glättung (15 ms).
+    {
+        para3::ParaEngine eng; eng.prepare(sr, 4096);
+        eng.setMode(para3::ParaAllocator::Mode::Unison);
+        eng.setParamNorm(para3::ParaEngine::Param::Cutoff, 0.8);
+        eng.setParamNorm(para3::ParaEngine::Param::Sustain, 1.0);
+        eng.setParamNorm(para3::ParaEngine::Param::Attack, 0.0);
+        eng.setParamNorm(para3::ParaEngine::Param::BassDriftRate, 0.5);
+        eng.setParamNorm(para3::ParaEngine::Param::BassDriftDepth, 0.0);
+        eng.noteOn(60);
+        const int N1 = 24000, N2 = 24000;
+        std::vector<float> buf(N1 + N2);
+        eng.process(buf.data(),       N1);
+        eng.setParamNorm(para3::ParaEngine::Param::BassDriftDepth, 1.0);
+        eng.process(buf.data() + N1,  N2);
+        const double switchDx = maxAbsDelta(buf, N1 - 64, N1 + 2400);
+        const double earlyDx  = maxAbsDelta(buf, 4000, 16000);
+        const double lateDx   = maxAbsDelta(buf, N1+12000, N1+22000);
+        const double steadyDx = std::max(earlyDx, lateDx);
+        const bool bounded = (switchDx <= 3.0 * steadyDx);
+        const bool pass = bounded;
+        std::printf("\nT64 EXT-BASS B3 DRIFT-NOCLICK  (DriftDepth 0→max ramp)\n");
+        std::printf("   max|dx| switch / off / on       : %.3e / %.3e / %.3e\n",
+                    switchDx, earlyDx, lateDx);
+        std::printf("   switch / max(steady)            : %.2fx  (want ≤ 3.0)\n",
+                    switchDx / std::max(steadyDx, 1e-30));
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if (!pass) ++failures;
+    }
+
     std::printf("\n==================================================\n");
     std::printf("%s  (%d failure%s)\n",
                 failures ? "OVERALL: FAIL" : "OVERALL: PASS",

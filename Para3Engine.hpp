@@ -774,6 +774,13 @@ public:
         pulseWidth_.snap(0.5);                          // EXT-BASS B2 PW=0.5 ⇒ bit-identisch zum B1 hardcoded
         pwmDepth_.prepare(sampleRate, 15.0);            // EXT-BASS B2 PWM-Tiefe funnel
         pwmDepth_.snap(0.0);                            // EXT-BASS B2 PWM=0 ⇒ statisch ⇒ bit-identisch zum B1
+        bassSpread_.prepare(sampleRate, 15.0);          // EXT-BASS B3 Spread funnel
+        bassSpread_.snap(0.0);                          // EXT-BASS B3 0 ⇒ bit-identisch
+        bassDriftRate_.prepare(sampleRate, 15.0);       // EXT-BASS B3 LP-Rate (Hz)
+        bassDriftRate_.snap(kBassDriftRateDefaultHz);   // EXT-BASS B3 default Rate; ohne Effekt wenn Depth=0
+        bassDriftDepth_.prepare(sampleRate, 15.0);      // EXT-BASS B3 Drift-Tiefe funnel
+        bassDriftDepth_.snap(0.0);                      // EXT-BASS B3 0 ⇒ bit-identisch (drift_v * 0 = 0)
+        setBassDriftSeed(kBassDriftDefaultSeed);        // EXT-BASS B3 reproduzierbarer Default-Seed
         delay_.setMix(0.0);                             // neutral default
         delay_.setFeedback(0.0);
         reset();
@@ -845,6 +852,24 @@ public:
     // value → bit-identical to the B1 Pulse path (T54 measures).
     void setPulseWidth(double pw) noexcept { pulseWidth_.setTarget(pw); }   // EXT-BASS B2
     void setPwmDepth  (double d)  noexcept { pwmDepth_.setTarget(d);    }   // EXT-BASS B2
+    // EXT-BASS B3 — Bass-Spread (additive auf E2.1-Detune, halbierter Spread
+    // pro Voice 0/2) + Drift (langsam bandbegrenzter Pitch-Wander per OSC).
+    // Defaults (0, _, 0) ⇒ kein Spread, kein Pitch-Wander ⇒ bit-identisch
+    // (T59 misst). Drift: xorshift32 per OSC → einpoliger LP (rate-Hz-Param) →
+    // ×Depth-Param. Seed über setBassDriftSeed reproduzierbar.
+    void setBassSpread(double semis)    noexcept { bassSpread_.setTarget(semis); }   // EXT-BASS B3
+    void setBassDriftRate(double hz)    noexcept { bassDriftRate_.setTarget(hz);  }   // EXT-BASS B3
+    void setBassDriftDepth(double semis)noexcept { bassDriftDepth_.setTarget(semis); } // EXT-BASS B3
+    void setBassDriftSeed(unsigned int s) noexcept {                                   // EXT-BASS B3
+        const uint32_t seed = s ? (uint32_t)s : 1u;
+        driftState_[0] = seed;
+        driftState_[1] = seed ^ 0x9E3779B9u;            // golden ratio mix per OSC
+        driftState_[2] = seed ^ 0x517CC1B7u;            // arbitrary derived constant
+        if (driftState_[0] == 0) driftState_[0] = 1u;   // xorshift32 needs non-zero
+        if (driftState_[1] == 0) driftState_[1] = 1u;
+        if (driftState_[2] == 0) driftState_[2] = 1u;
+        for (int i = 0; i < 3; ++i) driftLp_[i] = 0.0;
+    }
     // B1-fix: panic any held voice and release the envelope BEFORE changing
     // the shift. Reuses the engine's own allNotesOff (below) so seqStop, the
     // C-API panic path, and this one all converge on the same primitive.
@@ -880,7 +905,10 @@ public:
                        Attack, DecRel, Sustain, EgCutDepth, Detune, Portamento, Volume,
                        // 16 reserved for kArpModePid (motion-pid only, not a setParamNorm target)
                        BassPulseWidth = 17,                                              // EXT-BASS B2
-                       BassPwmDepth                                                       // EXT-BASS B2
+                       BassPwmDepth,                                                      // EXT-BASS B2
+                       BassSpread,                                                        // EXT-BASS B3 (id=19)
+                       BassDriftRate,                                                     // EXT-BASS B3 (id=20)
+                       BassDriftDepth                                                     // EXT-BASS B3 (id=21)
     };
 
     static double taper(Param p, double n) noexcept {       // CALIB(sprint1)
@@ -904,6 +932,9 @@ public:
             case Param::Volume:        return n;                              // E6.1 0..1 (CALIB(E8) curve)
             case Param::BassPulseWidth: return 0.05 + 0.90 * n;                // EXT-BASS B2 unipolar 5%..95% (default n=0.5 ⇒ PW=0.5)
             case Param::BassPwmDepth:   return 0.45 * n;                       // EXT-BASS B2 unipolar 0..45% PW excursion (LFO-driven)
+            case Param::BassSpread:     return n * kBassSpreadSemisMax;        // EXT-BASS B3 unipolar 0..2 semitones half-spread (additive auf E2.1 ds)
+            case Param::BassDriftRate:  return 0.05 + n * (kBassDriftRateMaxHz - 0.05);  // EXT-BASS B3 unipolar 0.05..5 Hz LP cutoff
+            case Param::BassDriftDepth: return n * kBassDriftDepthSemisMax;    // EXT-BASS B3 unipolar 0..0.15 semitones pitch wander
         }
         return n;
     }
@@ -927,6 +958,9 @@ public:
             case Param::Volume:        setVolume     (taper(p, n)); break;  // E6.1
             case Param::BassPulseWidth: setPulseWidth(taper(p, n)); break;  // EXT-BASS B2
             case Param::BassPwmDepth:   setPwmDepth  (taper(p, n)); break;  // EXT-BASS B2
+            case Param::BassSpread:     setBassSpread    (taper(p, n)); break;  // EXT-BASS B3
+            case Param::BassDriftRate:  setBassDriftRate (taper(p, n)); break;  // EXT-BASS B3
+            case Param::BassDriftDepth: setBassDriftDepth(taper(p, n)); break;  // EXT-BASS B3
         }
     }
     // read-only observability (metering / tests) — not a control path
@@ -949,6 +983,23 @@ public:
             const double pwBase = pulseWidth_.next();          // EXT-BASS B2
             const double pwMod  = pwmDepth_.next() * lfo;      // EXT-BASS B2 (lfo ∈ [-1,+1])
             const double pwEff  = pwBase + pwMod;              // EXT-BASS B2 (clamped in core_)
+            // EXT-BASS B3 — Bass-Spread additiv auf ds (E2.1 unangetastet);
+            // Drift = xorshift32 → einpoliger LP → ×Depth per OSC. State läuft
+            // unabhängig vom Depth-Wert (Reproduzierbarkeit), Beitrag = LP*Depth
+            // ist 0 wenn Depth=0 (IEEE exakt) ⇒ bit-identisch zum B2-Stand.
+            const double spread     = bassSpread_.next();      // EXT-BASS B3 semitones half-spread
+            const double driftRate  = bassDriftRate_.next();   // EXT-BASS B3 LP cutoff in Hz
+            const double driftAlpha = 1.0 - std::exp(-2.0 * M_PI * driftRate / sr_);
+            const double driftAmp   = bassDriftDepth_.next();  // EXT-BASS B3 semitones
+            double drift_v[3];
+            for (int v = 0; v < 3; ++v) {
+                uint32_t x = driftState_[v];
+                x ^= x << 13; x ^= x >> 17; x ^= x << 5;
+                driftState_[v] = x;
+                const double u = (int32_t)x * (1.0 / 2147483648.0);  // [-1, +1)
+                driftLp_[v] += driftAlpha * (u - driftLp_[v]);
+                drift_v[v] = driftLp_[v] * driftAmp;
+            }
             if (portOn_) {                                     // E2.2 Modell A one-pole glide
                 for (int v = 0; v < 3; ++v) {
                     glide_[v] += (gtgt_[v] - glide_[v]) * portA_;
@@ -964,19 +1015,23 @@ public:
             ladder_.setResonance(reso_.next());
 
             double mix = 0.0;
+            // EXT-BASS B3 — effective half-spread: E2.1 ds plus optional bass-
+            // spread. At spread=0 ⇒ dsEff == ds (IEEE exact, ds + 0.0 = ds).
+            const double dsEff = ds + spread;                          // EXT-BASS B3
             if (alloc_.ring()) {
                 // ring operands via the funnel (zipper-free), product on its
                 // own oversampling island. Non-ring path is untouched.
-                const double nA = pitch_[0].next() + pMod - ds;   // E2.1
-                const double nB = pitch_[1].next() + pMod + ds;   // E2.1
+                const double nA = pitch_[0].next() + pMod - dsEff + drift_v[0];   // EXT-BASS B3
+                const double nB = pitch_[1].next() + pMod + dsEff + drift_v[1];   // EXT-BASS B3
                 pitch_[2].next();                       // keep funnel consistent
                 mix = ring_.process(semitonesToHz(nA), semitonesToHz(nB));
             } else {
                 for (int v = 0; v < 3; ++v) {
                     if (!active_[v]) { pitch_[v].next(); continue; }
+                    const double sv = (v == 0 ? -dsEff : (v == 2 ? dsEff : 0.0));  // EXT-BASS B3 spread applied
                     const double hz = semitonesToHz(pitch_[v].next() + pMod
-                                        + (v == 0 ? -ds : (v == 2 ? ds : 0.0))); // E2.1
-                    mix += osc_[v].process(hz, pwEff);                 // EXT-BASS B2 PW per sample
+                                        + sv + drift_v[v]);             // EXT-BASS B3 drift per OSC
+                    mix += osc_[v].process(hz, pwEff);                  // EXT-BASS B2 PW per sample
                 }
             }
             mix *= 0.5;                                 // headroom for the drive
@@ -1033,12 +1088,23 @@ private:
     RampParam      vol_;                                 // E6.1 master gain (smoothed)
     RampParam      pulseWidth_;                          // EXT-BASS B2 PW (0.05..0.95, default 0.5)
     RampParam      pwmDepth_;                            // EXT-BASS B2 PWM excursion (0..0.45, default 0)
+    RampParam      bassSpread_;                          // EXT-BASS B3 Spread (0..2 st, default 0)
+    RampParam      bassDriftRate_;                       // EXT-BASS B3 Drift-LP-Rate (0.05..5 Hz)
+    RampParam      bassDriftDepth_;                      // EXT-BASS B3 Drift-Tiefe (0..0.15 st, default 0)
+    uint32_t       driftState_[3] = {1u, 2u, 3u};        // EXT-BASS B3 per-OSC xorshift32 state
+    double         driftLp_[3]    = {0.0, 0.0, 0.0};     // EXT-BASS B3 per-OSC one-pole LP state
     int            octShift_ = 0;                        // E6.2 semitone offset
     static constexpr double kVelFixed = 1.0;             // CALIB(E8) E6.3 fixed velocity
     static constexpr double kEgIntOctMax   = 2.0;       // CALIB(E8) EG INT max swing (octaves)
     static constexpr double kEgPivot       = 0.0;       // CALIB(E8) EG value at zero swing
     static constexpr double kDetuneCentsMax= 50.0;      // CALIB(E8) DETUNE max half-spread (cents)
     static constexpr double kPortMaxSec    = 0.5;       // CALIB(E8) PORTAMENTO max glide (s)
+    // EXT-BASS B3 DEFAULT constants (no HW reference — design choices):
+    static constexpr double   kBassSpreadSemisMax     = 2.0;          // ±2 ST half-spread max
+    static constexpr double   kBassDriftRateMaxHz     = 5.0;          // up to 5 Hz LP cutoff
+    static constexpr double   kBassDriftRateDefaultHz = 0.5;          // 0.5 Hz default LP
+    static constexpr double   kBassDriftDepthSemisMax = 0.15;         // ±15 cents max drift
+    static constexpr uint32_t kBassDriftDefaultSeed   = 0x1A2B3C4Du;  // reproducible default
 };
 
 // -----------------------------------------------------------------------------
@@ -1092,7 +1158,7 @@ struct Step {
 // EXT-ARP-MOTION: pid 16 = ARP_MODE (Controller-level, discrete 0..4 mapped
 // from the 0..1 lane via setArpMode). All other ids 0..15 dispatch to
 // engine.setParamNorm as before — see applyMotionParam_().
-static constexpr int kMP = 19;                                    // EXT-BASS B2: 0..15 Param + 16 ArpMode + 17 PW + 18 PwmDepth
+static constexpr int kMP = 22;                                    // EXT-BASS B3: + 19 Spread + 20 DriftRate + 21 DriftDepth
 static constexpr int kArpModePid = 16;
 struct MotionLane { bool used = false; float v[16] = {0}; };
 struct Pattern {
@@ -1264,6 +1330,9 @@ public:
             // 16 = kArpModePid, handled separately above (motion-only, not a Param)
             case 17: o=P::BassPulseWidth; return true;  // EXT-BASS B2
             case 18: o=P::BassPwmDepth;   return true;  // EXT-BASS B2
+            case 19: o=P::BassSpread;     return true;  // EXT-BASS B3
+            case 20: o=P::BassDriftRate;  return true;  // EXT-BASS B3
+            case 21: o=P::BassDriftDepth; return true;  // EXT-BASS B3
             default: return false;
         }
     }
@@ -1302,6 +1371,10 @@ public:
     // Discrete control: outside the param trichter, not in KNOB_PARAM.
     void setOscWave(int oscIdx, int wave) noexcept {                     // EXT-BASS B1
         if (eng_) eng_->setOscWave(oscIdx, wave);
+    }
+    // EXT-BASS B3 — Drift-Seed passthrough. Discrete control (reproducibility).
+    void setBassDriftSeed(unsigned int s) noexcept {                     // EXT-BASS B3
+        if (eng_) eng_->setBassDriftSeed(s);
     }
 
     // ---- E5 FLUX -------------------------------------------------------

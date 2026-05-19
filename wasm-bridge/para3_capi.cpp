@@ -44,6 +44,9 @@ static para3::ParaEngine::Param mapParam(int id) {
         case PARA3_P_VOLUME:           return P::Volume;           // E6.1
         case PARA3_P_BASS_PULSE_WIDTH: return P::BassPulseWidth;   // EXT-BASS B2
         case PARA3_P_BASS_PWM_DEPTH:   return P::BassPwmDepth;     // EXT-BASS B2
+        case PARA3_P_BASS_SPREAD:      return P::BassSpread;       // EXT-BASS B3
+        case PARA3_P_BASS_DRIFT_RATE:  return P::BassDriftRate;    // EXT-BASS B3
+        case PARA3_P_BASS_DRIFT_DEPTH: return P::BassDriftDepth;   // EXT-BASS B3
         default:                       return P::Cutoff;
     }
 }
@@ -177,6 +180,13 @@ long para3_arp_dropped(Para3* p)               { return p ? p->ctrl.arpDropped()
 // wave=0 (Saw) ⇒ engine bit-identical to pre-B1 build (T49 max|d|=0).
 void para3_osc_wave(Para3* p, int osc, int wave) {                                       // EXT-BASS B1
     if (p) p->engine.setOscWave(osc, wave);
+}
+
+// EXT-BASS B3 — Drift seed (discrete, reproducibility). Engine sets a
+// default seed in prepare(); this just re-seeds the per-OSC xorshift32 +
+// resets the LP state. Bit-identical default unless depth ≠ 0 (T63).
+void para3_bass_drift_seed(Para3* p, unsigned int seed) {                                // EXT-BASS B3
+    if (p) p->engine.setBassDriftSeed(seed);
 }
 
 void para3_render(Para3* p, float* out, int n) {

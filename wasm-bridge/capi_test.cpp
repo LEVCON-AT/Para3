@@ -565,6 +565,95 @@ int main() {
         }
     }
 
+    // ---- WA11 EXT-BASS B3 SPREAD + DRIFT via C-API ------------------------
+    //  para3_set_param routes Bass-Spread / DriftRate / DriftDepth into the
+    //  engine; para3_bass_drift_seed re-seeds the per-OSC xorshift. Default
+    //  (no calls to these) is bit-identical to a fresh engine that explicitly
+    //  sets BassSpread=0 + BassDriftDepth=0. Different seeds produce
+    //  measurably different outputs; same seed produces sample-identical.
+    {
+        Para3* a = para3_create(sr, Q);
+        Para3* b = para3_create(sr, Q);
+        if (!a || !b) { std::fprintf(stderr, "WA11 create failed\n"); ++failures; }
+        else {
+            para3_set_mode(a, PARA3_M_UNISON);
+            para3_set_mode(b, PARA3_M_UNISON);
+            // b sets the same defaults explicitly via the C-API surface
+            para3_set_param(b, PARA3_P_BASS_SPREAD,      0.0);
+            para3_set_param(b, PARA3_P_BASS_DRIFT_DEPTH, 0.0);
+            para3_set_param(b, PARA3_P_BASS_DRIFT_RATE,  0.5);    // beliebig, depth=0
+            para3_note_on(a, 60);
+            para3_note_on(b, 60);
+            const int N = 48000;
+            std::vector<float> ya(N, 0.f), yb(N, 0.f);
+            for (int i = 0; i < N; i += Q) {
+                const int c = std::min(Q, N - i);
+                para3_render(a, ya.data() + i, c);
+                para3_render(b, yb.data() + i, c);
+            }
+            double maxdNeutral = 0.0;
+            for (int i = 0; i < N; ++i)
+                maxdNeutral = std::max(maxdNeutral, (double)std::fabs(ya[i] - yb[i]));
+
+            // Reseed determinism: two new engines with same seed must match.
+            // (We can't reseed a mid-render — the LP state has already evolved.)
+            Para3* c1 = para3_create(sr, Q);
+            Para3* c2 = para3_create(sr, Q);
+            para3_set_mode(c1, PARA3_M_UNISON);
+            para3_set_mode(c2, PARA3_M_UNISON);
+            para3_set_param(c1, PARA3_P_BASS_DRIFT_DEPTH, 1.0);
+            para3_set_param(c2, PARA3_P_BASS_DRIFT_DEPTH, 1.0);
+            para3_set_param(c1, PARA3_P_BASS_DRIFT_RATE,  0.5);
+            para3_set_param(c2, PARA3_P_BASS_DRIFT_RATE,  0.5);
+            para3_bass_drift_seed(c1, 0xCAFEBABEu);
+            para3_bass_drift_seed(c2, 0xCAFEBABEu);
+            para3_note_on(c1, 60);
+            para3_note_on(c2, 60);
+            std::vector<float> yc1(N, 0.f), yc2(N, 0.f);
+            for (int i = 0; i < N; i += Q) {
+                const int c = std::min(Q, N - i);
+                para3_render(c1, yc1.data() + i, c);
+                para3_render(c2, yc2.data() + i, c);
+            }
+            double maxdSeed = 0.0;
+            for (int i = 0; i < N; ++i)
+                maxdSeed = std::max(maxdSeed, (double)std::fabs(yc1[i] - yc2[i]));
+
+            // Spread effect via API: re-prep b with spread > 0, output differs
+            // from neutral a (skip initial 8000 samples for ramp settle).
+            Para3* d = para3_create(sr, Q);
+            para3_set_mode(d, PARA3_M_UNISON);
+            para3_set_param(d, PARA3_P_BASS_SPREAD, 1.0);            // max
+            para3_note_on(d, 60);
+            std::vector<float> yd(N, 0.f);
+            for (int i = 0; i < N; i += Q) {
+                const int c = std::min(Q, N - i);
+                para3_render(d, yd.data() + i, c);
+            }
+            double spreadDiff = 0.0;
+            for (int i = 8000; i < N; ++i)
+                spreadDiff = std::max(spreadDiff, (double)std::fabs(yd[i] - ya[i]));
+
+            bool finiteOk = true;
+            for (int i = 1000; i < N; ++i)
+                if (!std::isfinite(yc1[i]) || !std::isfinite(yd[i])) { finiteOk = false; break; }
+
+            const bool pass = (maxdNeutral == 0.0) && (maxdSeed == 0.0)
+                           && (spreadDiff >= 0.05) && finiteOk;
+            std::printf("\nWA11 EXT-BASS B3 SPREAD+DRIFT via C-API\n");
+            std::printf("   default vs explicit Spread=0+Depth=0  max|d|: %.3e  (want == 0)\n", maxdNeutral);
+            std::printf("   same-seed determinism               max|d|: %.3e  (want == 0)\n", maxdSeed);
+            std::printf("   Spread=max vs neutral               max|d|: %.3e  (want ≥ 5e-2)\n", spreadDiff);
+            std::printf("   finite under all B3 settings              : %s\n", finiteOk?"yes":"NO");
+            std::printf("   -> %s\n", pass?"PASS":"FAIL");
+            if (!pass) ++failures;
+
+            para3_destroy(a); para3_destroy(b);
+            para3_destroy(c1); para3_destroy(c2);
+            para3_destroy(d);
+        }
+    }
+
     std::printf("\n==================================================\n");
     std::printf("%s  (%d failure%s)\n",
                 failures ? "OVERALL: FAIL" : "OVERALL: PASS",

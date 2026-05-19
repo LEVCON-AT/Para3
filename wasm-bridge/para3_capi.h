@@ -44,7 +44,10 @@ enum {
     PARA3_P_VOLUME = 15,            // E6.1 unipolar, 1.0 = unity
     // 16 reserved for kArpModePid (motion-only discrete; NOT a setParamNorm target)
     PARA3_P_BASS_PULSE_WIDTH = 17,  // EXT-BASS B2 unipolar, 0.5 norm = PW 0.5 (default, bit-identical to B1)
-    PARA3_P_BASS_PWM_DEPTH   = 18   // EXT-BASS B2 unipolar, 0 = static PW (default, bit-identical to B1)
+    PARA3_P_BASS_PWM_DEPTH   = 18,  // EXT-BASS B2 unipolar, 0 = static PW (default, bit-identical to B1)
+    PARA3_P_BASS_SPREAD      = 19,  // EXT-BASS B3 unipolar 0..2 semitones half-spread (additive auf E2.1)
+    PARA3_P_BASS_DRIFT_RATE  = 20,  // EXT-BASS B3 unipolar 0.05..5 Hz LP cutoff
+    PARA3_P_BASS_DRIFT_DEPTH = 21   // EXT-BASS B3 unipolar 0..0.15 semitones pitch wander
 };
 // voice modes mirror ParaAllocator::Mode
 enum {
@@ -126,6 +129,12 @@ long para3_arp_dropped(Para3* p);                             // EXT-ARP Block C
 // silently ignored. Default for all 3 oscillators = 0 ⇒ pre-B1 audio path
 // preserved (T49 max|d|=0).
 void para3_osc_wave(Para3* p, int osc, int wave);             // EXT-BASS B1
+
+// EXT-BASS B3 — Drift seed (reproducible per-OSC pitch-wander). Discrete
+// control. Default seed is set in engine prepare(); call only when you need
+// determinism for tests or stable analog-imperfection feel across sessions.
+// seed=0 is treated as 1 internally (xorshift32 needs non-zero state).
+void para3_bass_drift_seed(Para3* p, unsigned int seed);      // EXT-BASS B3
 
 // render n frames into out (mono). out is a pointer into the WASM heap.
 // real-time safe: no allocation, no locks, no syscalls.
