@@ -684,6 +684,8 @@ const DEMO_PRESETS = {
     faders: { atk: 8, dec: 45, sus: 60 },
     arpEnabled: false, arpHold: false, arpMode: 0,
     stepTrigger: false, metro: true, tempoDiv: 1, motionSmooth: false,
+    // FLUX-6: 30 % swing — classic hip-hop off-beat shuffle (odd 1/16 delayed).
+    swing: 0.30,
     // Bass groove: 8 hits over 16 steps. C2/D#2/G2/F2/D#2 — Bb minor blues vibe.
     steps:     [true,  false, false, true,  false, false, true,  false,
                 true,  false, true,  false, true,  false, true,  false],
@@ -807,6 +809,14 @@ const DEMO_PRESETS = {
     stepNotes:[36,   36,   39,   36,   31,   0,     34,   36,
                36,   42,   36,   43,   39,   36,    0,    36],
     actSteps:  new Array(16).fill(true),
+    // FLUX-4: TB-303 accent pattern — downbeats full, off-beats half-velocity
+    // (Volca-Bass / Minilogue accent convention; classic 303 "ghost notes").
+    stepVel:  [1.0, 0.45, 0.85, 0.40,  1.0, 1.0, 0.50, 0.45,
+               1.0, 0.45, 0.85, 0.40,  1.0, 0.50, 1.0,  0.45],
+    // FLUX-5: short staccato gates on the off-beats — 303 "slide vs cut"
+    // articulation. 1.0 = legacy hold; <1.0 = early note-off mid-step.
+    stepGate: [1.0, 0.35, 0.80, 0.40,  1.0, 1.0, 0.45, 0.35,
+               1.0, 0.35, 0.80, 0.40,  1.0, 0.45, 1.0,  0.35],
     motionTarget: 'cut',
     // CUTOFF sweep tief→hoch→tief (klassischer 303-Filter-Lauf über 16 steps).
     motionLanes: {
@@ -1748,6 +1758,28 @@ function emit(fn) {
           emit((c) => c.seqActiveStep(i, on));
         });
       }
+      // FLUX-6 SWING — preset swing 0..0.7 (Korg-Volca/Electribe shuffle).
+      // Absent ⇒ neutral 0 (preset switches reset cleanly; no swing leak from
+      // the previously loaded slot). The #swing segmented `on` class is set
+      // only if the value matches one of the four exposed buckets.
+      swingVal = (typeof p.swing === 'number') ? p.swing : 0;
+      [...swingSeg.children].forEach(b => b.classList.toggle('on', +b.dataset.sw === swingVal));
+      emit((c) => c.seqSwing(swingVal));
+      // FLUX-4/5 STEP VEL + GATE — per-step modulation arrays. Default 1.0
+      // (legacy hold). Absent ⇒ reset to neutral so per-step state from the
+      // previously loaded preset doesn't bleed into the new slot.
+      const presetVel  = Array.isArray(p.stepVel)  ? p.stepVel  : new Array(16).fill(1.0);
+      const presetGate = Array.isArray(p.stepGate) ? p.stepGate : new Array(16).fill(1.0);
+      presetVel.forEach((v,i) => {
+        stepVel[i] = v;
+        setStepVelDisplay(i);
+        emit((c) => c.seqStepVel(i, v));
+      });
+      presetGate.forEach((g,i) => {
+        stepGate[i] = g;
+        setStepGateDisplay(i);
+        emit((c) => c.seqStepGate(i, g));
+      });
       // ---- Sequencer pattern (per-step notes + gates) ----
       if (Array.isArray(p.steps)) {
         p.steps.forEach((on,i) => {

@@ -413,6 +413,33 @@ test.describe('FLUX-2 — Note + Param events, Timeline UI, Clear', () => {
     await page.locator('#swing button[data-sw="0"]').click();
   });
 
+  test('US-PRESET-FLUX-STATE — loading P1/P4 applies preset swing + per-step vel', async ({ page }) => {
+    await bootstrap(page);
+
+    // Load P1 (HIP-HOP) — preset declares swing=0.30.
+    await page.locator('.pslot[data-s="1"]').click();
+    await page.waitForTimeout(250);
+    const swingP1 = await page.locator('#swing button.on').getAttribute('data-sw');
+    expect(swingP1).toBe('0.30');         // #swing UI mirror matches preset
+
+    // Load P4 (ACID) — preset has stepVel array; no swing → resets to 0.
+    await page.locator('.pslot[data-s="4"]').click();
+    await page.waitForTimeout(250);
+    const swingP4 = await page.locator('#swing button.on').getAttribute('data-sw');
+    expect(swingP4).toBe('0');            // absent preset swing ⇒ neutral
+
+    // ACID step 1 velocity strip width = 45 % (preset stepVel[1]=0.45).
+    const velWidth = await page.locator('.step').nth(1).locator('.vf').evaluate(el => (el as HTMLElement).style.width);
+    // CSS pct can render with 1 decimal — accept any of the four valid spellings.
+    expect(['45%', '45.0%']).toContain(velWidth);
+
+    // Back to P1 → swing resumes to 30 % (proves reset isn't sticky).
+    await page.locator('.pslot[data-s="1"]').click();
+    await page.waitForTimeout(250);
+    const swingBack = await page.locator('#swing button.on').getAttribute('data-sw');
+    expect(swingBack).toBe('0.30');
+  });
+
   test('US-FLUX-TIMELINE-UI — Timeline shows when fluxOn, step grid hides', async ({ page }) => {
     await bootstrap(page);
 

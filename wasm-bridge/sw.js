@@ -14,7 +14,7 @@
 //  the worklet and needs no SAB.
 // =============================================================================
 
-const CACHE_VER  = 'para3-v36'; // FLUX-6: SWING / Shuffle segmented control (0/15/30/45%, odd 1/16 steps delayed)
+const CACHE_VER  = 'para3-v37'; // FLUX-7: DEMO presets carry swing / stepVel / stepGate (P1 hip-hop swing, P4 acid accents)
 const PRECACHE   = [
   './',
   './index.html',
