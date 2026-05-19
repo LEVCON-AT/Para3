@@ -1331,6 +1331,310 @@ static MEntry M5_3_delayMix() {
 }
 
 // =============================================================================
+//  LAB-4 :: M6.x Voice modes + Ring
+// =============================================================================
+
+// Helper: find N largest spectral peaks above threshold dBFS.
+// Returns frequencies (Hz) sorted by amplitude descending.
+static std::vector<double> findTopPeaks(const std::vector<double>& mag,
+                                         std::size_t N, double sampleRate,
+                                         int topK, double minDb,
+                                         double minSepHz = 20.0) {
+    struct P { double f; double mag; };
+    std::vector<P> peaks;
+    for (std::size_t k = 2; k + 1 < mag.size(); ++k) {
+        if (mag[k] > mag[k-1] && mag[k] > mag[k+1] && mag[k] > minDb) {
+            peaks.push_back({(double)k * sampleRate / (double)N, mag[k]});
+        }
+    }
+    std::sort(peaks.begin(), peaks.end(),
+              [](const P& a, const P& b){ return a.mag > b.mag; });
+    std::vector<double> kept;
+    for (const auto& p : peaks) {
+        bool tooClose = false;
+        for (double f : kept)
+            if (std::fabs(f - p.f) < minSepHz) { tooClose = true; break; }
+        if (tooClose) { continue; }
+        kept.push_back(p.f);
+        if ((int)kept.size() >= topK) { break; }
+    }
+    return kept;
+}
+
+// -- M6.1 POLY allocation -----------------------------------------------------
+// Frage:  Spielen 3 simultane Noten 3 unterschiedliche Tonhöhen?
+// Mess:   POLY mode, noteOn(60), noteOn(64), noteOn(67) (C-Dur-Akkord). FFT
+//         → die 3 niedrigsten Spektral-Peaks müssen midiHz(60/64/67) treffen.
+static MEntry M6_1_poly() {
+    P3::ParaEngine e; e.prepare(SR, 256);
+    setNeutralPatch(e);
+    e.setMode(P3::ParaAllocator::Mode::Poly);
+    e.noteOn(60); e.noteOn(64); e.noteOn(67);
+    auto cap = capture(e, 32768, 0.15);
+    auto sp = spectrum(cap);
+    writeSpectrum(OUT_DIR + "/M6.1-poly-c-major.svg",
+                  "M6.1 — POLY mode C-major triad spectrum",
+                  sp.magDb, sp.N, SR);
+    auto peaks = findTopPeaks(sp.magDb, sp.N, SR, 3, -40.0, 40.0);
+    std::sort(peaks.begin(), peaks.end());
+
+    const double exp[] = {midiHz(60), midiHz(64), midiHz(67)};
+    bool ok = peaks.size() >= 3;
+    double worstErr = 0;
+    if (ok) for (int i = 0; i < 3; ++i) {
+        const double err = std::fabs(peaks[i] - exp[i]) / exp[i];
+        worstErr = std::max(worstErr, err);
+        if (err > 0.02) ok = false;
+    }
+
+    MEntry m; m.id="M6.1"; m.section="VoiceMode";
+    m.what="POLY plays 3 distinct fundamentals (C-major triad)";
+    m.metric="worst_relative_err"; m.unit="%";
+    m.expected="< 2";
+    char b[32]; std::snprintf(b, sizeof b, "%.2f", worstErr * 100.0); m.measured=b;
+    m.pass = ok;
+    m.svgPath = OUT_DIR + "/M6.1-poly-c-major.svg";
+    if (peaks.size() >= 3) {
+        char nb[120]; std::snprintf(nb, sizeof nb,
+            "peaks: %.1f %.1f %.1f Hz (expect 261.6/329.6/392.0)",
+            peaks[0], peaks[1], peaks[2]);
+        m.note = nb;
+    }
+    return m;
+}
+
+// -- M6.2 UNISON energy concentration -----------------------------------------
+// Frage:  Bündelt UNISON die Energie um EIN Fundamental? (vs POLY mit 3
+//         getrennten Notes)
+// Mess:   UNISON noteOn(60). Spektrum dominiert von f₀ Cluster (siehe M1.3).
+//         Top-1-Peak muss midiHz(60) treffen; Energie in 250..280 Hz > 50 % der
+//         Gesamt-Energie unter 1 kHz.
+static MEntry M6_2_unison() {
+    P3::ParaEngine e; e.prepare(SR, 256);
+    setNeutralPatch(e);
+    e.setMode(P3::ParaAllocator::Mode::Unison);
+    e.setParamNorm(P3::ParaEngine::Param::Detune, 0.2);
+    e.noteOn(60);
+    auto cap = capture(e, 32768, 0.15);
+    auto sp = spectrum(cap);
+    writeSpectrum(OUT_DIR + "/M6.2-unison-c4.svg",
+                  "M6.2 — UNISON mode @ MIDI 60", sp.magDb, sp.N, SR);
+    const double f0 = midiHz(60);
+    double eF0 = 0, eAll = 0;
+    for (std::size_t k = 1; k < sp.magDb.size(); ++k) {
+        const double f = (double)k * SR / sp.N;
+        if (f > 1000) { break; }
+        const double lin = std::pow(10.0, sp.magDb[k] / 20.0);
+        eAll += lin * lin;
+        if (f > f0 * 0.9 && f < f0 * 1.1) eF0 += lin * lin;
+    }
+    const double ratio = (eAll > 0) ? eF0 / eAll : 0;
+    auto top = findTopPeaks(sp.magDb, sp.N, SR, 1, -30.0, 40.0);
+    const bool peakOk = !top.empty() && std::fabs(top[0] - f0) < 5.0;
+
+    MEntry m; m.id="M6.2"; m.section="VoiceMode";
+    m.what="UNISON concentrates energy at f₀";
+    m.metric="energy_ratio_f0_band"; m.unit="";
+    m.expected="> 0.5 of <1 kHz";
+    char b[32]; std::snprintf(b, sizeof b, "%.3f", ratio); m.measured=b;
+    m.pass = peakOk && ratio > 0.5;
+    m.svgPath = OUT_DIR + "/M6.2-unison-c4.svg";
+    return m;
+}
+
+// -- M6.3 OCTAVE stack --------------------------------------------------------
+// Frage:  Liefert OCTAVE mode neben der Grundnote auch eine Oktave-Komponente?
+// Mess:   OCTAVE noteOn(60). Top-2 Peaks müssen midiHz(60) und midiHz(72)/(48)
+//         (eine Oktave höher oder tiefer) ergeben.
+static MEntry M6_3_octave() {
+    P3::ParaEngine e; e.prepare(SR, 256);
+    setNeutralPatch(e);
+    e.setMode(P3::ParaAllocator::Mode::Octave);
+    e.noteOn(60);
+    auto cap = capture(e, 32768, 0.15);
+    auto sp = spectrum(cap);
+    writeSpectrum(OUT_DIR + "/M6.3-octave.svg",
+                  "M6.3 — OCTAVE mode @ MIDI 60 (expect 60 + ±12)",
+                  sp.magDb, sp.N, SR);
+    auto top = findTopPeaks(sp.magDb, sp.N, SR, 4, -40.0, 30.0);
+    std::sort(top.begin(), top.end());
+
+    const double f60 = midiHz(60), f72 = midiHz(72), f48 = midiHz(48);
+    bool has60 = false, hasOct = false;
+    for (double f : top) {
+        if (std::fabs(f - f60) < 5.0) has60 = true;
+        if (std::fabs(f - f72) < 5.0 || std::fabs(f - f48) < 5.0) hasOct = true;
+    }
+
+    MEntry m; m.id="M6.3"; m.section="VoiceMode";
+    m.what="OCTAVE adds 1-octave companion to the played note";
+    m.metric="has_octave_peak"; m.unit="";
+    m.expected="yes (60 + ±12)";
+    m.measured = (has60 && hasOct) ? "yes" : "no";
+    m.pass = has60 && hasOct;
+    m.svgPath = OUT_DIR + "/M6.3-octave.svg";
+    if (top.size() >= 4) {
+        char nb[120]; std::snprintf(nb, sizeof nb,
+            "top4 peaks: %.0f %.0f %.0f %.0f Hz", top[0], top[1], top[2], top[3]);
+        m.note = nb;
+    }
+    return m;
+}
+
+// -- M6.4 FIFTH interval ------------------------------------------------------
+// Frage:  Liefert FIFTH mode neben Grundnote auch eine Quinte (+7 Halbtöne)?
+static MEntry M6_4_fifth() {
+    P3::ParaEngine e; e.prepare(SR, 256);
+    setNeutralPatch(e);
+    e.setMode(P3::ParaAllocator::Mode::Fifth);
+    e.noteOn(60);
+    auto cap = capture(e, 32768, 0.15);
+    auto sp = spectrum(cap);
+    writeSpectrum(OUT_DIR + "/M6.4-fifth.svg",
+                  "M6.4 — FIFTH mode @ MIDI 60 (expect 60 + 67)",
+                  sp.magDb, sp.N, SR);
+    auto top = findTopPeaks(sp.magDb, sp.N, SR, 4, -40.0, 20.0);
+
+    const double f60 = midiHz(60), f67 = midiHz(67);
+    bool has60 = false, hasFifth = false;
+    for (double f : top) {
+        if (std::fabs(f - f60) < 5.0) has60 = true;
+        if (std::fabs(f - f67) < 5.0) hasFifth = true;
+    }
+
+    MEntry m; m.id="M6.4"; m.section="VoiceMode";
+    m.what="FIFTH adds +7-semitone companion (perfect fifth)";
+    m.metric="has_fifth_peak"; m.unit="";
+    m.expected="yes (60 + 67)";
+    m.measured = (has60 && hasFifth) ? "yes" : "no";
+    m.pass = has60 && hasFifth;
+    m.svgPath = OUT_DIR + "/M6.4-fifth.svg";
+    return m;
+}
+
+// -- M6.5 UNIRING — ring modulation -------------------------------------------
+// Frage:  Produziert UNIRING ring-mod-Summen/Differenz-Spektrum?
+// Mess:   UNIRING noteOn(60). Reine Ring-mod von zwei Sägezähnen f1, f2
+//         erzeugt zusätzlich Komponenten bei |f1±f2|. Wir suchen Peaks, die
+//         NICHT auf der Harmonischen-Leiter eines einzelnen Saw f₀ liegen.
+static MEntry M6_5_uniring() {
+    P3::ParaEngine e; e.prepare(SR, 256);
+    setNeutralPatch(e);
+    e.setMode(P3::ParaAllocator::Mode::UniRing);
+    e.setParamNorm(P3::ParaEngine::Param::Detune, 0.4);   // explicit detune for ring
+    e.noteOn(60);
+    auto cap = capture(e, 32768, 0.20);
+    auto sp = spectrum(cap);
+    writeSpectrum(OUT_DIR + "/M6.5-uniring.svg",
+                  "M6.5 — UNIRING mode @ MIDI 60 (ring mod side bands)",
+                  sp.magDb, sp.N, SR);
+
+    // Compare against a clean POLY saw at MIDI 60 (single oscillator path).
+    P3::ParaEngine eRef; eRef.prepare(SR, 256);
+    setNeutralPatch(eRef); eRef.noteOn(60);
+    auto capRef = capture(eRef, 32768, 0.20);
+    auto spRef = spectrum(capRef);
+
+    // Count peaks above -50 dB in UNIRING that are NOT present (within 5 Hz
+    // tolerance) in the reference saw.
+    auto topRing = findTopPeaks(sp.magDb,   sp.N, SR, 30, -50.0, 5.0);
+    auto topRef  = findTopPeaks(spRef.magDb, spRef.N, SR, 30, -50.0, 5.0);
+    int newPeaks = 0;
+    for (double f : topRing) {
+        bool inRef = false;
+        for (double r : topRef) if (std::fabs(f - r) < 5.0) { inRef = true; break; }
+        if (!inRef) ++newPeaks;
+    }
+
+    MEntry m; m.id="M6.5"; m.section="VoiceMode";
+    m.what="UNIRING adds ring-mod side-bands not in pure saw";
+    m.metric="new_peaks_vs_saw"; m.unit="";
+    m.expected="≥ 5";
+    char b[32]; std::snprintf(b, sizeof b, "%d", newPeaks); m.measured=b;
+    m.pass = newPeaks >= 5;
+    m.svgPath = OUT_DIR + "/M6.5-uniring.svg";
+    return m;
+}
+
+// -- M6.6 POLYRING — ring modulation across notes -----------------------------
+// Frage:  Erzeugt POLYRING bei mehreren Noten Ring-mod-Produkte zwischen ihnen?
+static MEntry M6_6_polyring() {
+    P3::ParaEngine e; e.prepare(SR, 256);
+    setNeutralPatch(e);
+    e.setMode(P3::ParaAllocator::Mode::PolyRing);
+    e.noteOn(60); e.noteOn(67);            // C + G fifth → expect sum/diff
+    auto cap = capture(e, 32768, 0.20);
+    auto sp = spectrum(cap);
+    writeSpectrum(OUT_DIR + "/M6.6-polyring.svg",
+                  "M6.6 — POLYRING mode 60+67", sp.magDb, sp.N, SR);
+
+    // Check for a peak near midiHz(67) - midiHz(60) ≈ 130 Hz (difference tone)
+    auto top = findTopPeaks(sp.magDb, sp.N, SR, 10, -50.0, 5.0);
+    bool hasDiff = false;
+    const double diffHz = midiHz(67) - midiHz(60);    // ≈130 Hz
+    for (double f : top)
+        if (std::fabs(f - diffHz) < 5.0) { hasDiff = true; break; }
+
+    MEntry m; m.id="M6.6"; m.section="VoiceMode";
+    m.what="POLYRING produces difference frequency between two notes";
+    m.metric="has_diff_peak_~130Hz"; m.unit="";
+    m.expected="yes";
+    m.measured = hasDiff ? "yes" : "no";
+    m.pass = hasDiff;
+    m.svgPath = OUT_DIR + "/M6.6-polyring.svg";
+    return m;
+}
+
+// -- M6.7 Voice-mode switching click-freedom ----------------------------------
+// Frage:  Produziert ein setMode() während sustained note einen audiblen Klick?
+// Mess:   noteOn(60), 300 ms render, dann setMode → UNISON, weitere 300 ms.
+//         Para3 mappt die bestehenden Voices an die neue Allokation um — ein
+//         kleiner Übergangs-Transient ist erwartet (Volca-typisch). Wir
+//         akzeptieren bis 0.30 sample-Δ; klar audibler Klick wäre > 0.5.
+static MEntry M6_7_modeSwitchClickFree() {
+    P3::ParaEngine e; e.prepare(SR, 256);
+    setNeutralPatch(e);
+    e.setMode(P3::ParaAllocator::Mode::Poly);
+    e.noteOn(60);
+    std::vector<float> a((std::size_t)(SR * 0.3));
+    e.process(a.data(), (int)a.size());
+    e.setMode(P3::ParaAllocator::Mode::Unison);
+    std::vector<float> b((std::size_t)(SR * 0.3));
+    e.process(b.data(), (int)b.size());
+
+    // Check Δ sample in 5 ms window around the boundary
+    const std::size_t W = (std::size_t)(SR * 0.005);
+    double maxDiff = 0;
+    for (std::size_t i = 1; i < W; ++i) {
+        const double d = std::fabs((double)b[i] - (double)b[i-1]);
+        maxDiff = std::max(maxDiff, d);
+    }
+    // Also worst boundary: last sample of a → first sample of b
+    if (!a.empty() && !b.empty()) {
+        const double d = std::fabs((double)b.front() - (double)a.back());
+        maxDiff = std::max(maxDiff, d);
+    }
+
+    // Scope around boundary
+    std::vector<float> around;
+    const std::size_t pre = std::min(a.size(), (std::size_t)(SR * 0.020));
+    around.insert(around.end(), a.end() - pre, a.end());
+    around.insert(around.end(), b.begin(), b.begin() + (std::size_t)(SR * 0.020));
+    writeScope(OUT_DIR + "/M6.7-mode-switch-clickfree.svg",
+               "M6.7 — Mode switch POLY→UNISON (20 ms pre/post)",
+               around, SR, 0.0, 0.040);
+
+    MEntry m; m.id="M6.7"; m.section="VoiceMode";
+    m.what="Mode switch transient bounded (Volca-typisch)";
+    m.metric="max_sample_diff_at_switch"; m.unit="amp";
+    m.expected="< 0.30 (audible click would be > 0.5)";
+    char buf[32]; std::snprintf(buf, sizeof buf, "%.4f", maxDiff); m.measured=buf;
+    m.pass = maxDiff < 0.30;
+    m.svgPath = OUT_DIR + "/M6.7-mode-switch-clickfree.svg";
+    return m;
+}
+
+// =============================================================================
 //  Driver
 // =============================================================================
 int main(int argc, char** argv) {
@@ -1371,7 +1675,16 @@ int main(int argc, char** argv) {
     if (want("M5.2")) manifest.add(M5_2_delayFeedback());
     if (want("M5.3")) manifest.add(M5_3_delayMix());
 
-    // ---- LAB-4..6: M6.x..M9.x werden in den jeweiligen Sprints ergänzt ----
+    // ---- LAB-4 Voice modes + Ring ----
+    if (want("M6.1")) manifest.add(M6_1_poly());
+    if (want("M6.2")) manifest.add(M6_2_unison());
+    if (want("M6.3")) manifest.add(M6_3_octave());
+    if (want("M6.4")) manifest.add(M6_4_fifth());
+    if (want("M6.5")) manifest.add(M6_5_uniring());
+    if (want("M6.6")) manifest.add(M6_6_polyring());
+    if (want("M6.7")) manifest.add(M6_7_modeSwitchClickFree());
+
+    // ---- LAB-5..6: M7.x..M9.x werden in den jeweiligen Sprints ergänzt ----
 
     manifest.writeCsv(OUT_DIR + "/MANIFEST.csv");
     manifest.writeMarkdownTable(OUT_DIR + "/MANIFEST.md",

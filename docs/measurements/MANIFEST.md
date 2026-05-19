@@ -26,5 +26,12 @@
 | M5.1 | Delay | DELAY_TIME monotonically lengthens echo offset | onset_at_0.75 | monoton ↑ | 747 | ms | PASS | [svg](../docs/measurements/M5.1-delay-time.svg) |
 | M5.2 | Delay | FEEDBACK sustains late-tail energy (echo train) | tail_rise_fb_0_to_0.9 | > 20 | 61.2 | dB | PASS | [svg](../docs/measurements/M5.2-delay-feedback.svg) |
 | M5.3 | Delay | DELAY_MIX scales echo amplitude monotonically | dyn_range_mix_0_to_1 | > 30 | 87.3 | dB | PASS | [svg](../docs/measurements/M5.3-delay-mix.svg) |
+| M6.1 | VoiceMode | POLY plays 3 distinct fundamentals (C-major triad) | worst_relative_err | < 2 | 0.22 | % | PASS | [svg](../docs/measurements/M6.1-poly-c-major.svg) |
+| M6.2 | VoiceMode | UNISON concentrates energy at f₀ | energy_ratio_f0_band | > 0.5 of <1 kHz | 0.779 |  | PASS | [svg](../docs/measurements/M6.2-unison-c4.svg) |
+| M6.3 | VoiceMode | OCTAVE adds 1-octave companion to the played note | has_octave_peak | yes (60 + ±12) | yes |  | PASS | [svg](../docs/measurements/M6.3-octave.svg) |
+| M6.4 | VoiceMode | FIFTH adds +7-semitone companion (perfect fifth) | has_fifth_peak | yes (60 + 67) | yes |  | PASS | [svg](../docs/measurements/M6.4-fifth.svg) |
+| M6.5 | VoiceMode | UNIRING adds ring-mod side-bands not in pure saw | new_peaks_vs_saw | ≥ 5 | 24 |  | PASS | [svg](../docs/measurements/M6.5-uniring.svg) |
+| M6.6 | VoiceMode | POLYRING produces difference frequency between two notes | has_diff_peak_~130Hz | yes | yes |  | PASS | [svg](../docs/measurements/M6.6-polyring.svg) |
+| M6.7 | VoiceMode | Mode switch transient bounded (Volca-typisch) | max_sample_diff_at_switch | < 0.30 (audible click would be > 0.5) | 0.2345 | amp | PASS | [svg](../docs/measurements/M6.7-mode-switch-clickfree.svg) |
 
-Total: 24 — Failures: 0
+Total: 31 — Failures: 0
