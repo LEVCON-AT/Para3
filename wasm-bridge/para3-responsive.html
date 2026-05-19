@@ -554,6 +554,12 @@ body{
         <button class="tbtn" id="flux"   title="FLUX MODE · sample-accurate event sequence">FLUX</button>
         <button class="tbtn" id="flxrec" title="FLUX REC · arm event capture (engine T23/T42)">F·REC</button>
         <button class="tbtn" id="flxclr" title="FLUX CLEAR · drop queued+published events">F·CLR</button>
+        <button class="tbtn"    id="flxfine" title="FLUX FINE · sample-accurate free-run (off=1/16 Korg snap)">F·FINE</button>
+        <span class="seg" id="flen" title="FLUX LOOP LENGTH · bars per loop">
+          <button class="tbtn on" data-fl="1">1B</button>
+          <button class="tbtn"    data-fl="2">2B</button>
+          <button class="tbtn"    data-fl="4">4B</button>
+        </span>
       </div>
       <div class="steps" id="steps"></div>
       <!-- EXT-FLUX timeline: 16×1/16 ticks (4× emphasized), note + param event
@@ -1422,6 +1428,39 @@ function emit(fn) {
     emit((c) => c.seqFluxClear());
     show('FLUX', 'cleared', '');
   };
+  // EXT-FLUX-QUANTIZE — F·FINE toggle. Default OFF = engine snaps to 1/16
+  // step grid (Korg-Volca/Electribe/Minilogue standard). On = sample-accurate
+  // free-running (jenseits Korg, technisch verfügbar).
+  const flxFineB = document.getElementById('flxfine');
+  let fluxFineOn = false;
+  flxFineB.onclick = () => {
+    fluxFineOn = !fluxFineOn;
+    flxFineB.classList.toggle('on', fluxFineOn);
+    show('FLUX FINE', fluxFineOn ? 'ON (free)' : 'OFF (1/16 snap)', '');
+    // Engine flag: quantize is the inverse of fine.
+    emit((c) => c.seqFluxQuantize(!fluxFineOn));
+  };
+  // EXT-FLUX F·LEN — segmented 1/2/4-bar loop length selector. Mirrors the
+  // #tdiv styling. Changing during fluxOn re-sends seqFluxLoopLen so the
+  // engine wraps at the new length on the next sample.
+  const flenSeg = document.getElementById('flen');
+  flenSeg.addEventListener('click', (e) => {
+    const b = e.target.closest('button.tbtn[data-fl]');
+    if (!b) return;
+    [...flenSeg.children].forEach(x => x.classList.remove('on'));
+    b.classList.add('on');
+    fluxLoopBars = +b.dataset.fl;
+    fluxLoopEl.textContent = String(fluxLoopBars);
+    show('FLUX LEN', fluxLoopBars + ' bar' + (fluxLoopBars===1?'':'s'), '');
+    if (fluxOn) {
+      fluxLoopLen = fluxLoopLenSamples();
+      fluxStartTime = (audio && audio.ctx) ? audio.ctx.currentTime : 0;
+      // Clear mirror — old events have offsets that won't match the new loop.
+      fluxEvents.length = 0;
+      drawFluxEvents();
+      emit((c) => { c.seqFluxLoopLen(fluxLoopLen); c.seqFluxClear(); });
+    }
+  });
 
   // EXT-ARP UI2: only ON / HOLD are toggles. MODE / RATE / OCT / GATE are
   // knobs (data-int="1" for the discrete ones). Industry-standard layout:

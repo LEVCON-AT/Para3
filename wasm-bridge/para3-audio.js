@@ -65,6 +65,9 @@ export class Para3Controls {
   // true (engine guards via fluxRec_, calls outside REC are no-ops).
   seqFluxParam(pid, norm01) { return this._do(() => this.ring.seqFluxParam(pid, norm01)); }
   seqFluxClear()            { return this._do(() => this.ring.seqFluxClear()); }
+  // EXT-FLUX-QUANTIZE — toggles 1/16-step snap during record. Default on
+  // (Korg-Volca/Electribe/Minilogue standard). Off = F·FINE sample-accurate.
+  seqFluxQuantize(on)       { return this._do(() => this.ring.seqFluxQuantize(on)); }
   seqFluxCommit()           { return this._do(() => this.ring.seqFluxCommit()); }
   // E6.2 — engine pitch offset (integer semitones × 12). Replaces host-side
   // +oct*12 in midiOfKey so the engine owns the pitch path (band-limited).

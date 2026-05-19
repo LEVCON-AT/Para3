@@ -14,7 +14,7 @@
 //  the worklet and needs no SAB.
 // =============================================================================
 
-const CACHE_VER  = 'para3-v32'; // FLUX-2: ParamSet C-API + Timeline-Visualizer + F·CLR + .mhead status
+const CACHE_VER  = 'para3-v33'; // FLUX-3: 1/16 quantize (Korg) + F·FINE toggle + F·LEN 1/2/4 bars
 const PRECACHE   = [
   './',
   './index.html',

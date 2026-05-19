@@ -1436,7 +1436,11 @@ int main() {
             e.setParamNorm(PE::Param::DecRel,0.04);
             e.setParamNorm(PE::Param::Sustain,0.0);
             para3::Controller c; c.prepare(e,sr_);
-            c.setFluxMode(true); c.fluxSetLoopLen(L); c.fluxRec(true);
+            c.setFluxMode(true); c.fluxSetLoopLen(L);
+            // FLUX-3: default fluxQuantize_ is true (Korg 1/16 snap). T23
+            // explicitly tests sample-accurate F·FINE mode → disable snap.
+            c.setFluxQuantize(false);
+            c.fluxRec(true);
             const int O1=1234, O2=20777;               // irregular ON offsets
             std::vector<float> one(1);
             for(unsigned int i=0;i<L;++i){
@@ -2973,6 +2977,72 @@ int main() {
         std::printf("   sumPre=%.3f sumPost=%.3f  ratio=%.4f (want <0.1)\n",
                     sumPre, sumPost, sumPost/std::max(sumPre,1e-9));
         std::printf("   finite               : %s\n", finite?"yes":"NO");
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if (!pass) ++failures;
+    }
+
+    // ---- T45  EXT-FLUX-QUANTIZE: 1/16-step snap (on) vs free-running (off) ---
+    // Records events at deliberate off-grid sample offsets. With quantize on
+    // (Korg default), the bank's stored `off` must be on the 1/16-grid; with
+    // F·FINE (quantize off), the off must equal the live cursor sample.
+    {
+        const double sr_ = sr; using PE=para3::ParaEngine;
+        const unsigned int L = 48000;                    // 1 s loop
+        const unsigned int step = L / 16;                // 3000 samples / step
+        std::vector<float> one(1);
+
+        // Phase 1: quantize ON — events must snap
+        unsigned int e0_off=0, e1_off=0, e2_off=0; int n=0;
+        {
+            PE e; e.prepare(sr_, 4096);
+            para3::Controller c; c.prepare(e, sr_);
+            c.setFluxMode(true); c.fluxSetLoopLen(L);
+            c.setFluxQuantize(true); c.fluxRec(true);
+            const int OFF0=1234, OFF1=7600, OFF2=22500;
+            for (unsigned int i=0;i<L;++i) {
+                if ((int)i==OFF0) c.fluxNote (60, true);
+                if ((int)i==OFF1) c.fluxParam(0, 0.5);
+                if ((int)i==OFF2) c.fluxNote (60, false);
+                c.render(one.data(),1);
+            }
+            c.fluxRec(false); c.fluxCommit();
+            const auto& fp = c.fluxBank().read();
+            n = (int)fp.count;
+            if (n>=3) { e0_off = fp.ev[0].off; e1_off = fp.ev[1].off; e2_off = fp.ev[2].off; }
+        }
+        // Expected snaps with round-half-up ((x+half)/step*step):
+        //   1234 +1500 = 2734 / 3000 = 0  → 0
+        //   7600 +1500 = 9100 / 3000 = 3  → 9000
+        //  22500 +1500 =24000 / 3000 = 8  → 24000
+        const bool snapAll = (n==3)
+                          && (e0_off % step == 0) && (e1_off % step == 0)
+                          && (e2_off % step == 0)
+                          && e0_off == 0u && e1_off == 9000u && e2_off == 24000u;
+
+        // Phase 2: quantize OFF (F·FINE) — events must NOT snap
+        unsigned int fineOff = 99999; int fineN = 0;
+        {
+            PE e; e.prepare(sr_, 4096);
+            para3::Controller c; c.prepare(e, sr_);
+            c.setFluxMode(true); c.fluxSetLoopLen(L);
+            c.setFluxQuantize(false); c.fluxRec(true);
+            const int OFF0 = 1234;
+            for (unsigned int i=0;i<L;++i) {
+                if ((int)i==OFF0) c.fluxNote(60, true);
+                c.render(one.data(),1);
+            }
+            c.fluxRec(false); c.fluxCommit();
+            const auto& fp = c.fluxBank().read();
+            fineN = (int)fp.count;
+            if (fineN >= 1) fineOff = fp.ev[0].off;
+        }
+        const bool freeMode = fineN == 1 && fineOff == 1234u;
+
+        const bool pass = snapAll && freeMode;
+        std::printf("\nT45 EXT-FLUX-QUANTIZE  (1/16 snap on  vs  F·FINE free)\n");
+        std::printf("   quantize ON  off=[%u, %u, %u]  (want [0, 9000, 24000])\n",
+                    e0_off, e1_off, e2_off);
+        std::printf("   F·FINE  off=%u  (want 1234, raw)\n", fineOff);
         std::printf("   -> %s\n", pass?"PASS":"FAIL");
         if (!pass) ++failures;
     }

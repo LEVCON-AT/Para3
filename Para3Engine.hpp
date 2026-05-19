@@ -1219,11 +1219,28 @@ public:
         fluxEdit_.loopLen = samples;
     }
     void fluxRec(bool on) noexcept { fluxRec_ = on; }
+    // EXT-FLUX-QUANTIZE: when true, recorded event offsets snap to the nearest
+    // 1/16-step (loopLen / 16) — Korg-Volca/Electribe/Minilogue standard. Off
+    // = "F·FINE" sample-accurate free-running mode. Default ON.
+    void setFluxQuantize(bool on) noexcept { fluxQuantize_ = on; }
+    bool fluxQuantize() const noexcept { return fluxQuantize_; }
+    // Snap an off-sample to the nearest 1/16-step within a loop. Half-step
+    // rounds up. If the snapped value reaches loopLen, wrap to 0 (events at
+    // the loop boundary belong to the start of the next loop).
+    unsigned int fluxSnap_(unsigned int off, unsigned int L) const noexcept {
+        if (!fluxQuantize_ || L < 16) return off;
+        const unsigned int step = L / 16;
+        if (step == 0) return off;
+        const unsigned int half = step / 2;
+        const unsigned int rounded = ((off + half) / step) * step;
+        return rounded >= L ? 0u : rounded;
+    }
     void fluxNote(int note, bool on) noexcept {              // append at live cursor
         if (!fluxRec_) return;
         if (fluxEdit_.count >= FLUX_CAP) { ++fluxDropped_; return; }
         FluxEvent e;
-        e.off  = (fluxEdit_.loopLen ? (fcur_ % fluxEdit_.loopLen) : fcur_);
+        const unsigned int raw = (fluxEdit_.loopLen ? (fcur_ % fluxEdit_.loopLen) : fcur_);
+        e.off  = fluxSnap_(raw, fluxEdit_.loopLen);
         e.type = on ? 0 : 1;
         e.note = (unsigned char)note;
         e.val  = 0.f;
@@ -1239,7 +1256,8 @@ public:
         if (pid < 0 || pid >= 16) return;                    // audio-Param range only
         if (fluxEdit_.count >= FLUX_CAP) { ++fluxDropped_; return; }
         FluxEvent e;
-        e.off  = (fluxEdit_.loopLen ? (fcur_ % fluxEdit_.loopLen) : fcur_);
+        const unsigned int raw = (fluxEdit_.loopLen ? (fcur_ % fluxEdit_.loopLen) : fcur_);
+        e.off  = fluxSnap_(raw, fluxEdit_.loopLen);
         e.type = 2;
         e.note = (unsigned char)pid;
         e.val  = (float)clamp(norm, 0.0, 1.0);
@@ -1690,8 +1708,9 @@ private:
     bool        smooth_ = false;                 // E3 SMOOTH toggle
     bool        stepTrig_ = false;               // E4.1
     bool        metroOn_  = false;               // E4.4
-    bool        fluxMode_ = false;               // E5
-    bool        fluxRec_  = false;               // E5
+    bool        fluxMode_     = false;           // E5
+    bool        fluxRec_      = false;           // E5
+    bool        fluxQuantize_ = true;            // EXT-FLUX default 1/16 (Korg)
     unsigned int fcur_ = 0;                      // E5 sample cursor
     unsigned short fpos_ = 0;                     // E5 next-event index
     long        fluxDropped_ = 0;                // E5 observable overflow

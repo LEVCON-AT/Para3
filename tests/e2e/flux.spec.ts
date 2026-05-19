@@ -125,6 +125,113 @@ test.describe('FLUX-2 — Note + Param events, Timeline UI, Clear', () => {
     await page.locator('#flux').click();
   });
 
+  test('US-FLUX-QUANT-1/16 — default 1/16 snap (Korg) collapses dense input to grid', async ({ page }) => {
+    await bootstrap(page);
+    const fs = await page.evaluate(() => (window as any).__para3CaptureSampleRate());
+
+    // FLUX-3 default: F·FINE OFF = 1/16 snap on. Two notes within the same
+    // 1/16-step grid bucket must collapse to a single onset per loop.
+    await page.locator('#flux').click();
+    await page.waitForTimeout(300);
+    await page.locator('#flxrec').click();
+    await page.waitForTimeout(100);
+
+    await page.evaluate(async () => {
+      const c = (window as any).__para3Debug().audio.controls;
+      c.setParam(0, 0.7); c.setParam(11, 0.85); c.setParam(9, 0.0);
+      c.setParam(10, 0.05); c.setParam(4, 0.0); c.setParam(15, 1.0);
+      await new Promise(r => setTimeout(r, 200));
+      // Two notes ~50 ms apart — both should snap to the SAME 1/16-step
+      // bucket (1/16 @ 120 BPM × 1 bar = 125 ms). After quantize the bank
+      // holds (effectively) one ON + one OFF at the same offset.
+      c.seqFluxNote(60, true);
+      await new Promise(r => setTimeout(r, 50));
+      c.seqFluxNote(60, false);
+      await new Promise(r => setTimeout(r, 200));
+    });
+
+    await page.locator('#flxrec').click();         // commit
+    await page.waitForTimeout(5000);                // settle in replay
+
+    const samples = await capture(page, Math.round(fs * 4.0));
+    const rms = rmsWindows(samples, Math.round(fs * 0.020));
+    const peak = peakRMS(rms);
+    // Engine quantize collapses both note edges to the same offset. Per the
+    // FLUX commit-sort (PARAM→OFF→ON), OFF fires before ON at same offset →
+    // a fresh attack triggers; in T23 (b) we proved that's audible. Replay
+    // must produce SOME audio per loop (not silent).
+    expect(peak).toBeGreaterThan(0.03);
+
+    await page.locator('#flxclr').click();
+    await page.locator('#flux').click();
+  });
+
+  test('US-FLUX-FINE — F·FINE on preserves sample-accurate offsets', async ({ page }) => {
+    await bootstrap(page);
+    const fs = await page.evaluate(() => (window as any).__para3CaptureSampleRate());
+
+    // F·FINE on disables 1/16 snap. The engine T45 PASS already proves bank
+    // offsets are preserved sample-accurately; here we verify the UI path
+    // exposes the same toggle correctly: visible class change + replay still
+    // audible.
+    await page.locator('#flux').click();
+    await page.waitForTimeout(300);
+    const fineBefore = await page.locator('#flxfine').evaluate(b => b.classList.contains('on'));
+    expect(fineBefore).toBe(false);     // default OFF (= quantize ON, Korg)
+
+    await page.locator('#flxfine').click();
+    await page.waitForTimeout(100);
+    const fineAfter = await page.locator('#flxfine').evaluate(b => b.classList.contains('on'));
+    expect(fineAfter).toBe(true);
+
+    await page.locator('#flxrec').click();
+    await page.evaluate(async () => {
+      const c = (window as any).__para3Debug().audio.controls;
+      c.setParam(0, 0.7); c.setParam(11, 0.85); c.setParam(10, 0.05);
+      c.setParam(4, 0.0); c.setParam(15, 1.0);
+      await new Promise(r => setTimeout(r, 200));
+      c.seqFluxNote(60, true);
+      await new Promise(r => setTimeout(r, 400));
+      c.seqFluxNote(60, false);
+    });
+    await page.locator('#flxrec').click();
+    await page.waitForTimeout(5000);
+
+    const samples = await capture(page, Math.round(fs * 3.0));
+    const peak = peakRMS(rmsWindows(samples, Math.round(fs * 0.020)));
+    expect(peak).toBeGreaterThan(0.05);   // free-mode replay audible
+
+    await page.locator('#flxclr').click();
+    await page.locator('#flxfine').click();    // restore default off
+    await page.locator('#flux').click();
+  });
+
+  test('US-FLUX-LEN — F·LEN 1/2/4 changes loop length, UI status reflects bars', async ({ page }) => {
+    await bootstrap(page);
+
+    await page.locator('#flux').click();
+    await page.waitForTimeout(300);
+    expect(await page.locator('#fluxLoop').textContent()).toBe('1');
+
+    // Switch to 2-bar
+    await page.locator('#flen button[data-fl="2"]').click();
+    await page.waitForTimeout(150);
+    expect(await page.locator('#fluxLoop').textContent()).toBe('2');
+    const sel2 = await page.locator('#flen button.on').getAttribute('data-fl');
+    expect(sel2).toBe('2');
+
+    // Switch to 4-bar
+    await page.locator('#flen button[data-fl="4"]').click();
+    await page.waitForTimeout(150);
+    expect(await page.locator('#fluxLoop').textContent()).toBe('4');
+    const sel4 = await page.locator('#flen button.on').getAttribute('data-fl');
+    expect(sel4).toBe('4');
+
+    // Back to 1-bar to leave a clean state for next tests
+    await page.locator('#flen button[data-fl="1"]').click();
+    await page.locator('#flux').click();
+  });
+
   test('US-FLUX-TIMELINE-UI — Timeline shows when fluxOn, step grid hides', async ({ page }) => {
     await bootstrap(page);
 

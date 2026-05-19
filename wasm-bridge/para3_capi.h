@@ -95,6 +95,7 @@ void para3_seq_flux_rec      (Para3* p, int on);
 void para3_seq_flux_note     (Para3* p, int note, int on);// append at live cursor
 void para3_seq_flux_param    (Para3* p, int pid, double norm01); // EXT-FLUX append param event
 void para3_seq_flux_clear    (Para3* p);                  // EXT-FLUX drop queued+published events
+void para3_seq_flux_quantize (Para3* p, int on);          // EXT-FLUX 1/16 snap (on=Korg default, off=F·FINE)
 void para3_seq_flux_commit   (Para3* p);                  // stable-sort + publish
 long para3_seq_flux_dropped  (Para3* p);                  // observable overflow
 
