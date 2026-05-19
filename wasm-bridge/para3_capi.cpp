@@ -130,6 +130,14 @@ void para3_seq_step_trigger(Para3* p, int on)        { if (p) p->ctrl.setStepTri
 void para3_seq_tempo_div   (Para3* p, int d)         { if (p) p->ctrl.setTempoDiv(d); }
 void para3_seq_active_step (Para3* p, int i, int on) { if (p) p->ctrl.setActiveStep(i, on!=0); }
 void para3_seq_metronome   (Para3* p, int on)        { if (p) p->ctrl.setMetro(on!=0); }
+void para3_seq_step_vel    (Para3* p, int idx, double n) {
+    // EXT-FLUX-VEL: writes into the edit-pattern slot; the controller's
+    // bank.read() picks it up on the next loop or after seq_commit.
+    if (!p || idx < 0 || idx >= 16) return;
+    if (n < 0.0) n = 0.0;
+    if (n > 1.0) n = 1.0;
+    p->ctrl.editPattern().steps[idx].vel = n;
+}
 
 void para3_seq_flux_mode    (Para3* p, int on)            { if (p) p->ctrl.setFluxMode(on!=0); }
 void para3_seq_flux_loop_len(Para3* p, unsigned int s)    { if (p) p->ctrl.fluxSetLoopLen(s); }

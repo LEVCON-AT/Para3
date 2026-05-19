@@ -232,6 +232,56 @@ test.describe('FLUX-2 — Note + Param events, Timeline UI, Clear', () => {
     await page.locator('#flux').click();
   });
 
+  test('US-STEP-VELOCITY — per-step vel scales output peak proportionally', async ({ page }) => {
+    await bootstrap(page);
+    const fs = await page.evaluate(() => (window as any).__para3CaptureSampleRate());
+
+    // Build a step pattern with gate-on at step 0, write velocity, capture
+    // peak RMS, change velocity, capture again. Ratio should match vel ratio.
+    async function pumpPeak(vel: number): Promise<number> {
+      await page.evaluate(async (v) => {
+        const c = (window as any).__para3Debug().audio.controls;
+        c.seqStop();
+        await new Promise(r => setTimeout(r, 200));
+        c.setParam(0, 0.8); c.setParam(11, 0.85); c.setParam(9, 0.0);
+        c.setParam(10, 0.1); c.setParam(4, 0.0); c.setParam(15, 1.0);
+        // Empty all steps then set step 0 gate-on with the given velocity.
+        for (let i = 0; i < 16; ++i) c.seqStep(i, 60, 0, 0, 0.5);
+        c.seqStep(0, 60, 1, 0, 0.5);
+        c.seqStepVel(0, v);
+        c.seqCommit();
+        c.seqTempo(60);   // slow tempo → step 0 attack/sustain captured
+        c.seqStart();
+        await new Promise(r => setTimeout(r, 600));
+      }, vel);
+      const samples = await capture(page, Math.round(fs * 0.4));
+      await page.evaluate(() => (window as any).__para3Debug().audio.controls.seqStop());
+      await page.waitForTimeout(400);
+      return peakRMS(rmsWindows(samples, Math.round(fs * 0.020)));
+    }
+
+    const pFull = await pumpPeak(1.0);
+    const pHalf = await pumpPeak(0.4);
+    expect(pFull).toBeGreaterThan(0.05);
+    // Ratio should match vel ratio (0.4) within tolerance.
+    const ratio = pHalf / Math.max(pFull, 1e-9);
+    expect(ratio).toBeGreaterThan(0.30);
+    expect(ratio).toBeLessThan(0.55);
+  });
+
+  test('US-STEP-VEL-MODE-UI — VEL button toggles class on step buttons', async ({ page }) => {
+    await bootstrap(page);
+    const before = await page.locator('.step').first().evaluate(b => b.classList.contains('velMode'));
+    expect(before).toBe(false);
+    await page.locator('#vmode').click();
+    await page.waitForTimeout(120);
+    const after = await page.locator('.step').first().evaluate(b => b.classList.contains('velMode'));
+    expect(after).toBe(true);
+    const buttonOn = await page.locator('#vmode').evaluate(b => b.classList.contains('on'));
+    expect(buttonOn).toBe(true);
+    await page.locator('#vmode').click();   // off again
+  });
+
   test('US-FLUX-TIMELINE-UI — Timeline shows when fluxOn, step grid hides', async ({ page }) => {
     await bootstrap(page);
 

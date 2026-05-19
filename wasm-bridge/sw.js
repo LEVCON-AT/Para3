@@ -14,7 +14,7 @@
 //  the worklet and needs no SAB.
 // =============================================================================
 
-const CACHE_VER  = 'para3-v33'; // FLUX-3: 1/16 quantize (Korg) + F·FINE toggle + F·LEN 1/2/4 bars
+const CACHE_VER  = 'para3-v34'; // FLUX-4: per-step velocity (EXT-FLUX-VEL) + VEL mode + Velocity strip per step
 const PRECACHE   = [
   './',
   './index.html',

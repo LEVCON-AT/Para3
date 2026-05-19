@@ -3047,6 +3047,91 @@ int main() {
         if (!pass) ++failures;
     }
 
+    // ---- T46  EXT-FLUX-VEL: per-step velocity scales engine output ----------
+    // Neutral test (anti-blender): pattern with all steps vel=1.0 (default)
+    // produces output bit-identical to a pattern with vel never written.
+    // Effect test: a step with vel=0.4 produces ~0.4× peak RMS compared to a
+    // step with vel=1.0 on the SAME note + filter settings.
+    {
+        const double sr_ = sr; using PE=para3::ParaEngine;
+        const int W = 4096;
+        std::vector<float> a(W), b(W);
+
+        // Pattern setup helper
+        auto run = [&](double vel0, std::vector<float>& out){
+            PE e; e.prepare(sr_, W);
+            e.setParamNorm(PE::Param::Cutoff,   0.8);
+            e.setParamNorm(PE::Param::Resonance,0.3);
+            e.setParamNorm(PE::Param::Attack,   0.0);
+            e.setParamNorm(PE::Param::DecRel,   0.1);
+            e.setParamNorm(PE::Param::Sustain,  0.85);
+            e.setParamNorm(PE::Param::Volume,   1.0);
+            e.setParamNorm(PE::Param::DelayMix, 0.0);
+            para3::Controller c; c.prepare(e, sr_);
+            // Step 0 active + gated. setStepVel writes into edit pattern.
+            para3::Pattern& ep = c.editPattern();
+            ep.length = 16;
+            ep.steps[0].gate = true; ep.steps[0].note = 60; ep.steps[0].vel = vel0;
+            c.commitEdit();
+            c.setSeqTempo(120, 4);
+            c.seqStart();
+            c.render(out.data(), W);
+        };
+
+        run(1.0, a);
+        run(0.4, b);
+
+        // Peak RMS in 20-ms windows
+        const int win = (int)(sr_ * 0.020);
+        auto peakRMS = [&](const std::vector<float>& y){
+            double mx=0; const int nw = (int)y.size()/win;
+            for (int j=0; j<nw; ++j) {
+                double s=0; const int off=j*win;
+                for (int k=0;k<win;++k) s += (double)y[off+k]*y[off+k];
+                double r = std::sqrt(s/win); if (r>mx) mx=r;
+            }
+            return mx;
+        };
+        const double pA = peakRMS(a), pB = peakRMS(b);
+        const double ratio = pB / std::max(pA, 1e-9);
+
+        // Anti-blender: vel=1.0 path must be bit-identical to vel-untouched.
+        // We rebuild a third pattern that never writes vel and compare to a[].
+        std::vector<float> c0(W);
+        {
+            PE e; e.prepare(sr_, W);
+            e.setParamNorm(PE::Param::Cutoff,   0.8);
+            e.setParamNorm(PE::Param::Resonance,0.3);
+            e.setParamNorm(PE::Param::Attack,   0.0);
+            e.setParamNorm(PE::Param::DecRel,   0.1);
+            e.setParamNorm(PE::Param::Sustain,  0.85);
+            e.setParamNorm(PE::Param::Volume,   1.0);
+            e.setParamNorm(PE::Param::DelayMix, 0.0);
+            para3::Controller c; c.prepare(e, sr_);
+            para3::Pattern& ep = c.editPattern();
+            ep.length = 16;
+            ep.steps[0].gate = true; ep.steps[0].note = 60;
+            // vel left at struct default (1.0)
+            c.commitEdit();
+            c.setSeqTempo(120, 4);
+            c.seqStart();
+            c.render(c0.data(), W);
+        }
+        double maxNeutral = 0;
+        for (int i=0;i<W;++i) maxNeutral = std::max(maxNeutral, std::fabs((double)a[i]-(double)c0[i]));
+
+        const bool neutral = maxNeutral == 0.0;
+        const bool effect  = ratio > 0.35 && ratio < 0.55;   // expect ~0.4
+        const bool pass    = neutral && effect && pA > 0.05;
+
+        std::printf("\nT46 EXT-FLUX-VEL  (per-step velocity scales output)\n");
+        std::printf("   vel=1.0 vs neutral max|d|: %.3e  (want == 0)\n", maxNeutral);
+        std::printf("   peakRMS  vel=1.0 / vel=0.4 : %.4f / %.4f  ratio %.3f (want ~0.40)\n",
+                    pA, pB, ratio);
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if (!pass) ++failures;
+    }
+
     std::printf("\n==================================================\n");
     std::printf("%s  (%d failure%s)\n",
                 failures ? "OVERALL: FAIL" : "OVERALL: PASS",

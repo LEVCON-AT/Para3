@@ -84,6 +84,7 @@ void para3_seq_step_trigger(Para3* p, int on);            // E4.1 force EG every
 void para3_seq_tempo_div   (Para3* p, int div);           // E4.2 1, 2 or 4
 void para3_seq_active_step (Para3* p, int idx, int on);   // E4.3 enable/skip step
 void para3_seq_metronome   (Para3* p, int on);            // E4.4 metronome (delay bypass)
+void para3_seq_step_vel    (Para3* p, int idx, double n); // EXT-FLUX-VEL per-step velocity 0..1
 
 // E5 FLUX (sample-accurate event sequence) + EXT-FLUX param-event extension.
 // type=0 NoteOn, type=1 NoteOff, type=2 ParamSet (pid 0..15, norm 0..1).

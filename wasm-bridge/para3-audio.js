@@ -69,6 +69,9 @@ export class Para3Controls {
   // (Korg-Volca/Electribe/Minilogue standard). Off = F·FINE sample-accurate.
   seqFluxQuantize(on)       { return this._do(() => this.ring.seqFluxQuantize(on)); }
   seqFluxCommit()           { return this._do(() => this.ring.seqFluxCommit()); }
+  // EXT-FLUX-VEL — per-step velocity 0..1 (Volca-Bass/Minilogue standard).
+  // Default 1.0 = bitidentisch zum pre-EXT-FLUX-VEL-Stand.
+  seqStepVel(idx, norm01)   { return this._do(() => this.ring.seqStepVel(idx, norm01)); }
   // E6.2 — engine pitch offset (integer semitones × 12). Replaces host-side
   // +oct*12 in midiOfKey so the engine owns the pitch path (band-limited).
   setOctave(oct)            { return this._do(() => this.ring.setOctave(oct)); }

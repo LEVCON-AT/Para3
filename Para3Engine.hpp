@@ -1003,6 +1003,8 @@ struct Step {
     bool   motionOn  = false;
     double motionCut = 0.5;     // normalized -> funnel
     bool   active    = true;    // E4.3 false => step skipped (play AND record)
+    double vel       = 1.0;     // EXT-FLUX-VEL per-step velocity 0..1 (default 1.0
+                                // = bitidentisch zum pre-EXT-FLUX-VEL-Stand).
 };
 // E3: per-parameter motion lanes (sparse). Indexed directly by param id;
 // size covers all current + planned ids. Resonance(1)/Tempo refused upstream.
@@ -1393,6 +1395,9 @@ public:
                 }
             }
             eng_->process(out + i, 1);
+            // EXT-FLUX-VEL — apply per-step velocity gain post-engine. Default
+            // stepVelGain_ = 1.0 keeps bit-identity to pre-EXT-FLUX-VEL.
+            out[i] *= (float)stepVelGain_;
         }
     }
     int currentStep() const noexcept { return stepIdx_; }
@@ -1516,6 +1521,11 @@ private:
         if (s.gate) {
             eng_->noteOn(s.note);
             seqLastGatedNote_ = s.note;
+            // EXT-FLUX-VEL — per-step velocity scales the engine output (post-
+            // engine gain). Updated only on gated steps; sustained notes keep
+            // the velocity of their original hit (Volca-Bass/Minilogue semantic).
+            // Default vel=1.0 = bitidentisch (anti-blender T46-NEU).
+            stepVelGain_ = s.vel;
         } else if (!stepTrig_) {
             if (seqLastGatedNote_ >= 0) {
                 eng_->noteOff(seqLastGatedNote_);
@@ -1711,6 +1721,7 @@ private:
     bool        fluxMode_     = false;           // E5
     bool        fluxRec_      = false;           // E5
     bool        fluxQuantize_ = true;            // EXT-FLUX default 1/16 (Korg)
+    double      stepVelGain_  = 1.0;             // EXT-FLUX-VEL (default 1.0)
     unsigned int fcur_ = 0;                      // E5 sample cursor
     unsigned short fpos_ = 0;                     // E5 next-event index
     long        fluxDropped_ = 0;                // E5 observable overflow

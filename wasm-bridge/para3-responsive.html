@@ -227,6 +227,17 @@ body{
    playback and recording for !actStep[i] (proven in offline_test T21). */
 .step.skip{opacity:.32}
 .step.skip .n{color:var(--ink-dim)}
+/* EXT-FLUX-VEL — per-step velocity strip at the very top of each step.
+   Default fill 100 % (--accent), drag vertically inside the step to set
+   (the cursor switches to ns-resize while over the strip area). */
+.step .vel{position:absolute;top:3px;left:5px;right:5px;height:3px;
+  background:color-mix(in srgb,var(--ink-dim) 35%,transparent);
+  border-radius:2px;pointer-events:none}
+.step .vel .vf{position:absolute;top:0;left:0;height:100%;width:100%;
+  background:var(--accent);border-radius:2px;opacity:.85;
+  box-shadow:0 0 4px color-mix(in srgb,var(--accent) 60%,transparent)}
+.step.velMode{cursor:ns-resize}
+.step.velMode::after{display:none}
 .seg{display:inline-flex;border-radius:8px;overflow:hidden;box-shadow:var(--soft)}
 .seg .tbtn{border-radius:0;padding:9px 11px;box-shadow:0 1px 0 rgba(255,255,255,.06) inset}
 /* E5 FLUX disabled state for step grid + lane: visually inert, click-inert.
@@ -545,6 +556,7 @@ body{
       <div style="display:flex;justify-content:flex-end;gap:7px;margin-bottom:9px;flex-wrap:wrap">
         <button class="tbtn" id="stp"   title="STEP TRIGGER · EG retrigger every step">STP</button>
         <button class="tbtn" id="astep" title="ACTIVE-STEP MODE · click steps to skip">ACT</button>
+        <button class="tbtn" id="vmode" title="VEL MODE · drag vertically on a step to set its velocity (Korg-Volca-Bass / Minilogue per-step accent)">VEL</button>
         <button class="tbtn" id="metro" title="METRONOME · delay bypassed engine-side">METRO</button>
         <span class="seg" id="tdiv">
           <button class="tbtn on" data-d="1">1/1</button>
@@ -1166,10 +1178,20 @@ function emit(fn) {
   // actStep[i]=false means the engine skips this step entirely (no note, no
   // motion application, but the sequencer still counts past it).
   const actStep=new Array(16).fill(true);
+  // EXT-FLUX-VEL — per-step velocity 0..1 (Volca-Bass / Minilogue per-step
+  // accent). Default 1.0 = bit-identical to pre-EXT-FLUX-VEL audio output.
+  const stepVel = new Array(16).fill(1.0);
   let astepMode=false;
+  let velMode=false;
+  function setStepVelDisplay(i) {
+    const vf = stepsEl.children[i].querySelector('.vf');
+    if (vf) vf.style.width = (stepVel[i] * 100).toFixed(1) + '%';
+  }
   for(let i=0;i<16;i++){const b=document.createElement('button');
-    b.className='step'+(onSteps[i]?' on':'');b.innerHTML='<span class="n">'+(i+1)+'</span>';
+    b.className='step'+(onSteps[i]?' on':'');
+    b.innerHTML='<span class="vel"><span class="vf"></span></span><span class="n">'+(i+1)+'</span>';
     b.onclick=()=>{
+      if (velMode) return;     // drag-handler owns interaction in VEL mode
       if (astepMode) {
         // E4.3: in active-step mode the grid edits the skip state.
         actStep[i]=!actStep[i];
@@ -1182,7 +1204,28 @@ function emit(fn) {
         flushPattern();
       }
     };
-    stepsEl.appendChild(b);}
+    // VEL-mode pointer drag: vertical position maps to velocity 0..1.
+    // Down=0, Up=1. Default cursor switches to ns-resize via .velMode class.
+    let dragV = false;
+    b.addEventListener('pointerdown', (e) => {
+      if (!velMode) return;
+      dragV = true; b.setPointerCapture(e.pointerId);
+      updateVel(e);
+    });
+    b.addEventListener('pointermove', (e) => { if (dragV) updateVel(e); });
+    b.addEventListener('pointerup',   (e) => {
+      if (!dragV) return; dragV = false;
+      try { b.releasePointerCapture(e.pointerId); } catch (_) {}
+    });
+    function updateVel(e) {
+      const r = b.getBoundingClientRect();
+      const v = Math.max(0, Math.min(1, 1 - (e.clientY - r.top) / r.height));
+      stepVel[i] = v;
+      setStepVelDisplay(i);
+      show('VEL ' + (i+1), Math.round(v*100), '%');
+      emit((c) => c.seqStepVel(i, v));
+    }
+    stepsEl.appendChild(b); setStepVelDisplay(i);}
   const sN=[...stepsEl.children];let playing=false,cur=-1,seqT=0;
   // B4 + EXT-ARP-FIX3: visual-cursor mirrors engine state EXACTLY by tracking
   // the same two quantities the engine clock uses: an integer step + a
@@ -1272,7 +1315,26 @@ function emit(fn) {
       b.classList.toggle('on',  !astepMode && onSteps[i]);
       b.classList.toggle('skip', astepMode && !actStep[i]);
     });
+    // VEL mode is mutually exclusive with ACT mode (clicks/drags own the grid).
+    if (astepMode && velMode) { velMode = false; vModeB.classList.remove('on');
+      sN.forEach(b => b.classList.remove('velMode')); }
     show('STEP MODE', astepMode ? 'ACTIVE-STEP (skip edit)' : 'GATE', '');
+  };
+  // EXT-FLUX-VEL — VEL mode toggle. Activates per-step vertical drag on the
+  // step grid (no gate-toggle / no skip-edit while engaged). Step buttons
+  // gain .velMode class so the cursor shows ns-resize and the ::after dot
+  // is hidden in favour of the velocity strip readout.
+  const vModeB = document.getElementById('vmode');
+  vModeB.onclick = () => {
+    velMode = !velMode;
+    vModeB.classList.toggle('on', velMode);
+    sN.forEach(b => b.classList.toggle('velMode', velMode));
+    if (velMode && astepMode) { astepMode = false; astepB.classList.remove('on');
+      sN.forEach((b,i) => {
+        b.classList.toggle('on',  onSteps[i]);
+        b.classList.toggle('skip', false);
+      }); }
+    show('VEL MODE', velMode ? 'ON (drag steps)' : 'OFF', '');
   };
 
   const metroB=document.getElementById('metro');let metroOn=false;
