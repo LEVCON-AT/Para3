@@ -105,6 +105,9 @@ Klassen-Zeilenlandkarte: siehe `docs/specs/ENGINE_E1-E7_HANDOVER.md`.
 - User-Story-Gate via Playwright (vom Menschen definiert, exakt geprüft):
   `CLAUDE_USER_SCENARIOS.md`
 - Erweiterung Arpeggiator (NICHT Parität): `CLAUDE_EXT_ARP.md`
+- Lab-Validation Methodologie (10-Sprint-Workflow für Datenblatt + Bericht +
+  Audit + Polish, reproduziert die Qualität der LAB-1..10-Serie):
+  `CLAUDE_LAB_VALIDATION.md`
 
 Vor Arbeit an einem Bereich die zugehörige `.claude/rules/`-Regel beachten;
 sie verweist auf die volle Spec in `docs/specs/` — diese **vor** der
