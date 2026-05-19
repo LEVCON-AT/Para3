@@ -4366,6 +4366,200 @@ int main() {
         if (!pass) ++failures;
     }
 
+    // ---- T75  EXT-BASS §6 TWO-INSTANCE-FINITE  -----------------------------
+    //  Library-Level-Beweis dass zwei ParaEngine-Instanzen parallel arbeiten
+    //  können (Spec §6 Zwei-Instanzen-Layer). Instanz A im Bass-Charakter
+    //  (Pulse + Stack + Sub), Instanz B im Keys-Charakter (Saw, Default).
+    //  Beide rendern parallel, Output finite, kein NaN/Inf, keine Crashes.
+    {
+        para3::ParaEngine a, b;
+        a.prepare(sr, 4096); b.prepare(sr, 4096);
+        // A = Bass-Charakter
+        a.setMode(para3::ParaAllocator::Mode::Poly);
+        a.setBassStack(true);
+        a.setOscWave(0, 1); a.setOscWave(1, 1); a.setOscWave(2, 1);
+        a.setParamNorm(para3::ParaEngine::Param::BassSpread, 0.5);
+        a.setParamNorm(para3::ParaEngine::Param::BassDriftDepth, 0.5);
+        a.setParamNorm(para3::ParaEngine::Param::BassSubLevel, 0.6);
+        a.setParamNorm(para3::ParaEngine::Param::Cutoff, 0.5);
+        a.setParamNorm(para3::ParaEngine::Param::Resonance, 0.4);
+        // B = Keys-Charakter (Default: Saw, kein Stack/PWM/Sub)
+        b.setMode(para3::ParaAllocator::Mode::Poly);
+        b.setParamNorm(para3::ParaEngine::Param::Cutoff, 0.8);
+        b.noteOn(36);                                    // tiefer Bass-Ton
+        a.noteOn(36);
+        b.noteOn(72);                                    // höherer Keys-Ton
+        const int N = 96000;                             // 2s
+        std::vector<float> yA(N), yB(N);
+        a.process(yA.data(), N);
+        b.process(yB.data(), N);
+        bool finite = true;
+        for (int i = 0; i < N; ++i)
+            if (!std::isfinite(yA[i]) || !std::isfinite(yB[i])) { finite = false; break; }
+        double peakA = 0.0, peakB = 0.0;
+        for (int i = 0; i < N; ++i) {
+            peakA = std::max(peakA, (double)std::fabs(yA[i]));
+            peakB = std::max(peakB, (double)std::fabs(yB[i]));
+        }
+        const bool bounded = peakA < 2.0 && peakB < 2.0;
+        const bool pass = finite && bounded;
+        std::printf("\nT75 EXT-BASS §6 TWO-INSTANCE-FINITE  (Library trägt 2 Engines parallel)\n");
+        std::printf("   finite over 2s                  : %s\n", finite?"yes":"NO");
+        std::printf("   peak  A (Bass) / B (Keys)       : %.3f / %.3f  (want < 2.0)\n", peakA, peakB);
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if (!pass) ++failures;
+    }
+
+    // ---- T76  EXT-BASS §6 TWO-INSTANCE-SYNC  -------------------------------
+    //  Sample-Synchronität: zwei identische ParaEngine-Instanzen mit gleichen
+    //  Parametern + gleicher Note ⇒ sample-identisches Output. Beweis dass
+    //  ParaEngine-Instanzen keinen geteilten globalen State haben (PRNG,
+    //  Phasen) und unabhängig deterministisch sind.
+    {
+        para3::ParaEngine a, b;
+        a.prepare(sr, 4096); b.prepare(sr, 4096);
+        a.setMode(para3::ParaAllocator::Mode::Unison);
+        b.setMode(para3::ParaAllocator::Mode::Unison);
+        a.setOscWave(0,1); a.setOscWave(1,1); a.setOscWave(2,1);
+        b.setOscWave(0,1); b.setOscWave(1,1); b.setOscWave(2,1);
+        a.setParamNorm(para3::ParaEngine::Param::BassPulseWidth, 0.3);
+        b.setParamNorm(para3::ParaEngine::Param::BassPulseWidth, 0.3);
+        a.setBassDriftSeed(0x12345678u);
+        b.setBassDriftSeed(0x12345678u);
+        a.noteOn(60); b.noteOn(60);
+        const int N = 48000;
+        std::vector<float> yA(N), yB(N);
+        a.process(yA.data(), N);
+        b.process(yB.data(), N);
+        double maxd = 0.0;
+        for (int i = 0; i < N; ++i)
+            maxd = std::max(maxd, (double)std::fabs(yA[i] - yB[i]));
+        const bool pass = (maxd == 0.0);
+        std::printf("\nT76 EXT-BASS §6 TWO-INSTANCE-SYNC  (identische Engines, sample-genau identisch)\n");
+        std::printf("   max|d| A vs B (same config+seed): %.3e  (want == 0)\n", maxd);
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if (!pass) ++failures;
+    }
+
+    // ---- T77  EXT-BASS §6 TWO-INSTANCE-MIX-SUM  ----------------------------
+    //  Mix-Bus auf App-Ebene: Output = yA + yB. Test dass die Summe finite ist,
+    //  bounded (kein Clipping bei realistischen Konfigs), und das Mathematische
+    //  korrekt: für jeden Sample gilt mix[i] == yA[i] + yB[i] (trivial wahr in
+    //  C++, aber wir bestätigen es als "die Summation-Operation nicht
+    //  beschädigt-Werte"). Plus: Mix-Pegel pro Instanz (level skalar).
+    {
+        para3::ParaEngine a, b;
+        a.prepare(sr, 4096); b.prepare(sr, 4096);
+        a.setMode(para3::ParaAllocator::Mode::Poly);
+        b.setMode(para3::ParaAllocator::Mode::Poly);
+        a.setParamNorm(para3::ParaEngine::Param::Cutoff, 0.7);
+        b.setParamNorm(para3::ParaEngine::Param::Cutoff, 0.7);
+        a.noteOn(48); b.noteOn(72);                      // Tritonus-Abstand
+        const int N = 48000;
+        std::vector<float> yA(N), yB(N), mix(N);
+        a.process(yA.data(), N); b.process(yB.data(), N);
+        const double levelA = 0.5, levelB = 0.5;         // gleicher Pegel
+        for (int i = 0; i < N; ++i)
+            mix[i] = (float)(levelA * yA[i] + levelB * yB[i]);
+        bool finite = true; double peak = 0.0;
+        for (int i = 0; i < N; ++i) {
+            if (!std::isfinite(mix[i])) { finite = false; break; }
+            peak = std::max(peak, (double)std::fabs(mix[i]));
+        }
+        // Pegel-Variation: A=1.0, B=0.0 ⇒ mix == yA (skaliert)
+        std::vector<float> mixAonly(N);
+        for (int i = 0; i < N; ++i) mixAonly[i] = (float)(1.0 * yA[i] + 0.0 * yB[i]);
+        double maxdAonly = 0.0;
+        for (int i = 0; i < N; ++i)
+            maxdAonly = std::max(maxdAonly, (double)std::fabs(mixAonly[i] - yA[i]));
+        const bool pass = finite && (peak < 1.5) && (maxdAonly == 0.0);
+        std::printf("\nT77 EXT-BASS §6 TWO-INSTANCE-MIX-SUM  (yA + yB finite + bounded + math-korrekt)\n");
+        std::printf("   peak |mix|  (A 0.5 + B 0.5)     : %.3f  (want < 1.5)\n", peak);
+        std::printf("   finite over render              : %s\n", finite?"yes":"NO");
+        std::printf("   mix(A=1,B=0) vs yA  max|d|      : %.3e  (want == 0)\n", maxdAonly);
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if (!pass) ++failures;
+    }
+
+    // ---- T78  EXT-BASS §6 LAYER-AUS-BIT-IDENTISCH  -------------------------
+    //  Spec §6 Akzeptanz: "Layer aus" (eine Instanz) ⇒ bitidentisch zur
+    //  Einzel-Instanz. Konkret: wenn B silent ist (keine noteOn, oder B
+    //  weglassen vom Mix), entspricht mix = A. Beweis: A + silent_B (oder
+    //  A allein) max|d|=0 zu A allein, sample-für-sample.
+    {
+        para3::ParaEngine a, b_silent;
+        a.prepare(sr, 4096); b_silent.prepare(sr, 4096);
+        a.setMode(para3::ParaAllocator::Mode::Poly);
+        b_silent.setMode(para3::ParaAllocator::Mode::Poly);
+        a.noteOn(60);
+        // b_silent: kein noteOn → env=Idle → Output = 0
+        const int N = 48000;
+        std::vector<float> yA(N), yBsilent(N);
+        a.process(yA.data(), N);
+        b_silent.process(yBsilent.data(), N);
+        // Mix: A + B_silent. Da B_silent komplett 0, mix == yA.
+        std::vector<float> mix(N);
+        for (int i = 0; i < N; ++i) mix[i] = yA[i] + yBsilent[i];
+        double maxdAlone = 0.0;
+        for (int i = 0; i < N; ++i)
+            maxdAlone = std::max(maxdAlone, (double)std::fabs(mix[i] - yA[i]));
+        // Auch: B_silent allein muss exakt 0 sein (IEEE)
+        double maxBsilent = 0.0;
+        for (int i = 0; i < N; ++i)
+            maxBsilent = std::max(maxBsilent, (double)std::fabs(yBsilent[i]));
+        const bool pass = (maxdAlone == 0.0) && (maxBsilent == 0.0);
+        std::printf("\nT78 EXT-BASS §6 LAYER-AUS-BIT-IDENTISCH  (silent-B + A == A allein)\n");
+        std::printf("   max|silent_B|                   : %.3e  (want == 0)\n", maxBsilent);
+        std::printf("   mix(A+silent_B) vs yA  max|d|   : %.3e  (want == 0)\n", maxdAlone);
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if (!pass) ++failures;
+    }
+
+    // ---- T79  EXT-BASS §6 INSTANCE-INDEPENDENCE  ---------------------------
+    //  Parameter-Änderung an Instanz A darf Instanz B nicht beeinflussen.
+    //  Beweis dass beide Engines keinen geteilten static/global State haben.
+    //  Test: B mit fester Konfig zweimal rendern — einmal mit A im Default,
+    //  einmal mit A drastisch geändert (Stack+PWM+Drift). B-Output identisch.
+    {
+        para3::ParaEngine bRef; bRef.prepare(sr, 4096);
+        bRef.setMode(para3::ParaAllocator::Mode::Poly);
+        bRef.setParamNorm(para3::ParaEngine::Param::Cutoff, 0.8);
+        bRef.noteOn(60);
+        const int N = 48000;
+        std::vector<float> yBref(N);
+        bRef.process(yBref.data(), N);
+
+        // Same B config, but now with another A engine doing wild things first
+        para3::ParaEngine aWild; aWild.prepare(sr, 4096);
+        aWild.setMode(para3::ParaAllocator::Mode::Unison);
+        aWild.setBassStack(true);
+        aWild.setOscWave(0,1); aWild.setOscWave(1,1); aWild.setOscWave(2,1);
+        aWild.setParamNorm(para3::ParaEngine::Param::BassPulseWidth, 0.3);
+        aWild.setParamNorm(para3::ParaEngine::Param::BassPwmDepth, 1.0);
+        aWild.setParamNorm(para3::ParaEngine::Param::BassSpread, 1.0);
+        aWild.setParamNorm(para3::ParaEngine::Param::BassDriftDepth, 1.0);
+        aWild.setParamNorm(para3::ParaEngine::Param::BassSubLevel, 1.0);
+        aWild.setBassDriftSeed(0xDEADBEEFu);
+        aWild.noteOn(36);
+        std::vector<float> yA(N); aWild.process(yA.data(), N);   // exercise A
+
+        para3::ParaEngine bUnderInfluence; bUnderInfluence.prepare(sr, 4096);
+        bUnderInfluence.setMode(para3::ParaAllocator::Mode::Poly);
+        bUnderInfluence.setParamNorm(para3::ParaEngine::Param::Cutoff, 0.8);
+        bUnderInfluence.noteOn(60);
+        std::vector<float> yBinfl(N);
+        bUnderInfluence.process(yBinfl.data(), N);
+
+        double maxd = 0.0;
+        for (int i = 0; i < N; ++i)
+            maxd = std::max(maxd, (double)std::fabs(yBref[i] - yBinfl[i]));
+        const bool pass = (maxd == 0.0);
+        std::printf("\nT79 EXT-BASS §6 INSTANCE-INDEPENDENCE  (B unbeeinflusst von A's State)\n");
+        std::printf("   max|d| yBref vs yB-while-A-wild : %.3e  (want == 0)\n", maxd);
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if (!pass) ++failures;
+    }
+
     std::printf("\n==================================================\n");
     std::printf("%s  (%d failure%s)\n",
                 failures ? "OVERALL: FAIL" : "OVERALL: PASS",

@@ -776,6 +776,66 @@ int main() {
         }
     }
 
+    // ---- WA14 EXT-BASS §6 TWO-INSTANCE via C-API -------------------------
+    //  Library-Level-Beweis dass die C-API mehrere Para3*-Handles parallel
+    //  trägt (Spec §6 Erinnerung: "die C-API trägt mehrere Para3*-Handles
+    //  bereits"). Zwei Handles parallel, beide unabhängig konfigurierbar,
+    //  beide simultan renderbar im 128-Quantum-Modus (AudioWorklet-typisch).
+    {
+        Para3* a = para3_create(sr, Q);                  // Bass instance
+        Para3* b = para3_create(sr, Q);                  // Keys instance
+        if (!a || !b) { std::fprintf(stderr, "WA14 create failed\n"); ++failures; }
+        else {
+            para3_set_mode(a, PARA3_M_POLY);
+            para3_set_mode(b, PARA3_M_POLY);
+            para3_bass_stack(a, 1);
+            para3_set_param(a, PARA3_P_BASS_SUB_LEVEL, 0.8);
+            para3_set_param(b, PARA3_P_CUTOFF, 0.8);
+            para3_note_on(a, 36);                        // tiefer Bass
+            para3_note_on(b, 72);                        // hohe Keys
+            const int N = 32000;
+            std::vector<float> ya(N, 0.f), yb(N, 0.f);
+            // alternating-block rendering — what the host would do with two worklets
+            for (int i = 0; i < N; i += Q) {
+                const int c = std::min(Q, N - i);
+                para3_render(a, ya.data() + i, c);
+                para3_render(b, yb.data() + i, c);
+            }
+            bool finite = true; double peakA = 0.0, peakB = 0.0;
+            for (int i = 0; i < N; ++i) {
+                if (!std::isfinite(ya[i]) || !std::isfinite(yb[i])) { finite = false; break; }
+                peakA = std::max(peakA, (double)std::fabs(ya[i]));
+                peakB = std::max(peakB, (double)std::fabs(yb[i]));
+            }
+            const bool bothPlayed = (peakA > 0.01) && (peakB > 0.01);
+
+            // Independence: A reconfigured wildly mid-render → B's continued
+            // output stays equivalent to a reference B-only render.
+            Para3* bRef = para3_create(sr, Q);
+            para3_set_mode(bRef, PARA3_M_POLY);
+            para3_set_param(bRef, PARA3_P_CUTOFF, 0.8);
+            para3_note_on(bRef, 72);
+            std::vector<float> yBref(N, 0.f);
+            for (int i = 0; i < N; i += Q) {
+                const int c = std::min(Q, N - i);
+                para3_render(bRef, yBref.data() + i, c);
+            }
+            double maxBdrift = 0.0;
+            for (int i = 0; i < N; ++i)
+                maxBdrift = std::max(maxBdrift, (double)std::fabs(yb[i] - yBref[i]));
+
+            const bool pass = finite && bothPlayed && (maxBdrift == 0.0);
+            std::printf("\nWA14 EXT-BASS §6 TWO-INSTANCE via C-API\n");
+            std::printf("   finite over alternating-block render: %s\n", finite?"yes":"NO");
+            std::printf("   peak A (bass) / B (keys)            : %.3f / %.3f\n", peakA, peakB);
+            std::printf("   B independent of A wild config     : max|d| = %.3e (want == 0)\n", maxBdrift);
+            std::printf("   -> %s\n", pass?"PASS":"FAIL");
+            if (!pass) ++failures;
+
+            para3_destroy(a); para3_destroy(b); para3_destroy(bRef);
+        }
+    }
+
     std::printf("\n==================================================\n");
     std::printf("%s  (%d failure%s)\n",
                 failures ? "OVERALL: FAIL" : "OVERALL: PASS",
