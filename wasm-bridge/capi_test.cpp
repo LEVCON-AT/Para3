@@ -500,6 +500,71 @@ int main() {
         }
     }
 
+    // ---- WA10 EXT-BASS B2 PWM via C-API (PW + PWM-Depth through setParamNorm)
+    //  Proves PARA3_P_BASS_PULSE_WIDTH and PARA3_P_BASS_PWM_DEPTH route into
+    //  ParaEngine via para3_set_param. Default (don't touch) is bit-identical
+    //  to explicit setting to PW=0.5, PwmDepth=0. Setting PW to extremes
+    //  (0.1, 0.9) produces measurably different output vs PW=0.5.
+    {
+        Para3* a = para3_create(sr, Q);
+        Para3* b = para3_create(sr, Q);
+        if (!a || !b) { std::fprintf(stderr, "WA10 create failed\n"); ++failures; }
+        else {
+            para3_set_mode(a, PARA3_M_UNISON);
+            para3_set_mode(b, PARA3_M_UNISON);
+            para3_osc_wave(a, 0, 1); para3_osc_wave(a, 1, 1); para3_osc_wave(a, 2, 1);
+            para3_osc_wave(b, 0, 1); para3_osc_wave(b, 1, 1); para3_osc_wave(b, 2, 1);
+            // b sets the same defaults explicitly (norm 0.5 → PW 0.5, 0 → depth 0)
+            para3_set_param(b, PARA3_P_BASS_PULSE_WIDTH, 0.5);
+            para3_set_param(b, PARA3_P_BASS_PWM_DEPTH,   0.0);
+            para3_note_on(a, 60);
+            para3_note_on(b, 60);
+            const int N = 48000;
+            std::vector<float> ya(N, 0.f), yb(N, 0.f);
+            for (int i = 0; i < N; i += Q) {
+                const int c = std::min(Q, N - i);
+                para3_render(a, ya.data() + i, c);
+                para3_render(b, yb.data() + i, c);
+            }
+            double maxdNeutral = 0.0;
+            for (int i = 0; i < N; ++i)
+                maxdNeutral = std::max(maxdNeutral, (double)std::fabs(ya[i] - yb[i]));
+
+            // Now push a to PW=0.10, b to PW=0.90 — outputs must differ from each
+            // other AND from the neutral baseline ya/yb.
+            para3_set_param(a, PARA3_P_BASS_PULSE_WIDTH, 0.0556);   // norm → PW 0.10
+            para3_set_param(b, PARA3_P_BASS_PULSE_WIDTH, 0.9444);   // norm → PW 0.90
+            std::vector<float> y10(N, 0.f), y90(N, 0.f);
+            for (int i = 0; i < N; i += Q) {
+                const int c = std::min(Q, N - i);
+                para3_render(a, y10.data() + i, c);
+                para3_render(b, y90.data() + i, c);
+            }
+            // skip initial ramp window
+            double diff_pw10_neutral = 0.0, diff_pw90_neutral = 0.0;
+            for (int i = 8000; i < N; ++i) {
+                diff_pw10_neutral = std::max(diff_pw10_neutral, (double)std::fabs(y10[i] - ya[i]));
+                diff_pw90_neutral = std::max(diff_pw90_neutral, (double)std::fabs(y90[i] - yb[i]));
+            }
+            bool finitePw = true;
+            for (int i = 1000; i < N; ++i) {
+                if (!std::isfinite(y10[i]) || !std::isfinite(y90[i])) { finitePw = false; break; }
+            }
+
+            const bool pass = (maxdNeutral == 0.0) && finitePw
+                           && (diff_pw10_neutral >= 0.05) && (diff_pw90_neutral >= 0.05);
+            std::printf("\nWA10 EXT-BASS B2 PWM via C-API (PW + PwmDepth setParamNorm)\n");
+            std::printf("   default vs explicit Pulse params  max|d|: %.3e  (want == 0)\n", maxdNeutral);
+            std::printf("   PW=0.10 vs default neutral        max|d|: %.3e  (want ≥ 5e-2)\n", diff_pw10_neutral);
+            std::printf("   PW=0.90 vs default neutral        max|d|: %.3e  (want ≥ 5e-2)\n", diff_pw90_neutral);
+            std::printf("   finite under PW extremes               : %s\n", finitePw?"yes":"NO");
+            std::printf("   -> %s\n", pass?"PASS":"FAIL");
+            if (!pass) ++failures;
+
+            para3_destroy(a); para3_destroy(b);
+        }
+    }
+
     std::printf("\n==================================================\n");
     std::printf("%s  (%d failure%s)\n",
                 failures ? "OVERALL: FAIL" : "OVERALL: PASS",

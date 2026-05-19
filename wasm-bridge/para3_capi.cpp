@@ -40,8 +40,10 @@ static para3::ParaEngine::Param mapParam(int id) {
         case PARA3_P_SUSTAIN:          return P::Sustain;
         case PARA3_P_EG_CUT_DEPTH:     return P::EgCutDepth;   // E1.1
         case PARA3_P_DETUNE:           return P::Detune;       // E2.1
-        case PARA3_P_PORTAMENTO:       return P::Portamento;   // E2.2
-        case PARA3_P_VOLUME:           return P::Volume;       // E6.1
+        case PARA3_P_PORTAMENTO:       return P::Portamento;       // E2.2
+        case PARA3_P_VOLUME:           return P::Volume;           // E6.1
+        case PARA3_P_BASS_PULSE_WIDTH: return P::BassPulseWidth;   // EXT-BASS B2
+        case PARA3_P_BASS_PWM_DEPTH:   return P::BassPwmDepth;     // EXT-BASS B2
         default:                       return P::Cutoff;
     }
 }

@@ -3497,6 +3497,252 @@ int main() {
         if (!pass) ++failures;
     }
 
+    // ---- T54  EXT-BASS B2 PWM-NEUTRAL  -------------------------------------
+    //  Default-init (PW=0.5, PwmDepth=0) ⇒ pwEff = 0.5 + 0*lfo = 0.5 exact
+    //  for every sample. processPulse(hz, 0.5) is called identically to B1's
+    //  hardcoded path. Two engines: A keeps defaults, B explicitly sets the
+    //  same defaults via setParamNorm. max|d| must be 0 sample-by-sample.
+    {
+        para3::ParaEngine a, b;
+        a.prepare(sr, 4096); b.prepare(sr, 4096);
+        a.setMode(para3::ParaAllocator::Mode::Unison);
+        b.setMode(para3::ParaAllocator::Mode::Unison);
+        a.setOscWave(0, 1); a.setOscWave(1, 1); a.setOscWave(2, 1);  // all Pulse
+        b.setOscWave(0, 1); b.setOscWave(1, 1); b.setOscWave(2, 1);
+        // B sets the same defaults explicitly. Taper for PW: 0.05+0.90*0.5=0.5;
+        // taper for PwmDepth: 0.45*0=0. Both .setTarget(same as snap) ⇒ no ramp.
+        b.setParamNorm(para3::ParaEngine::Param::BassPulseWidth, 0.5);  // EXT-BASS B2 ⇒ PW=0.5
+        b.setParamNorm(para3::ParaEngine::Param::BassPwmDepth,   0.0);  // EXT-BASS B2 ⇒ depth=0
+        a.noteOn(60); b.noteOn(60);
+        const int N = 48000;
+        std::vector<float> ya(N), yb(N);
+        a.process(ya.data(), N); b.process(yb.data(), N);
+        double maxd = 0.0;
+        for (int i = 0; i < N; ++i)
+            maxd = std::max(maxd, (double)std::fabs(ya[i] - yb[i]));
+
+        // Plus Saw-side: all-Saw default vs explicit-Saw + PWM-Params-explicit
+        // ⇒ still bit-identical (PWM has no effect on Saw branch).
+        para3::ParaEngine sA, sB;
+        sA.prepare(sr, 4096); sB.prepare(sr, 4096);
+        sB.setParamNorm(para3::ParaEngine::Param::BassPulseWidth, 0.3);  // arbitrary, Saw ignores
+        sB.setParamNorm(para3::ParaEngine::Param::BassPwmDepth,   1.0);  // arbitrary, Saw ignores
+        sA.noteOn(60); sB.noteOn(60);
+        std::vector<float> sa(N), sb(N);
+        sA.process(sa.data(), N); sB.process(sb.data(), N);
+        double maxdSaw = 0.0;
+        for (int i = 0; i < N; ++i)
+            maxdSaw = std::max(maxdSaw, (double)std::fabs(sa[i] - sb[i]));
+
+        const bool pass = (maxd == 0.0) && (maxdSaw == 0.0);
+        std::printf("\nT54 EXT-BASS B2 PWM-NEUTRAL  (default-PW+PWM ⇒ bit-identical to B1 Pulse path)\n");
+        std::printf("   Pulse  default vs explicit  max|d|: %.3e  (want == 0)\n", maxd);
+        std::printf("   Saw    PWM-Params ignored   max|d|: %.3e  (want == 0)\n", maxdSaw);
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if (!pass) ++failures;
+    }
+
+    // ---- T55  EXT-BASS B2 PW-CHANGE  ---------------------------------------
+    //  Three PW values produce three measurably different spectra. At PW=0.5
+    //  the pulse has only odd harmonics → h2 ≈ 0; at asymmetric PW (0.25,
+    //  0.75) h2 grows. Test that the h2/h1 ratio is below threshold at 0.5
+    //  AND well above at 0.25 / 0.75.
+    {
+        const int    N     = 32768;
+        const int    k     = 1779;
+        const double binHz = sr / N;
+        const double f0    = k * binHz;
+
+        auto h2_over_h1 = [&](double pwNorm) {
+            para3::Oscillator osc;
+            osc.prepare(sr);
+            osc.setWave(1);
+            // Drive PW directly into core_ via Engine? Oscillator only exposes
+            // wave_, not PW. The PW is plumbed at ParaEngine level. For a
+            // pure-spectrum read we render via ParaEngine + Unison; the 0.06
+            // semitone Unison spread broadens the harmonics but the h2/h1
+            // relationship survives the broadening.
+            para3::ParaEngine eng; eng.prepare(sr, 4096);
+            eng.setMode(para3::ParaAllocator::Mode::Unison);
+            eng.setOscWave(0,1); eng.setOscWave(1,1); eng.setOscWave(2,1);
+            eng.setParamNorm(para3::ParaEngine::Param::Cutoff, 1.0);
+            eng.setParamNorm(para3::ParaEngine::Param::Resonance, 0.0);
+            eng.setParamNorm(para3::ParaEngine::Param::Sustain, 1.0);
+            eng.setParamNorm(para3::ParaEngine::Param::Attack, 0.0);
+            eng.setParamNorm(para3::ParaEngine::Param::LfoCutDepth, 0.0);
+            eng.setParamNorm(para3::ParaEngine::Param::LfoPitchDepth, 0.0);
+            eng.setParamNorm(para3::ParaEngine::Param::DelayMix, 0.0);
+            eng.setParamNorm(para3::ParaEngine::Param::BassPulseWidth, pwNorm);
+            eng.setParamNorm(para3::ParaEngine::Param::BassPwmDepth, 0.0);
+            const double midiF = 69.0 + 12.0 * std::log2(f0 / 440.0);
+            const int note = (int)std::lround(midiF);
+            eng.noteOn(note);
+            std::vector<float> ramp(8192);
+            eng.process(ramp.data(), 8192);
+            std::vector<double> buf(N);
+            std::vector<float> y(N); eng.process(y.data(), N);
+            for (int i = 0; i < N; ++i) buf[i] = y[i];
+            std::vector<cd> sp(N);
+            for (int i = 0; i < N; ++i) sp[i] = cd(buf[i], 0.0);
+            fft(sp);
+            // Sum a small bin window around the harmonic to absorb Unison spread.
+            auto bandSum = [&](int center) {
+                double s = 0.0;
+                for (int b = center-3; b <= center+3; ++b)
+                    if (b > 0 && b < N/2) s += std::abs(sp[b]);
+                return s;
+            };
+            const double h1 = bandSum(k);
+            const double h2 = bandSum(2*k);
+            return h2 / std::max(h1, 1e-30);
+        };
+        // norm 0.5 → PW 0.5; norm (0.25-0.05)/0.90 ≈ 0.222 → PW 0.25; norm 0.778 → PW 0.75
+        const double r05 = h2_over_h1(0.5);    // PW=0.5  → expect ≈ 0
+        const double r025 = h2_over_h1(0.222); // PW=0.25 → expect >> 0
+        const double r075 = h2_over_h1(0.778); // PW=0.75 → expect >> 0
+        const bool sym = std::fabs(r025 - r075) < 0.3 * std::max(r025, r075);
+        const bool effect = (r025 > 5.0 * std::max(r05, 1e-9)) && (r075 > 5.0 * std::max(r05, 1e-9));
+        const bool pass = effect && sym;
+        std::printf("\nT55 EXT-BASS B2 PW-CHANGE  (h2/h1 ratio responds to PW)\n");
+        std::printf("   h2/h1  PW=0.25 / PW=0.50 / PW=0.75: %.4f / %.4f / %.4f\n",
+                    r025, r05, r075);
+        std::printf("   PW=0.25,0.75 ≥ 5× PW=0.5         : %s\n", effect?"yes":"NO");
+        std::printf("   |0.25 - 0.75| < 30%% of max      : %s\n", sym?"yes":"NO");
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if (!pass) ++failures;
+    }
+
+    // ---- T56  EXT-BASS B2 PWM-MODULATION  ----------------------------------
+    //  PwmDepth > 0 with a known LFO rate produces a temporally-modulated
+    //  spectrum (PW oscillates around base). Metric: RMS envelope (short-
+    //  window RMS over time) of PWM-on render varies significantly more than
+    //  PWM-off render. Standard-deviation of windowed-RMS is the proxy.
+    {
+        auto rmsStdDev = [&](double pwmDepthNorm) {
+            para3::ParaEngine eng; eng.prepare(sr, 4096);
+            eng.setMode(para3::ParaAllocator::Mode::Unison);
+            eng.setOscWave(0,1); eng.setOscWave(1,1); eng.setOscWave(2,1);
+            eng.setParamNorm(para3::ParaEngine::Param::Cutoff, 1.0);
+            eng.setParamNorm(para3::ParaEngine::Param::Resonance, 0.0);
+            eng.setParamNorm(para3::ParaEngine::Param::Sustain, 1.0);
+            eng.setParamNorm(para3::ParaEngine::Param::Attack, 0.0);
+            eng.setParamNorm(para3::ParaEngine::Param::LfoRate, 0.5);    // moderate Hz
+            eng.setParamNorm(para3::ParaEngine::Param::LfoCutDepth, 0.0);
+            eng.setParamNorm(para3::ParaEngine::Param::LfoPitchDepth, 0.0);
+            eng.setParamNorm(para3::ParaEngine::Param::DelayMix, 0.0);
+            eng.setParamNorm(para3::ParaEngine::Param::BassPulseWidth, 0.5);
+            eng.setParamNorm(para3::ParaEngine::Param::BassPwmDepth, pwmDepthNorm);
+            eng.noteOn(60);
+            std::vector<float> ramp(8192); eng.process(ramp.data(), 8192);
+            const int N = 96000;                 // 2s
+            std::vector<float> y(N); eng.process(y.data(), N);
+            // windowed RMS over 1024-sample windows (≈ 21 ms)
+            const int W = 1024;
+            const int M = N / W;
+            std::vector<double> rms(M);
+            for (int m = 0; m < M; ++m) {
+                double s = 0.0;
+                for (int i = 0; i < W; ++i) {
+                    const double x = y[m*W + i];
+                    s += x * x;
+                }
+                rms[m] = std::sqrt(s / W);
+            }
+            // std-dev of the rms-envelope
+            double mean = 0.0; for (double r : rms) mean += r; mean /= M;
+            double var = 0.0; for (double r : rms) var += (r-mean)*(r-mean);
+            return std::sqrt(var / M);
+        };
+        const double stdOff  = rmsStdDev(0.0);
+        const double stdOn   = rmsStdDev(1.0);
+        const double ratio   = stdOn / std::max(stdOff, 1e-9);
+        const bool effect    = ratio >= 3.0;          // PWM-on envelope varies ≥ 3x more
+        const bool finiteOk  = std::isfinite(stdOff) && std::isfinite(stdOn);
+        const bool pass      = effect && finiteOk;
+        std::printf("\nT56 EXT-BASS B2 PWM-MODULATION  (LFO-modulated PW → temporal envelope)\n");
+        std::printf("   stddev(RMS-env) PWM=0 / PWM=max : %.4e / %.4e  (ratio = %.1f, want ≥ 3.0)\n",
+                    stdOff, stdOn, ratio);
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if (!pass) ++failures;
+    }
+
+    // ---- T57  EXT-BASS B2 PW-ALIAS-EXTREMES  -------------------------------
+    //  Alias floor ≤ -74 dBc holds at PW=0.10, 0.50, 0.90 (the extremes
+    //  exercise the BLEP-edge clamping in PolyBlepCore::processPulse). Static
+    //  PW so the coherent FFT method (T1) applies cleanly.
+    {
+        const int    N     = 32768;
+        const int    k     = 1779;
+        const double binHz = sr / N;
+        const double f0    = k * binHz;
+
+        auto aliasFloorDb = [&](double pw) {
+            para3::Oscillator osc;
+            osc.prepare(sr);
+            osc.setWave(1);
+            for (int i = 0; i < 8192; ++i) osc.process(f0, pw);
+            std::vector<double> buf(N);
+            for (int i = 0; i < N; ++i) buf[i] = osc.process(f0, pw);
+            std::vector<cd> sp(N);
+            for (int i = 0; i < N; ++i) sp[i] = cd(buf[i], 0.0);
+            fft(sp);
+            double fund = 0.0, alias = 0.0;
+            for (int b = 2; b < N/2; ++b) {
+                const double m = std::abs(sp[b]);
+                if (b % k == 0) fund  = std::max(fund, m);
+                else            alias = std::max(alias, m);
+            }
+            return 20.0 * std::log10((alias + 1e-30) / (fund + 1e-30));
+        };
+        const double db10 = aliasFloorDb(0.10);
+        const double db50 = aliasFloorDb(0.50);
+        const double db90 = aliasFloorDb(0.90);
+        const bool pass = (db10 <= -74.0) && (db50 <= -74.0) && (db90 <= -74.0);
+        std::printf("\nT57 EXT-BASS B2 PW-ALIAS-EXTREMES  (alias ≤ -74 dBc across PW range)\n");
+        std::printf("   alias  PW=0.10 / 0.50 / 0.90    : %.1f / %.1f / %.1f dBc\n",
+                    db10, db50, db90);
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if (!pass) ++failures;
+    }
+
+    // ---- T58  EXT-BASS B2 PWM-NOCLICK  -------------------------------------
+    //  PwmDepth ramps from 0 to max while a note is held; |dx| at the ramp
+    //  edges must stay bounded by steady-state |dx|. RampParam smoothing is
+    //  the click-free vehicle (default 15 ms ramp).
+    {
+        para3::ParaEngine eng; eng.prepare(sr, 4096);
+        eng.setMode(para3::ParaAllocator::Mode::Unison);
+        eng.setOscWave(0,1); eng.setOscWave(1,1); eng.setOscWave(2,1);
+        eng.setParamNorm(para3::ParaEngine::Param::Cutoff, 0.8);
+        eng.setParamNorm(para3::ParaEngine::Param::Resonance, 0.0);
+        eng.setParamNorm(para3::ParaEngine::Param::Sustain, 1.0);
+        eng.setParamNorm(para3::ParaEngine::Param::Attack, 0.0);
+        eng.setParamNorm(para3::ParaEngine::Param::LfoRate, 0.5);
+        eng.setParamNorm(para3::ParaEngine::Param::BassPulseWidth, 0.5);
+        eng.setParamNorm(para3::ParaEngine::Param::BassPwmDepth, 0.0);
+        eng.noteOn(60);
+        const int N1 = 24000, N2 = 24000;
+        std::vector<float> buf(N1 + N2);
+        eng.process(buf.data(), N1);
+        eng.setParamNorm(para3::ParaEngine::Param::BassPwmDepth, 1.0);  // ramp to max
+        eng.process(buf.data() + N1, N2);
+
+        const double switchDx = maxAbsDelta(buf, N1 - 64,  N1 + 2400);   // covers 15ms ramp + post
+        const double earlyDx  = maxAbsDelta(buf, 4000, 16000);            // steady PWM-off
+        const double lateDx   = maxAbsDelta(buf, N1+12000, N1+22000);     // steady PWM-on (modulating)
+        const double steadyDx = std::max(earlyDx, lateDx);
+        const bool bounded = (switchDx <= 3.0 * steadyDx);
+        const bool finiteOk = std::isfinite(switchDx) && std::isfinite(steadyDx);
+        const bool pass = bounded && finiteOk;
+        std::printf("\nT58 EXT-BASS B2 PWM-NOCLICK  (PWM-Depth 0→max ramp during held note)\n");
+        std::printf("   max|dx| switch / off / on       : %.3e / %.3e / %.3e\n",
+                    switchDx, earlyDx, lateDx);
+        std::printf("   switch / max(steady)            : %.2fx  (want ≤ 3.0)\n",
+                    switchDx / std::max(steadyDx, 1e-30));
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if (!pass) ++failures;
+    }
+
     std::printf("\n==================================================\n");
     std::printf("%s  (%d failure%s)\n",
                 failures ? "OVERALL: FAIL" : "OVERALL: PASS",

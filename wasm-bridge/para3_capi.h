@@ -41,7 +41,10 @@ enum {
     PARA3_P_EG_CUT_DEPTH = 12,      // E1.1 bipolar: norm 0.5 == 0 (centre)
     PARA3_P_DETUNE = 13,            // E2.1 unipolar
     PARA3_P_PORTAMENTO = 14,        // E2.2 unipolar, 0 = instant
-    PARA3_P_VOLUME = 15             // E6.1 unipolar, 1.0 = unity
+    PARA3_P_VOLUME = 15,            // E6.1 unipolar, 1.0 = unity
+    // 16 reserved for kArpModePid (motion-only discrete; NOT a setParamNorm target)
+    PARA3_P_BASS_PULSE_WIDTH = 17,  // EXT-BASS B2 unipolar, 0.5 norm = PW 0.5 (default, bit-identical to B1)
+    PARA3_P_BASS_PWM_DEPTH   = 18   // EXT-BASS B2 unipolar, 0 = static PW (default, bit-identical to B1)
 };
 // voice modes mirror ParaAllocator::Mode
 enum {

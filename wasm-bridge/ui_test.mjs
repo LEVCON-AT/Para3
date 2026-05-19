@@ -39,16 +39,20 @@ const REPO = join(__dirname, '..');
 // commit. This is NOT a frozen "never change" gate, it is a "no-stealth-
 // change" gate.
 const md5_baseline = {
-  // EXT-BASS B1 rebaseline (Para3Engine.hpp, offline_test.cpp, capi_test.cpp,
-  // para3_capi.{h,cpp}, build_wasm.sh): pulse-waveform infrastructure +
-  // T49-T53 + WA9 + new EXPORTED_FUNCTIONS entry. All 11 non-engine baseline
-  // files below stay frozen at their FIX-PRE state — that is what proves
-  // this sprint did not stealth-touch transport/scope/parity files.
-  'Para3Engine.hpp':                            'efa5da85754b4417ddd54fe46d41c76f',
-  'offline_test.cpp':                           'a18c566f98eb7a96d0b1c1c3e35b9e42',
-  'wasm-bridge/para3_capi.h':                   '91c3ee9bef64cdb5e8a23d85f695222c',
-  'wasm-bridge/para3_capi.cpp':                 'afb87b81681e67eac2979501985e8fd9',
-  'wasm-bridge/capi_test.cpp':                  '3b6a456c006d66b2a1f66ff76a77ebb1',
+  // EXT-BASS B2 rebaseline: Param-Enum erweitert (BassPulseWidth=17,
+  // BassPwmDepth=18, springt über kArpModePid=16), Oscillator::process
+  // bekommt pw-Param (Default 0.5 ⇒ Saw bit-identisch, Pulse identisch zur
+  // B1 hardcoded 0.5), ParaEngine.pulseWidth_/pwmDepth_ RampParams,
+  // setParamNorm-Trichter + Taper + paramOfId-Map ergänzt. C-API:
+  // PARA3_P_BASS_PULSE_WIDTH=17, PARA3_P_BASS_PWM_DEPTH=18, mapParam-Cases.
+  // Tests: T54-T58 + WA10. KEINE neuen C-API-Funktionen (Werte gehen über
+  // existierendes para3_set_param) → build_wasm.sh / bridge JS / scope /
+  // transport-Dateien byte-frozen.
+  'Para3Engine.hpp':                            '17a8281d2f83b3ce2d728bb0a1852a94',
+  'offline_test.cpp':                           '2047f7f3393be57fdd7ad80a05826e64',
+  'wasm-bridge/para3_capi.h':                   '4a4067aee93fea15fa4bc668eec00e9b',
+  'wasm-bridge/para3_capi.cpp':                 '5fa4354e1fba917d2b72c7501edb3e14',
+  'wasm-bridge/capi_test.cpp':                  '0da50e274112f2af23ca92a26ac159ca',
   'wasm-bridge/scope_source_test.cpp':          '646828487b3a002a565b9ec87a7abe55',
   'wasm-bridge/parity_native.cpp':              'ffdb9666262ae54961d58dc7ec19d4b0',
   'wasm-bridge/parity_seq.h':                   '9043aba77b26cecb2aa1324ba805e07a',

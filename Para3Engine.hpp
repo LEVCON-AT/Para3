@@ -216,14 +216,19 @@ public:
         reset();
     }
     void reset() noexcept { core_.reset(); dec_.reset(); }
-    inline float process(double freqHz) noexcept {
+    // EXT-BASS B2 — pw parameter defaults to 0.5 (B1 hardcoded value). Saw
+    // branch ignores pw entirely → Saw output stays byte-identical regardless
+    // of the pw value. For Pulse, pw is applied per OS-sample (block-rate is
+    // sample-rate at this level — the ParaEngine outer loop holds pw constant
+    // across the kOS BLEP corrections in one output sample, which mirrors how
+    // PWM modulation lands on the band-limited edges).
+    inline float process(double freqHz, double pw = 0.5) noexcept {            // EXT-BASS B2
         if (wave_ == 0) {
             // default Saw path — byte-identical to pre-EXT-BASS-B1 codegen
             for (int i = 0; i < kOS; ++i) dec_.push(core_.process(freqHz));
         } else {
-            // EXT-BASS B1 — band-limited Pulse, PW=0.5 fixed at B1
-            // (B2 will smoothly modulate PW via setParamNorm/RampParam).
-            for (int i = 0; i < kOS; ++i) dec_.push(core_.processPulse(freqHz, 0.5));
+            // EXT-BASS B1+B2 — band-limited Pulse, PW from caller (B2 modulates)
+            for (int i = 0; i < kOS; ++i) dec_.push(core_.processPulse(freqHz, pw));
         }
         // CALIB(sprint1): measured saw-shaping / HF roll-off stage inserts here.
         return static_cast<float>(dec_.read());
@@ -760,6 +765,10 @@ public:
         metro_.prepare(sampleRate);                     // E4.4
         vol_.prepare(sampleRate, 15.0);                 // E6.1 master gain (smoothed)
         vol_.snap(1.0);                                 // E6.1 unity => bit-identical
+        pulseWidth_.prepare(sampleRate, 15.0);          // EXT-BASS B2 PW funnel
+        pulseWidth_.snap(0.5);                          // EXT-BASS B2 PW=0.5 ⇒ bit-identisch zum B1 hardcoded
+        pwmDepth_.prepare(sampleRate, 15.0);            // EXT-BASS B2 PWM-Tiefe funnel
+        pwmDepth_.snap(0.0);                            // EXT-BASS B2 PWM=0 ⇒ statisch ⇒ bit-identisch zum B1
         delay_.setMix(0.0);                             // neutral default
         delay_.setFeedback(0.0);
         reset();
@@ -825,6 +834,12 @@ public:
     int  oscWave(int oscIdx) const noexcept {                               // EXT-BASS B1
         return (oscIdx >= 0 && oscIdx < 3) ? osc_[oscIdx].wave() : 0;
     }
+    // EXT-BASS B2 — Pulse Width + PWM-Depth (LFO-driven). Continuous knobs,
+    // both go through setParamNorm (taper → RampParam → DSP). Defaults
+    // (PW=0.5, PwmDepth=0) ⇒ effective PW = 0.5 every sample = B1's hardcoded
+    // value → bit-identical to the B1 Pulse path (T54 measures).
+    void setPulseWidth(double pw) noexcept { pulseWidth_.setTarget(pw); }   // EXT-BASS B2
+    void setPwmDepth  (double d)  noexcept { pwmDepth_.setTarget(d);    }   // EXT-BASS B2
     // B1-fix: panic any held voice and release the envelope BEFORE changing
     // the shift. Reuses the engine's own allNotesOff (below) so seqStop, the
     // C-API panic path, and this one all converge on the same primitive.
@@ -857,7 +872,11 @@ public:
     //     setter (RampParam) -> DSP. No source bypasses taper or smoother.
     enum class Param { Cutoff, Resonance, Drive, LfoCutDepth, DelayMix,
                        LfoRate, LfoPitchDepth, DelayTime, DelayFeedback,
-                       Attack, DecRel, Sustain, EgCutDepth, Detune, Portamento, Volume };
+                       Attack, DecRel, Sustain, EgCutDepth, Detune, Portamento, Volume,
+                       // 16 reserved for kArpModePid (motion-pid only, not a setParamNorm target)
+                       BassPulseWidth = 17,                                              // EXT-BASS B2
+                       BassPwmDepth                                                       // EXT-BASS B2
+    };
 
     static double taper(Param p, double n) noexcept {       // CALIB(sprint1)
         n = clamp(n, 0.0, 1.0);
@@ -878,6 +897,8 @@ public:
             case Param::Detune:        return n * (kDetuneCentsMax / 100.0);  // E2.1 semitone half-spread
             case Param::Portamento:    return n * kPortMaxSec;                // E2.2 glide TAU (s)
             case Param::Volume:        return n;                              // E6.1 0..1 (CALIB(E8) curve)
+            case Param::BassPulseWidth: return 0.05 + 0.90 * n;                // EXT-BASS B2 unipolar 5%..95% (default n=0.5 ⇒ PW=0.5)
+            case Param::BassPwmDepth:   return 0.45 * n;                       // EXT-BASS B2 unipolar 0..45% PW excursion (LFO-driven)
         }
         return n;
     }
@@ -899,6 +920,8 @@ public:
             case Param::Detune:        setDetune     (taper(p, n)); break;  // E2.1
             case Param::Portamento:    setPortamento (taper(p, n)); break;  // E2.2
             case Param::Volume:        setVolume     (taper(p, n)); break;  // E6.1
+            case Param::BassPulseWidth: setPulseWidth(taper(p, n)); break;  // EXT-BASS B2
+            case Param::BassPwmDepth:   setPwmDepth  (taper(p, n)); break;  // EXT-BASS B2
         }
     }
     // read-only observability (metering / tests) — not a control path
@@ -913,6 +936,14 @@ public:
             const double eg   = env_.next();                   // E1.1 sample shared EG ONCE
             const double egD  = egInt_.next();                 // E1.1 smoothed bipolar octaves
             const double ds   = detune_.next();                // E2.1 smoothed semitone half-spread
+            // EXT-BASS B2 — effective Pulse Width: base PW plus LFO-driven
+            // excursion. At default (PW=0.5, PwmDepth=0) ⇒ pwEff = 0.5 + 0*lfo
+            // = 0.5 (IEEE exact) ⇒ identical to B1's hardcoded processPulse arg.
+            // The Saw branch of Oscillator.process ignores pwEff so the Saw
+            // path stays byte-identical regardless of this value.
+            const double pwBase = pulseWidth_.next();          // EXT-BASS B2
+            const double pwMod  = pwmDepth_.next() * lfo;      // EXT-BASS B2 (lfo ∈ [-1,+1])
+            const double pwEff  = pwBase + pwMod;              // EXT-BASS B2 (clamped in core_)
             if (portOn_) {                                     // E2.2 Modell A one-pole glide
                 for (int v = 0; v < 3; ++v) {
                     glide_[v] += (gtgt_[v] - glide_[v]) * portA_;
@@ -940,7 +971,7 @@ public:
                     if (!active_[v]) { pitch_[v].next(); continue; }
                     const double hz = semitonesToHz(pitch_[v].next() + pMod
                                         + (v == 0 ? -ds : (v == 2 ? ds : 0.0))); // E2.1
-                    mix += osc_[v].process(hz);
+                    mix += osc_[v].process(hz, pwEff);                 // EXT-BASS B2 PW per sample
                 }
             }
             mix *= 0.5;                                 // headroom for the drive
@@ -995,6 +1026,8 @@ private:
     bool           metroOn_  = false;                   // E4.4 metronome
     MetroTick      metro_;                               // E4.4
     RampParam      vol_;                                 // E6.1 master gain (smoothed)
+    RampParam      pulseWidth_;                          // EXT-BASS B2 PW (0.05..0.95, default 0.5)
+    RampParam      pwmDepth_;                            // EXT-BASS B2 PWM excursion (0..0.45, default 0)
     int            octShift_ = 0;                        // E6.2 semitone offset
     static constexpr double kVelFixed = 1.0;             // CALIB(E8) E6.3 fixed velocity
     static constexpr double kEgIntOctMax   = 2.0;       // CALIB(E8) EG INT max swing (octaves)
@@ -1054,7 +1087,7 @@ struct Step {
 // EXT-ARP-MOTION: pid 16 = ARP_MODE (Controller-level, discrete 0..4 mapped
 // from the 0..1 lane via setArpMode). All other ids 0..15 dispatch to
 // engine.setParamNorm as before — see applyMotionParam_().
-static constexpr int kMP = 17;
+static constexpr int kMP = 19;                                    // EXT-BASS B2: 0..15 Param + 16 ArpMode + 17 PW + 18 PwmDepth
 static constexpr int kArpModePid = 16;
 struct MotionLane { bool used = false; float v[16] = {0}; };
 struct Pattern {
@@ -1223,6 +1256,9 @@ public:
             case 13: o=P::Detune;        return true;
             case 14: o=P::Portamento;    return true;
             case 15: o=P::Volume;        return true;   // E6.1
+            // 16 = kArpModePid, handled separately above (motion-only, not a Param)
+            case 17: o=P::BassPulseWidth; return true;  // EXT-BASS B2
+            case 18: o=P::BassPwmDepth;   return true;  // EXT-BASS B2
             default: return false;
         }
     }
