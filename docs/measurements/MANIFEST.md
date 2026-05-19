@@ -33,5 +33,16 @@
 | M6.5 | VoiceMode | UNIRING adds ring-mod side-bands not in pure saw | new_peaks_vs_saw | ≥ 5 | 24 |  | PASS | [svg](../docs/measurements/M6.5-uniring.svg) |
 | M6.6 | VoiceMode | POLYRING produces difference frequency between two notes | has_diff_peak_~130Hz | yes | yes |  | PASS | [svg](../docs/measurements/M6.6-polyring.svg) |
 | M6.7 | VoiceMode | Mode switch transient bounded (Volca-typisch) | max_sample_diff_at_switch | < 0.30 (audible click would be > 0.5) | 0.2345 | amp | PASS | [svg](../docs/measurements/M6.7-mode-switch-clickfree.svg) |
+| M7.1 | Sequencer | Step timing matches BPM | worst_relative_err | < 2 | 1.32 | % | PASS | [svg](../docs/measurements/M7.1-step-timing.svg) |
+| M7.2 | Sequencer | Tempo-Div scales step duration ×div | ratio_div_4_to_1 | ≈ 4.0 (±10 %) | 3.96 |  | PASS | [svg](../docs/measurements/M7.2-tempo-div.svg) |
+| M7.3 | Sequencer | SWING delays odd step proportionally | onset_rise_swing_0_to_0.45 | ≈ 5400 (0.45 · 12000) | 5400 | samples | PASS | [svg](../docs/measurements/M7.3-swing.svg) |
+| M7.4 | Sequencer | Step velocity linearly scales peak amplitude | linear_r | > 0.97 | 1.000 |  | PASS | [svg](../docs/measurements/M7.4-step-vel.svg) |
+| M7.5 | Sequencer | Step gateLen<1 cuts late-window RMS | ratio_gl=0.2_to_1.0 | < 0.3 | 0.001 |  | PASS | [svg](../docs/measurements/M7.5-step-gate.svg) |
+| M7.6 | Sequencer | setActiveStep(false) silences that step's block | skip_to_normal_mid_ratio | < 0.7 | 0.000 |  | PASS | [svg](../docs/measurements/M7.6-active-step-skip.svg) |
+| M7.7 | Sequencer | Motion-smooth reduces block-to-block param swing | swing_smooth_off_vs_on | off > on | 94.3 / 67.9 | dB | PASS |  |
+| M8.1 | FLUX | FLUX replay reproduces sample-accurate onsets | onset_err_loop1 | < 100 | 79 | samples | PASS | [svg](../docs/measurements/M8.1-flux-replay.svg) |
+| M8.2 | FLUX | FLUX param event darkens second half of loop | early_to_late_drop | > 8 | 106.0 | dB | PASS | [svg](../docs/measurements/M8.2-flux-param.svg) |
+| M8.3 | FLUX | Quantize snaps off-grid event onto loop/16 | quant_vs_fine_diff | ≥ 500 | 984 | samples | PASS |  |
+| M8.4 | FLUX | FLUX loop length respected, two onsets in two loops | onset_err_max | < 200 | 79 | samples | PASS |  |
 
-Total: 31 — Failures: 0
+Total: 42 — Failures: 0

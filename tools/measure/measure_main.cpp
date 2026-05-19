@@ -1635,6 +1635,592 @@ static MEntry M6_7_modeSwitchClickFree() {
 }
 
 // =============================================================================
+//  LAB-5 :: M7.x Sequencer + M8.x FLUX
+// =============================================================================
+
+// Helper: render N samples through Controller (which drives the engine).
+static std::vector<float> ctlRender(P3::Controller& c, std::size_t n) {
+    std::vector<float> out(n);
+    c.render(out.data(), (int)n);
+    return out;
+}
+
+// Detect onset (first sample > 0.05 amp) in a buffer.
+static int firstOnset(const std::vector<float>& s, double thresh = 0.05) {
+    for (std::size_t i = 0; i < s.size(); ++i)
+        if (std::fabs((double)s[i]) > thresh) return (int)i;
+    return -1;
+}
+
+// -- M7.1 Step timing accuracy (BPM → samples) --------------------------------
+// Frage:  Stimmt die Step-Dauer mit der BPM-Angabe überein?
+// Mess:   Gate nur Step 1. Bei 60 BPM × 1/16 = 12000 samples/step → Step 1
+//         onset bei ~12000. Bei 120 BPM = 6000.
+static MEntry M7_1_stepTiming() {
+    auto runAt = [&](double bpm) -> int {
+        P3::ParaEngine e; e.prepare(SR, 256);
+        setNeutralPatch(e);
+        P3::Controller c; c.prepare(e, SR);
+        P3::Pattern& ep = c.editPattern();
+        ep.length = 16;
+        ep.steps[1].gate = true; ep.steps[1].note = 60;
+        c.commitEdit();
+        c.setSeqTempo(bpm, 4);
+        c.seqStart();
+        auto out = ctlRender(c, (std::size_t)(SR * 0.5));
+        return firstOnset(out);
+    };
+    const int o60  = runAt(60.0);
+    const int o120 = runAt(120.0);
+    const double expected60  = SR * 60.0 / 60.0 / 4.0;  // 12000
+    const double expected120 = SR * 60.0 / 120.0 / 4.0; // 6000
+    const double err60  = std::fabs((double)o60  - expected60)  / expected60;
+    const double err120 = std::fabs((double)o120 - expected120) / expected120;
+    const double worst  = std::max(err60, err120);
+
+    Series s; s.label = "step-1 onset / samples";
+    s.xs = {60.0, 120.0}; s.ys = {(double)o60, (double)o120};
+    SvgPlot p("M7.1 — Step-1 onset vs BPM (gate only step 1)");
+    p.xLabel("BPM").yLabel("samples").xRange(40, 140).yRange(0, 15000)
+     .addSeries(s);
+    p.write(OUT_DIR + "/M7.1-step-timing.svg");
+
+    MEntry m; m.id="M7.1"; m.section="Sequencer";
+    m.what="Step timing matches BPM";
+    m.metric="worst_relative_err"; m.unit="%";
+    m.expected="< 2";
+    char b[32]; std::snprintf(b, sizeof b, "%.2f", worst * 100.0); m.measured=b;
+    m.pass = worst < 0.02;
+    m.svgPath = OUT_DIR + "/M7.1-step-timing.svg";
+    char nb[80]; std::snprintf(nb, sizeof nb,
+        "60 BPM: %d (expect %.0f); 120 BPM: %d (expect %.0f)",
+        o60, expected60, o120, expected120);
+    m.note = nb;
+    return m;
+}
+
+// -- M7.2 Tempo Div -----------------------------------------------------------
+// Frage:  Verlängern tempoDiv 1/2 und 1/4 die Step-Dauer entsprechend?
+// Mess:   120 BPM, gate step 1. tempoDiv = 1, 2, 4. Step 1 onset.
+static MEntry M7_2_tempoDiv() {
+    auto runAt = [&](int div) -> int {
+        P3::ParaEngine e; e.prepare(SR, 256);
+        setNeutralPatch(e);
+        P3::Controller c; c.prepare(e, SR);
+        P3::Pattern& ep = c.editPattern();
+        ep.length = 16;
+        ep.steps[1].gate = true; ep.steps[1].note = 60;
+        c.commitEdit();
+        c.setSeqTempo(120.0, 4);
+        c.clock().setDiv(div);
+        c.seqStart();
+        auto out = ctlRender(c, (std::size_t)(SR * 1.2));
+        return firstOnset(out);
+    };
+    const int o1 = runAt(1), o2 = runAt(2), o4 = runAt(4);
+    // div doubles → step duration doubles (at div=2 → onset ≈ 12000, div=4 → 24000)
+    Series s; s.label = "onset / samples";
+    s.xs = {1.0, 2.0, 4.0}; s.ys = {(double)o1, (double)o2, (double)o4};
+    SvgPlot p("M7.2 — Tempo-Div → step-1 onset (120 BPM base)");
+    p.xLabel("DIV").yLabel("samples").xRange(0.5, 5).yRange(0, 30000)
+     .addSeries(s);
+    p.write(OUT_DIR + "/M7.2-tempo-div.svg");
+
+    const double ratio2 = (double)o2 / o1;
+    const double ratio4 = (double)o4 / o1;
+    MEntry m; m.id="M7.2"; m.section="Sequencer";
+    m.what="Tempo-Div scales step duration ×div";
+    m.metric="ratio_div_4_to_1"; m.unit="";
+    m.expected="≈ 4.0 (±10 %)";
+    char b[32]; std::snprintf(b, sizeof b, "%.2f", ratio4); m.measured=b;
+    m.pass = std::fabs(ratio2 - 2.0) < 0.2 && std::fabs(ratio4 - 4.0) < 0.4;
+    m.svgPath = OUT_DIR + "/M7.2-tempo-div.svg";
+    char nb[64]; std::snprintf(nb, sizeof nb, "ratios div=2:%.2f, div=4:%.2f", ratio2, ratio4);
+    m.note = nb;
+    return m;
+}
+
+// -- M7.3 Swing — cross-reference T48 -----------------------------------------
+// Mess:   Curve aus mehreren Swing-Werten (0/0.15/0.30/0.45) zeigt
+//         monotonen Anstieg der odd-step delay (≅ swing × stepSamples).
+static MEntry M7_3_swing() {
+    auto runAt = [&](double sw) -> int {
+        P3::ParaEngine e; e.prepare(SR, 256);
+        setNeutralPatch(e);
+        P3::Controller c; c.prepare(e, SR);
+        P3::Pattern& ep = c.editPattern();
+        ep.length = 16; ep.steps[1].gate = true; ep.steps[1].note = 60;
+        c.commitEdit();
+        c.setSeqTempo(60.0, 4);   // 12000 samples / step
+        c.clock().setSwing(sw);
+        c.seqStart();
+        auto out = ctlRender(c, (std::size_t)(SR * 0.5));
+        return firstOnset(out);
+    };
+    const double sws[] = {0.0, 0.15, 0.30, 0.45};
+    Series s; s.label = "onset / samples";
+    bool mono = true; double prev = 0;
+    for (double sw : sws) {
+        const int o = runAt(sw);
+        s.xs.push_back(sw); s.ys.push_back((double)o);
+        if (o < prev - 100) mono = false;
+        prev = o;
+    }
+    SvgPlot p("M7.3 — SWING odd-step delay (gate step 1, 60 BPM)");
+    p.xLabel("SWING (norm)").yLabel("step-1 onset / samples")
+     .xRange(0, 0.5).yRange(0, 20000)
+     .addSeries(s).note("Erwartung: onset = 12000 · (1 + swing)");
+    p.write(OUT_DIR + "/M7.3-swing.svg");
+
+    const double rise = s.ys.back() - s.ys.front();
+    MEntry m; m.id="M7.3"; m.section="Sequencer";
+    m.what="SWING delays odd step proportionally";
+    m.metric="onset_rise_swing_0_to_0.45"; m.unit="samples";
+    m.expected="≈ 5400 (0.45 · 12000)";
+    char b[32]; std::snprintf(b, sizeof b, "%.0f", rise); m.measured=b;
+    m.pass = mono && rise > 4500 && rise < 6500;
+    m.svgPath = OUT_DIR + "/M7.3-swing.svg";
+    return m;
+}
+
+// -- M7.4 Step Velocity — cross-reference T46 ---------------------------------
+static MEntry M7_4_stepVel() {
+    auto runAt = [&](double vel) -> double {
+        P3::ParaEngine e; e.prepare(SR, 256);
+        setNeutralPatch(e);
+        e.setParamNorm(P3::ParaEngine::Param::Cutoff, 0.8);
+        e.setParamNorm(P3::ParaEngine::Param::DecRel, 0.1);
+        P3::Controller c; c.prepare(e, SR);
+        P3::Pattern& ep = c.editPattern();
+        ep.length = 16; ep.steps[0].gate = true; ep.steps[0].note = 60;
+        ep.steps[0].vel = vel;
+        c.commitEdit();
+        c.setSeqTempo(60.0, 4); c.seqStart();
+        auto out = ctlRender(c, (std::size_t)(SR * 0.2));
+        auto env = envelope(out, SR, 0.010);
+        double pk = 0; for (double v : env) pk = std::max(pk, v);
+        return pk;
+    };
+    const double vels[] = {0.25, 0.5, 0.75, 1.0};
+    Series s; s.label = "peak amp";
+    for (double v : vels) {
+        s.xs.push_back(v); s.ys.push_back(runAt(v));
+    }
+    SvgPlot p("M7.4 — Step velocity → peak amplitude");
+    p.xLabel("vel (per-step)").yLabel("peak").xRange(0, 1.05).yRange(0, 1)
+     .addSeries(s);
+    p.write(OUT_DIR + "/M7.4-step-vel.svg");
+
+    // Lineare Korrelation r²
+    double sx=0, sy=0, sxy=0, sx2=0, sy2=0;
+    const int N = (int)s.xs.size();
+    for (int i = 0; i < N; ++i) {
+        sx += s.xs[i]; sy += s.ys[i];
+        sxy += s.xs[i] * s.ys[i];
+        sx2 += s.xs[i] * s.xs[i];
+        sy2 += s.ys[i] * s.ys[i];
+    }
+    const double r = (N * sxy - sx * sy) /
+        std::sqrt((N * sx2 - sx * sx) * (N * sy2 - sy * sy));
+    MEntry m; m.id="M7.4"; m.section="Sequencer";
+    m.what="Step velocity linearly scales peak amplitude";
+    m.metric="linear_r"; m.unit="";
+    m.expected="> 0.97";
+    char b[32]; std::snprintf(b, sizeof b, "%.3f", r); m.measured=b;
+    m.pass = r > 0.97;
+    m.svgPath = OUT_DIR + "/M7.4-step-vel.svg";
+    return m;
+}
+
+// -- M7.5 Step Gate length — cross-reference T47 ------------------------------
+static MEntry M7_5_stepGate() {
+    auto runAt = [&](double gl) -> double {
+        P3::ParaEngine e; e.prepare(SR, 256);
+        setNeutralPatch(e);
+        e.setParamNorm(P3::ParaEngine::Param::DecRel,  0.1);
+        e.setParamNorm(P3::ParaEngine::Param::Sustain, 0.85);
+        P3::Controller c; c.prepare(e, SR);
+        P3::Pattern& ep = c.editPattern();
+        ep.length = 16; ep.steps[0].gate = true; ep.steps[0].note = 60;
+        ep.steps[0].gateLen = gl;
+        c.commitEdit();
+        c.setSeqTempo(60.0, 4); c.seqStart();
+        auto out = ctlRender(c, (std::size_t)(SR * 0.3));
+        auto env = envelope(out, SR, 0.020);
+        // late RMS window 200..245 ms
+        double s2 = 0; int n = 0;
+        for (std::size_t i = (std::size_t)(SR*0.2); i < (std::size_t)(SR*0.245) && i < env.size(); ++i) {
+            s2 += env[i] * env[i]; ++n;
+        }
+        return (n > 0) ? std::sqrt(s2 / n) : 0;
+    };
+    const double gls[] = {0.2, 0.5, 1.0};
+    Series s; s.label = "late RMS (gate)";
+    for (double g : gls) {
+        s.xs.push_back(g); s.ys.push_back(runAt(g));
+    }
+    SvgPlot p("M7.5 — Step gateLen → late-window RMS");
+    p.xLabel("gateLen").yLabel("late RMS")
+     .xRange(0, 1.05).yRange(0, std::max(s.ys.back() * 1.3, 0.1))
+     .addSeries(s);
+    p.write(OUT_DIR + "/M7.5-step-gate.svg");
+
+    MEntry m; m.id="M7.5"; m.section="Sequencer";
+    m.what="Step gateLen<1 cuts late-window RMS";
+    m.metric="ratio_gl=0.2_to_1.0"; m.unit="";
+    m.expected="< 0.3";
+    const double ratio = s.ys.front() / std::max(s.ys.back(), 1e-9);
+    char b[32]; std::snprintf(b, sizeof b, "%.3f", ratio); m.measured=b;
+    m.pass = ratio < 0.3;
+    m.svgPath = OUT_DIR + "/M7.5-step-gate.svg";
+    return m;
+}
+
+// -- M7.6 Active-step skip ----------------------------------------------------
+// Frage:  Überspringt seqActiveStep(false) den Step vollständig?
+// Mess:   Gate Steps 0, 1, 2. actStep[1] = false. Erwartet: Step 1 onset
+//         entfällt; Step 2 fires bei stepSamples·2 statt ·1 verzögert.
+static MEntry M7_6_activeStepSkip() {
+    // Statt Peak-Detection im Sequencer-Audio (das wegen click-free Crossfade
+    // schwer auflöst): wir messen die zeitliche Verteilung der RMS-Power.
+    // Bei normal-Pattern (3 aktive Steps): hohes RMS für 750 ms.
+    // Bei skipMid (Step 1 aus): RMS-Dip im 250..500 ms Bereich.
+    auto runBlockRms = [&](bool skipMid) -> std::vector<double> {
+        P3::ParaEngine e; e.prepare(SR, 256);
+        setNeutralPatch(e);
+        e.setParamNorm(P3::ParaEngine::Param::Cutoff,  0.8);
+        e.setParamNorm(P3::ParaEngine::Param::Sustain, 0.0);   // decay to silence
+        e.setParamNorm(P3::ParaEngine::Param::DecRel,  0.10);  // ~50 ms decay
+        P3::Controller c; c.prepare(e, SR);
+        c.setStepTrigger(true);    // EG retriggert pro Step → klare Lücke bei skip
+        P3::Pattern& ep = c.editPattern();
+        ep.length = 16;
+        for (int i = 0; i < 3; ++i) {
+            ep.steps[i].gate = true; ep.steps[i].note = 60;
+        }
+        if (skipMid) ep.steps[1].active = false;
+        c.commitEdit();
+        c.setSeqTempo(60.0, 4);
+        c.seqStart();
+        auto out = ctlRender(c, (std::size_t)(SR * 0.75));
+        // Block-RMS in 3 zeitlichen Vierteln (jeweils 250 ms).
+        std::vector<double> rms(3, 0.0);
+        for (int b = 0; b < 3; ++b) {
+            const std::size_t a = (std::size_t)(SR * 0.25 * b);
+            const std::size_t e2 = (std::size_t)(SR * 0.25 * (b + 1));
+            double s = 0; int n = 0;
+            for (std::size_t i = a; i < e2 && i < out.size(); ++i) {
+                s += (double)out[i] * out[i]; ++n;
+            }
+            rms[b] = (n > 0) ? std::sqrt(s / n) : 0;
+        }
+        return rms;
+    };
+    auto normal  = runBlockRms(false);
+    auto skipped = runBlockRms(true);
+
+    Series sN; sN.label = "normal RMS";    sN.xs = {0.125, 0.375, 0.625}; sN.ys = normal;
+    Series sS; sS.label = "skipped RMS";   sS.xs = sN.xs;                  sS.ys = skipped;
+    sS.colour = "#71d99a";
+    SvgPlot p("M7.6 — Active-Step skip: middle quarter RMS drops");
+    p.xLabel("Block centre t / s").yLabel("RMS")
+     .xRange(0, 0.75).yRange(0, std::max(*std::max_element(normal.begin(), normal.end()), 0.1) * 1.3)
+     .addSeries(sN).addSeries(sS);
+    p.write(OUT_DIR + "/M7.6-active-step-skip.svg");
+
+    // Pass: middle block RMS drops ≥ 30 % when step 1 is skipped.
+    const double drop = (normal[1] > 0) ? skipped[1] / normal[1] : 1.0;
+    MEntry m; m.id="M7.6"; m.section="Sequencer";
+    m.what="setActiveStep(false) silences that step's block";
+    m.metric="skip_to_normal_mid_ratio"; m.unit="";
+    m.expected="< 0.7";
+    char b[32]; std::snprintf(b, sizeof b, "%.3f", drop); m.measured=b;
+    m.pass = drop < 0.7 && normal[1] > 0.01;
+    m.svgPath = OUT_DIR + "/M7.6-active-step-skip.svg";
+    return m;
+}
+
+// -- M7.7 Motion sequence smooth -----------------------------------------------
+// Frage:  Glättet seqMotionSmooth(true) die Param-Sprünge zwischen Steps?
+// Mess:   Setze cutoff-motion lane: high/low alternating. Capture audio, FFT
+//         hochband-RMS pro 100-ms Block. SMOOTH=on → langsam wandernd,
+//         SMOOTH=off → harte Sprünge (mehr Block-zu-Block Varianz).
+static MEntry M7_7_motionSmooth() {
+    auto runSmooth = [&](bool smooth) -> double {
+        P3::ParaEngine e; e.prepare(SR, 256);
+        setNeutralPatch(e);
+        e.setParamNorm(P3::ParaEngine::Param::Cutoff, 0.3);    // baseline low
+        P3::Controller c; c.prepare(e, SR);
+        P3::Pattern& ep = c.editPattern();
+        ep.length = 16;
+        for (int i = 0; i < 16; ++i) {
+            ep.steps[i].gate = true; ep.steps[i].note = 60;
+        }
+        c.commitEdit();
+        c.setSeqTempo(60.0, 4);    // 250 ms / step
+        c.motionSmooth(smooth);
+        // Cutoff motion: alternating 0.3/0.8/0.3/0.8...
+        for (int i = 0; i < 16; ++i)
+            c.motionSet(0 /*Cutoff*/, i, (i & 1) ? 0.8 : 0.3);
+        c.commitEdit();
+        c.seqStart();
+        auto out = ctlRender(c, (std::size_t)(SR * 2.0));
+        // Highband RMS per 100 ms block; std-dev of block sequence
+        const std::size_t W = (std::size_t)(SR * 0.1);
+        std::vector<double> blocks;
+        for (std::size_t i = 0; i + W <= out.size(); i += W) {
+            std::vector<float> seg(out.begin() + i, out.begin() + i + W);
+            auto sp = spectrum(seg);
+            double e2 = 0; int n = 0;
+            for (std::size_t k = 1; k < sp.magDb.size(); ++k) {
+                const double f = (double)k * SR / sp.N;
+                if (f < 2000) { continue; }
+                if (f > 6000) { break; }
+                const double lin = std::pow(10.0, sp.magDb[k] / 20.0);
+                e2 += lin * lin; ++n;
+            }
+            blocks.push_back((n > 0) ? std::sqrt(e2 / n) : 0);
+        }
+        // Total swing of the block sequence (max-min)
+        double mn = 1e9, mx = 0;
+        for (double v : blocks) { mn = std::min(mn, v); mx = std::max(mx, v); }
+        return (mn > 0) ? 20.0 * std::log10(mx / mn) : 0.0;
+    };
+    const double swingNo  = runSmooth(false);
+    const double swingYes = runSmooth(true);
+    // Smooth ON should compress the swing (high → low transition is ramped)
+    MEntry m; m.id="M7.7"; m.section="Sequencer";
+    m.what="Motion-smooth reduces block-to-block param swing";
+    m.metric="swing_smooth_off_vs_on"; m.unit="dB";
+    m.expected="off > on";
+    char b[32]; std::snprintf(b, sizeof b, "%.1f / %.1f", swingNo, swingYes);
+    m.measured = b;
+    m.pass = swingNo > swingYes;
+    m.svgPath = "";
+    return m;
+}
+
+// =============================================================================
+//  LAB-5 :: M8.x FLUX
+// =============================================================================
+
+// -- M8.1 FLUX sample-accurate playback ---------------------------------------
+// Frage:  Werden FLUX-Noten an gleichen Sample-Offsets wieder abgespielt?
+// Mess:   FluxMode on, rec on, append noteOn(60) + noteOff bei bestimmten
+//         Offsets, commit. Replay → onsets müssen bei den Aufnahme-Offsets
+//         sample-genau wiedererscheinen. Cross-Ref T23.
+static MEntry M8_1_fluxAccurate() {
+    P3::ParaEngine e; e.prepare(SR, 256);
+    setNeutralPatch(e);
+    e.setParamNorm(P3::ParaEngine::Param::DecRel, 0.02);
+    e.setParamNorm(P3::ParaEngine::Param::Sustain, 0.0);
+    P3::Controller c; c.prepare(e, SR);
+    const std::size_t loopLen = (std::size_t)(SR * 1.0);   // 1 s loop
+    c.setFluxMode(true);
+    c.fluxSetLoopLen((unsigned int)loopLen);
+    c.setFluxQuantize(false);     // sample-accurate
+    c.fluxRec(true);
+
+    // Record: silence, noteOn @ 250 ms, noteOff @ 300 ms.
+    std::vector<float> rec(loopLen);
+    c.render(rec.data(), (int)(SR * 0.25));
+    c.fluxNote(60, true);
+    c.render(rec.data() + (std::size_t)(SR * 0.25), (int)(SR * 0.05));
+    c.fluxNote(60, false);
+    c.render(rec.data() + (std::size_t)(SR * 0.30), (int)(loopLen - SR * 0.30));
+    c.fluxRec(false);
+    c.fluxCommit();
+
+    // Render 2 more loops
+    std::vector<float> p1(loopLen), p2(loopLen);
+    c.render(p1.data(), (int)loopLen);
+    c.render(p2.data(), (int)loopLen);
+
+    // Onset of replay (first sample > 0.05 in each loop)
+    const int onset1 = firstOnset(p1);
+    const int onset2 = firstOnset(p2);
+    const int expected = (int)(SR * 0.25);
+
+    writeScope(OUT_DIR + "/M8.1-flux-replay.svg",
+               "M8.1 — FLUX replay loop 1 (1 s)",
+               p1, SR, 0.0, 1.0);
+
+    const bool ok = std::abs(onset1 - expected) < 100 && std::abs(onset2 - expected) < 100;
+    MEntry m; m.id="M8.1"; m.section="FLUX";
+    m.what="FLUX replay reproduces sample-accurate onsets";
+    m.metric="onset_err_loop1"; m.unit="samples";
+    m.expected="< 100";
+    char b[32]; std::snprintf(b, sizeof b, "%d", std::abs(onset1 - expected));
+    m.measured=b;
+    m.pass = ok;
+    m.svgPath = OUT_DIR + "/M8.1-flux-replay.svg";
+    char nb[80]; std::snprintf(nb, sizeof nb,
+        "loop1: %d, loop2: %d (expect %d)", onset1, onset2, expected);
+    m.note = nb;
+    return m;
+}
+
+// -- M8.2 FLUX Param replay (cross-ref T42) -----------------------------------
+// Frage:  Spielt FLUX aufgezeichnete Param-Events sample-accurat wieder ab?
+// Mess:   1 s loop. Record cutoff bright @ 0 ms, dark @ 500 ms, noteOn @ 0,
+//         noteOff @ 950. Replay → erstes Halbloop bright, zweites dunkel.
+static MEntry M8_2_fluxParam() {
+    P3::ParaEngine e; e.prepare(SR, 256);
+    setNeutralPatch(e);
+    e.setParamNorm(P3::ParaEngine::Param::Cutoff, 0.5);
+    P3::Controller c; c.prepare(e, SR);
+    const std::size_t loopLen = (std::size_t)(SR * 1.0);
+    c.setFluxMode(true);
+    c.fluxSetLoopLen((unsigned int)loopLen);
+    c.setFluxQuantize(false);
+    c.fluxRec(true);
+
+    c.fluxParam(0 /*Cutoff*/, 0.8);
+    c.fluxNote(60, true);
+    c.render(nullptr, 0);   // ensure events flush
+    std::vector<float> rec(loopLen);
+    c.render(rec.data(), (int)(SR * 0.5));
+    c.fluxParam(0, 0.2);   // dark mid-loop
+    c.render(rec.data() + (std::size_t)(SR * 0.5), (int)(SR * 0.45));
+    c.fluxNote(60, false);
+    c.render(rec.data() + (std::size_t)(SR * 0.95), (int)(loopLen - SR * 0.95));
+    c.fluxRec(false);
+    c.fluxCommit();
+
+    // Render one full replay loop
+    std::vector<float> p(loopLen);
+    c.render(p.data(), (int)loopLen);
+
+    // High-band RMS in first 400 ms vs last 400 ms
+    auto bandRms = [&](std::size_t a, std::size_t b){
+        std::vector<float> seg(p.begin() + a, p.begin() + b);
+        auto sp = spectrum(seg);
+        double e2 = 0; int n = 0;
+        for (std::size_t k = 1; k < sp.magDb.size(); ++k) {
+            const double f = (double)k * SR / sp.N;
+            if (f < 1500) { continue; }
+            if (f > 6000) { break; }
+            const double lin = std::pow(10.0, sp.magDb[k] / 20.0);
+            e2 += lin * lin; ++n;
+        }
+        return (n > 0) ? 20.0 * std::log10(std::sqrt(e2 / n)) : -100.0;
+    };
+    const double early = bandRms((std::size_t)(SR*0.05), (std::size_t)(SR*0.45));
+    const double late  = bandRms((std::size_t)(SR*0.55), (std::size_t)(SR*0.95));
+
+    writeScope(OUT_DIR + "/M8.2-flux-param.svg",
+               "M8.2 — FLUX param replay: bright @ 0, dark @ 500 ms",
+               p, SR, 0.0, 1.0);
+
+    MEntry m; m.id="M8.2"; m.section="FLUX";
+    m.what="FLUX param event darkens second half of loop";
+    m.metric="early_to_late_drop"; m.unit="dB";
+    m.expected="> 8";
+    const double drop = early - late;
+    char b[32]; std::snprintf(b, sizeof b, "%.1f", drop); m.measured=b;
+    m.pass = drop > 8.0;
+    m.svgPath = OUT_DIR + "/M8.2-flux-param.svg";
+    return m;
+}
+
+// -- M8.3 FLUX Quantize 1/16 vs FINE ------------------------------------------
+// Frage:  Snappt fluxQuantize=true Events auf das Loop/16-Grid (Engine snap
+//         rechnet relative zur Loop-Länge, nicht BPM)?
+// Mess:   Loop = 1 s → 1/16-Grid alle 3000 Samples. Note bei t = 333 ms
+//         (16000 Samples) wird auf 15000 gesnappt mit Quantize on, bleibt
+//         bei 16000 ohne. Diff ≥ 500 Samples (= 10 ms hörbarer Versatz).
+static MEntry M8_3_fluxQuantize() {
+    auto runQ = [&](bool quant) -> int {
+        P3::ParaEngine e; e.prepare(SR, 256);
+        setNeutralPatch(e);
+        e.setParamNorm(P3::ParaEngine::Param::DecRel, 0.02);
+        e.setParamNorm(P3::ParaEngine::Param::Sustain, 0.0);
+        P3::Controller c; c.prepare(e, SR);
+        c.setSeqTempo(120.0, 4);    // 1/16 = 250 ms = 12000 samples
+        const std::size_t loopLen = (std::size_t)(SR * 1.0);
+        c.setFluxMode(true);
+        c.fluxSetLoopLen((unsigned int)loopLen);
+        c.setFluxQuantize(quant);
+        c.fluxRec(true);
+
+        // Move 333 ms into the loop, then fire the note.
+        std::vector<float> warm((std::size_t)(SR * 0.333));
+        c.render(warm.data(), (int)warm.size());
+        c.fluxNote(60, true);
+        std::vector<float> rest(loopLen - warm.size());
+        c.render(rest.data(), (int)rest.size());
+        c.fluxRec(false);
+        c.fluxCommit();
+
+        std::vector<float> replay(loopLen);
+        c.render(replay.data(), (int)loopLen);
+        return firstOnset(replay);
+    };
+    const int onQuant = runQ(true);
+    const int onFine  = runQ(false);
+
+    // With quant on, expect snap to nearest 1/16 (12000 samples). 333 ms = 16000.
+    // Nearest 1/16: 12000 (250 ms) or 18000 (375 ms). Closer to 18000 (Δ=2000).
+    // With quant off: expect ~16000.
+    MEntry m; m.id="M8.3"; m.section="FLUX";
+    m.what="Quantize snaps off-grid event onto loop/16";
+    m.metric="quant_vs_fine_diff"; m.unit="samples";
+    m.expected="≥ 500";
+    const int diff = std::abs(onQuant - onFine);
+    char b[32]; std::snprintf(b, sizeof b, "%d", diff); m.measured=b;
+    m.pass = diff >= 500;
+    m.svgPath = "";
+    char nb[80]; std::snprintf(nb, sizeof nb,
+        "quant onset %d, fine onset %d", onQuant, onFine);
+    m.note = nb;
+    return m;
+}
+
+// -- M8.4 FLUX Loop length ----------------------------------------------------
+// Frage:  Respektiert setFluxLoopLen die geforderte Loop-Länge?
+// Mess:   Loop = 0.5 s. Record 1 note bei 100 ms. Replay 2 Loops à 0.5 s →
+//         beide Onsets bei je ~100 ms innerhalb des Loops.
+static MEntry M8_4_fluxLoopLen() {
+    P3::ParaEngine e; e.prepare(SR, 256);
+    setNeutralPatch(e);
+    e.setParamNorm(P3::ParaEngine::Param::DecRel, 0.02);
+    e.setParamNorm(P3::ParaEngine::Param::Sustain, 0.0);
+    P3::Controller c; c.prepare(e, SR);
+    const std::size_t loopLen = (std::size_t)(SR * 0.5);
+    c.setFluxMode(true);
+    c.fluxSetLoopLen((unsigned int)loopLen);
+    c.setFluxQuantize(false);
+    c.fluxRec(true);
+    std::vector<float> a((std::size_t)(SR * 0.1));
+    c.render(a.data(), (int)a.size());
+    c.fluxNote(60, true);
+    std::vector<float> b1(loopLen - a.size());
+    c.render(b1.data(), (int)b1.size());
+    c.fluxRec(false);
+    c.fluxCommit();
+
+    std::vector<float> r1(loopLen), r2(loopLen);
+    c.render(r1.data(), (int)loopLen);
+    c.render(r2.data(), (int)loopLen);
+    const int on1 = firstOnset(r1);
+    const int on2 = firstOnset(r2);
+    const int expected = (int)(SR * 0.1);
+
+    MEntry m; m.id="M8.4"; m.section="FLUX";
+    m.what="FLUX loop length respected, two onsets in two loops";
+    m.metric="onset_err_max"; m.unit="samples";
+    m.expected="< 200";
+    const int worst = std::max(std::abs(on1 - expected), std::abs(on2 - expected));
+    char buf[32]; std::snprintf(buf, sizeof buf, "%d", worst); m.measured = buf;
+    m.pass = worst < 200;
+    m.svgPath = "";
+    char nb[80]; std::snprintf(nb, sizeof nb,
+        "loop1: %d, loop2: %d (expect %d)", on1, on2, expected);
+    m.note = nb;
+    return m;
+}
+
+// =============================================================================
 //  Driver
 // =============================================================================
 int main(int argc, char** argv) {
@@ -1684,7 +2270,20 @@ int main(int argc, char** argv) {
     if (want("M6.6")) manifest.add(M6_6_polyring());
     if (want("M6.7")) manifest.add(M6_7_modeSwitchClickFree());
 
-    // ---- LAB-5..6: M7.x..M9.x werden in den jeweiligen Sprints ergänzt ----
+    // ---- LAB-5 Sequencer + FLUX ----
+    if (want("M7.1")) manifest.add(M7_1_stepTiming());
+    if (want("M7.2")) manifest.add(M7_2_tempoDiv());
+    if (want("M7.3")) manifest.add(M7_3_swing());
+    if (want("M7.4")) manifest.add(M7_4_stepVel());
+    if (want("M7.5")) manifest.add(M7_5_stepGate());
+    if (want("M7.6")) manifest.add(M7_6_activeStepSkip());
+    if (want("M7.7")) manifest.add(M7_7_motionSmooth());
+    if (want("M8.1")) manifest.add(M8_1_fluxAccurate());
+    if (want("M8.2")) manifest.add(M8_2_fluxParam());
+    if (want("M8.3")) manifest.add(M8_3_fluxQuantize());
+    if (want("M8.4")) manifest.add(M8_4_fluxLoopLen());
+
+    // ---- LAB-6: M9.x werden in LAB-6 ergänzt ----
 
     manifest.writeCsv(OUT_DIR + "/MANIFEST.csv");
     manifest.writeMarkdownTable(OUT_DIR + "/MANIFEST.md",
