@@ -14,7 +14,7 @@
 //  the worklet and needs no SAB.
 // =============================================================================
 
-const CACHE_VER  = 'para3-v37'; // FLUX-7: DEMO presets carry swing / stepVel / stepGate (P1 hip-hop swing, P4 acid accents)
+const CACHE_VER  = 'para3-v38'; // UX: motion-rec glow ring inside cap (no rect outline) + keyboard touch-glide (touch-action:none)
 const PRECACHE   = [
   './',
   './index.html',

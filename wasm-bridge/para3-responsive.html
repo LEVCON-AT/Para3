@@ -157,15 +157,29 @@ body{
   transform:translateX(-50%);transform-origin:50% 22px;
   box-shadow:0 0 7px 1px color-mix(in srgb,var(--accent) 80%,transparent)}
 .knob label{font-size:9px;letter-spacing:1px;color:var(--ink-dim);text-transform:uppercase;font-weight:500;text-align:center}
-/* U5 — motion-target indicator. Subtler than the original 2px solid cap
-   ring: a 1px outline + soft glow on the whole control (knob OR fader), so
-   any motion-fähig target reads as "armed" without the plump halo. Only
-   visible while motionArm is true (set/cleared by setTarget / mArm). */
-.knob.tgt,.fader.tgt{
-  outline:1px solid color-mix(in srgb,var(--accent) 65%,transparent);
-  outline-offset:3px;
-  border-radius:8px;
-  box-shadow:0 0 14px -3px color-mix(in srgb,var(--accent) 45%,transparent)}
+/* U5 — motion-target indicator. The armed state now lives INSIDE the cap:
+   a 1.5 px ring at the cap inner edge + soft inner glow + outer halo, all
+   layered onto the existing cap box-shadow stack. Distinct from the .flx
+   value-ring (which lives further out on the dial SVG). No rectangular
+   outline. Toggled by adding/removing .tgt on .knob / .fader. */
+.knob.tgt .cap{
+  box-shadow:
+    0 3px 6px -2px rgba(0,0,0,.6),
+    0 0 0 1px var(--line),
+    0 1px 0 rgba(255,255,255,.08) inset,
+    inset 0 0 0 1.5px color-mix(in srgb,var(--accent) 80%,transparent),
+    inset 0 0 10px color-mix(in srgb,var(--accent) 40%,transparent),
+    0 0 16px -2px color-mix(in srgb,var(--accent) 60%,transparent);
+}
+.fader.tgt .grip{
+  box-shadow:
+    0 2px 5px -1px rgba(0,0,0,.6),
+    0 0 0 1px var(--line),
+    0 1px 0 rgba(255,255,255,.15) inset,
+    inset 0 0 0 1.5px color-mix(in srgb,var(--accent) 80%,transparent),
+    inset 0 0 6px color-mix(in srgb,var(--accent) 40%,transparent),
+    0 0 12px -2px color-mix(in srgb,var(--accent) 60%,transparent);
+}
 /* inert controls (no engine path; UI feedback only) — subtle visual cue */
 .knob.inert .cap{opacity:.6}
 
@@ -291,6 +305,12 @@ body{
 .kbd{position:relative;width:100%;height:116px;display:flex;
   z-index:60;background:#000;box-shadow:0 -8px 22px -10px #000;
   padding-bottom: env(safe-area-inset-bottom);
+  /* Touch-Glide: without touch-action:none, mobile/tablet browsers cancel
+     the pointer as a scroll gesture once the finger moves → user has to
+     lift + re-tap per note. With touch-action:none the existing pointer-
+     capture + elementFromPoint glide logic (kbd.pointermove) delivers
+     continuous moves, matching desktop mouse-drag behaviour. */
+  touch-action:none;
 }
 .wk{flex:1;background:linear-gradient(180deg,var(--keyw1),var(--keyw2));border-right:1px solid #2a2a28;
   position:relative;cursor:pointer;transition:.06s}
