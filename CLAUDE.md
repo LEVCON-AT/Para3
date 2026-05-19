@@ -108,6 +108,9 @@ Klassen-Zeilenlandkarte: siehe `docs/specs/ENGINE_E1-E7_HANDOVER.md`.
 - Lab-Validation Methodologie (10-Sprint-Workflow für Datenblatt + Bericht +
   Audit + Polish, reproduziert die Qualität der LAB-1..10-Serie):
   `CLAUDE_LAB_VALIDATION.md`
+- Staging / Prod Workflow (zwei Umgebungen, Branch-Strategie, Deploy-Helper,
+  Promote-Gate; gilt für alle Code-Änderungen ab 2026-05-19):
+  `CLAUDE_STAGING_PROD.md`
 
 Vor Arbeit an einem Bereich die zugehörige `.claude/rules/`-Regel beachten;
 sie verweist auf die volle Spec in `docs/specs/` — diese **vor** der
