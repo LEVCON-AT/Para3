@@ -421,6 +421,85 @@ int main() {
         }
     }
 
+    // ---- WA9  EXT-BASS B1 PULSE via C-API (per-osc wave, default bit-identical)
+    //  Proves para3_osc_wave routes through Controller→Engine→Oscillator, that
+    //  Default-Saw is bit-identical to explicit setOscWave(*,0) over the
+    //  worklet's 128-quantum render path (the closest E2E to live audio without
+    //  a browser), and that switching to Pulse produces a measurably different
+    //  spectrum (lower even-harmonic energy).
+    {
+        Para3* a = para3_create(sr, Q);
+        Para3* b = para3_create(sr, Q);
+        if (!a || !b) { std::fprintf(stderr, "WA9 create failed\n"); ++failures; }
+        else {
+            para3_set_mode(a, PARA3_M_UNISON);
+            para3_set_mode(b, PARA3_M_UNISON);
+            // b: explicit Saw on all 3 — must match a's default
+            para3_osc_wave(b, 0, 0);
+            para3_osc_wave(b, 1, 0);
+            para3_osc_wave(b, 2, 0);
+            para3_note_on(a, 60);
+            para3_note_on(b, 60);
+            const int N = 48000;                         // 1s
+            std::vector<float> ya(N, 0.f), yb(N, 0.f);
+            for (int i = 0; i < N; i += Q) {
+                const int c = std::min(Q, N - i);
+                para3_render(a, ya.data() + i, c);
+                para3_render(b, yb.data() + i, c);
+            }
+            double maxd = 0.0;
+            for (int i = 0; i < N; ++i)
+                maxd = std::max(maxd, (double)std::fabs(ya[i] - yb[i]));
+
+            // out-of-range osc indices must not crash and must not affect audio
+            para3_osc_wave(a, -1, 1);
+            para3_osc_wave(a,  9, 1);
+            std::vector<float> after(Q, 0.f);
+            para3_render(a, after.data(), Q);
+            bool oorFinite = true;
+            for (float v : after) if (!std::isfinite(v)) oorFinite = false;
+
+            // switch a to Pulse on all 3 — output must change, stay finite
+            para3_osc_wave(a, 0, 1);
+            para3_osc_wave(a, 1, 1);
+            para3_osc_wave(a, 2, 1);
+            std::vector<float> yp(N, 0.f);
+            for (int i = 0; i < N; i += Q) {
+                const int c = std::min(Q, N - i);
+                para3_render(a, yp.data() + i, c);
+            }
+            double maxAbsP = 0.0, maxAbsS = 0.0;
+            bool finiteP = true;
+            for (int i = 1000; i < N; ++i) {              // skip switch transient
+                if (!std::isfinite(yp[i])) finiteP = false;
+                maxAbsP = std::max(maxAbsP, (double)std::fabs(yp[i]));
+                maxAbsS = std::max(maxAbsS, (double)std::fabs(ya[i]));
+            }
+            // RMS-level comparison: pulse is louder than saw at same pitch
+            double rmsP = 0.0, rmsS = 0.0;
+            for (int i = 1000; i < N; ++i) {
+                rmsP += (double)yp[i] * yp[i];
+                rmsS += (double)ya[i] * ya[i];
+            }
+            rmsP = std::sqrt(rmsP / (N - 1000));
+            rmsS = std::sqrt(rmsS / (N - 1000));
+            const double loudGain = rmsP / std::max(rmsS, 1e-9);
+            const bool effect = loudGain >= 1.2;          // pulse RMS clearly above saw
+
+            const bool pass = (maxd == 0.0) && oorFinite && finiteP && effect;
+            std::printf("\nWA9 EXT-BASS B1 PULSE via C-API (default-Saw bit-identical + audible Pulse)\n");
+            std::printf("   default vs explicit Saw  max|d| : %.3e  (want == 0)\n", maxd);
+            std::printf("   OOR osc indices finite          : %s\n", oorFinite?"yes":"NO");
+            std::printf("   pulse output finite             : %s\n", finiteP?"yes":"NO");
+            std::printf("   rms(pulse)/rms(saw)             : %.3f  (want ≥ 1.2)\n", loudGain);
+            std::printf("   peak|saw| / peak|pulse|         : %.3f / %.3f\n", maxAbsS, maxAbsP);
+            std::printf("   -> %s\n", pass?"PASS":"FAIL");
+            if (!pass) ++failures;
+
+            para3_destroy(a); para3_destroy(b);
+        }
+    }
+
     std::printf("\n==================================================\n");
     std::printf("%s  (%d failure%s)\n",
                 failures ? "OVERALL: FAIL" : "OVERALL: PASS",

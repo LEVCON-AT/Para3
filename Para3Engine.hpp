@@ -117,6 +117,26 @@ public:
         else if (phase_ <  0.0) phase_ += 1.0;
         return v;
     }
+    // EXT-BASS B1 — band-limited Pulse (two PolyBLEP corrections: rising
+    // edge at phase=0 and falling edge at phase=pw). Same OS regime as Saw,
+    // so Alias ≤ −74 dBc at 4× oversampling is preserved (T51 measures).
+    // pw clamped to [2*dt, 1-2*dt] so the two BLEP windows never overlap
+    // (degenerate at extreme pulse widths; protects audibility at high notes).
+    inline double processPulse(double freqHz, double pw) noexcept {  // EXT-BASS B1
+        const double dt = freqHz / rate_;
+        const double safety = 2.0 * dt;
+        if (pw < safety)         pw = safety;
+        if (pw > 1.0 - safety)   pw = 1.0 - safety;
+        double v = (phase_ < pw) ? 1.0 : -1.0;
+        v += blep(phase_, dt);                         // EXT-BASS B1 rising step (-1→+1)
+        double tp = phase_ - pw;
+        if (tp < 0.0) tp += 1.0;
+        v -= blep(tp, dt);                              // EXT-BASS B1 falling step (+1→-1)
+        phase_ += dt;
+        if      (phase_ >= 1.0) phase_ -= 1.0;
+        else if (phase_ <  0.0) phase_ += 1.0;
+        return v;
+    }
 private:
     static inline double blep(double t, double dt) noexcept {
         if (dt <= 0.0) return 0.0;
@@ -197,13 +217,23 @@ public:
     }
     void reset() noexcept { core_.reset(); dec_.reset(); }
     inline float process(double freqHz) noexcept {
-        for (int i = 0; i < kOS; ++i) dec_.push(core_.process(freqHz));
+        if (wave_ == 0) {
+            // default Saw path — byte-identical to pre-EXT-BASS-B1 codegen
+            for (int i = 0; i < kOS; ++i) dec_.push(core_.process(freqHz));
+        } else {
+            // EXT-BASS B1 — band-limited Pulse, PW=0.5 fixed at B1
+            // (B2 will smoothly modulate PW via setParamNorm/RampParam).
+            for (int i = 0; i < kOS; ++i) dec_.push(core_.processPulse(freqHz, 0.5));
+        }
         // CALIB(sprint1): measured saw-shaping / HF roll-off stage inserts here.
         return static_cast<float>(dec_.read());
     }
+    void setWave(int w) noexcept { wave_ = (w == 1) ? 1 : 0; }     // EXT-BASS B1
+    int  wave() const noexcept { return wave_; }                    // EXT-BASS B1 observability
 private:
     PolyBlepCore         core_;
     Decimator<kOS, kTap> dec_;
+    int                  wave_ = 0;                                 // EXT-BASS B1 (0=Saw default)
 };
 
 // -----------------------------------------------------------------------------
@@ -786,6 +816,15 @@ public:
     void setMetro(bool on)            noexcept { metroOn_ = on; }         // E4.4 (delay bypass)
     void metroTrigger(bool accent)    noexcept { metro_.trigger(accent); }// E4.4
     void setVolume(double g)          noexcept { vol_.setTarget(g); }     // E6.1 (smoothed)
+    // EXT-BASS B1 — per-oscillator waveform (0=Saw default, 1=Pulse).
+    // Discrete switch, NOT a setParamNorm target. Default 0 ⇒ Engine
+    // bit-identical to pre-EXT-BASS-B1 (T49 proves max|d|=0 over full render).
+    void setOscWave(int oscIdx, int wave) noexcept {                        // EXT-BASS B1
+        if (oscIdx >= 0 && oscIdx < 3) osc_[oscIdx].setWave(wave);
+    }
+    int  oscWave(int oscIdx) const noexcept {                               // EXT-BASS B1
+        return (oscIdx >= 0 && oscIdx < 3) ? osc_[oscIdx].wave() : 0;
+    }
     // B1-fix: panic any held voice and release the envelope BEFORE changing
     // the shift. Reuses the engine's own allNotesOff (below) so seqStop, the
     // C-API panic path, and this one all converge on the same primitive.
@@ -1218,6 +1257,11 @@ public:
     }
     void setMetro(bool on) noexcept { metroOn_ = on;                     // E4.4
         if (eng_) eng_->setMetro(on); }
+    // EXT-BASS B1 — per-oscillator waveform passthrough (0=Saw default, 1=Pulse).
+    // Discrete control: outside the param trichter, not in KNOB_PARAM.
+    void setOscWave(int oscIdx, int wave) noexcept {                     // EXT-BASS B1
+        if (eng_) eng_->setOscWave(oscIdx, wave);
+    }
 
     // ---- E5 FLUX -------------------------------------------------------
     void setFluxMode(bool on) noexcept { fluxMode_ = on; }   // click-free: env continues

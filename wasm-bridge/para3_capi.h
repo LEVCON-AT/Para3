@@ -117,6 +117,13 @@ void para3_arp_hold   (Para3* p, int on);                     // EXT-ARP Block C
 void para3_arp_seed   (Para3* p, unsigned int seed);          // EXT-ARP Block C Random reproducibility
 long para3_arp_dropped(Para3* p);                             // EXT-ARP Block C pool-overflow observability
 
+// EXT-BASS B1 — per-oscillator waveform: 0=Saw (default, bit-identical),
+// 1=Pulse (band-limited via two PolyBLEP corrections, PW=0.5 fixed at B1).
+// Discrete control (NOT a setParamNorm target). osc ∈ {0,1,2}; out-of-range
+// silently ignored. Default for all 3 oscillators = 0 ⇒ pre-B1 audio path
+// preserved (T49 max|d|=0).
+void para3_osc_wave(Para3* p, int osc, int wave);             // EXT-BASS B1
+
 // render n frames into out (mono). out is a pointer into the WASM heap.
 // real-time safe: no allocation, no locks, no syscalls.
 void para3_render(Para3* p, float* out, int n);

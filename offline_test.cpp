@@ -3274,6 +3274,231 @@ int main() {
         if (!pass) ++failures;
     }
 
+    // ---- T49  EXT-BASS B1 SAW-IDENTITY  ------------------------------------
+    //  Default wave (Oscillator and ParaEngine) ⇒ bit-identical to explicit
+    //  setWave(0)/setOscWave(*,0). Haupt-Akzeptanz "aus ⇒ max|d|=0".
+    {
+        // (a) bare Oscillator
+        para3::Oscillator a, b;
+        a.prepare(sr); b.prepare(sr);
+        b.setWave(0);                                              // EXT-BASS B1 explicit Saw
+        for (int i = 0; i < 8192; ++i) { a.process(440.0); b.process(440.0); }
+        const int N = 48000;
+        std::vector<float> av(N), bv(N);
+        for (int i = 0; i < N; ++i) { av[i] = a.process(440.0); bv[i] = b.process(440.0); }
+        double maxdOsc = 0.0;
+        for (int i = 0; i < N; ++i)
+            maxdOsc = std::max(maxdOsc, (double)std::fabs(av[i]-bv[i]));
+
+        // (b) full ParaEngine, Unison so all 3 oscillators contribute
+        para3::ParaEngine eA, eB;
+        eA.prepare(sr, 4096); eB.prepare(sr, 4096);
+        eA.setMode(para3::ParaAllocator::Mode::Unison);
+        eB.setMode(para3::ParaAllocator::Mode::Unison);
+        eB.setOscWave(0, 0); eB.setOscWave(1, 0); eB.setOscWave(2, 0); // EXT-BASS B1 explicit
+        eA.noteOn(60); eB.noteOn(60);
+        std::vector<float> ea(N), eb(N);
+        eA.process(ea.data(), N); eB.process(eb.data(), N);
+        double maxdEng = 0.0;
+        for (int i = 0; i < N; ++i)
+            maxdEng = std::max(maxdEng, (double)std::fabs(ea[i]-eb[i]));
+
+        const bool pass = (maxdOsc == 0.0) && (maxdEng == 0.0);
+        std::printf("\nT49 EXT-BASS B1 SAW-IDENTITY  (default wave == explicit setWave(0))\n");
+        std::printf("   Oscillator   max|d|              : %.3e  (want == 0)\n", maxdOsc);
+        std::printf("   ParaEngine   max|d|              : %.3e  (want == 0)\n", maxdEng);
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if (!pass) ++failures;
+    }
+
+    // ---- T50  EXT-BASS B1 PULSE-SPECTRUM  ----------------------------------
+    //  Pulse @ PW=0.5 has only odd harmonics theoretically. With band-limiting
+    //  the even-harmonic ratio against the odd harmonics is the audible proof
+    //  that the pulse waveform is the right shape, not just "different".
+    {
+        const int    N     = 32768;
+        const int    k     = 1779;                  // f0 ≈ 2606 Hz, harmonic-aligned
+        const double binHz = sr / N;
+        const double f0    = k * binHz;
+
+        para3::Oscillator osc;
+        osc.prepare(sr);
+        osc.setWave(1);                                            // EXT-BASS B1 Pulse
+        for (int i = 0; i < 8192; ++i) osc.process(f0);            // settle FIR
+        std::vector<double> buf(N);
+        for (int i = 0; i < N; ++i) buf[i] = osc.process(f0);
+
+        std::vector<cd> sp(N);
+        for (int i = 0; i < N; ++i) sp[i] = cd(buf[i], 0.0);       // rectangular
+        fft(sp);
+
+        double maxOdd = 0.0, maxEven = 0.0;
+        for (int h = 1; h <= 9; ++h) {
+            const int bin = h * k;
+            if (bin >= N/2) break;
+            const double m = std::abs(sp[bin]);
+            if (h & 1) maxOdd  = std::max(maxOdd,  m);
+            else       maxEven = std::max(maxEven, m);
+        }
+        const double evenOddDb =
+            20.0 * std::log10((maxEven + 1e-30) / (maxOdd + 1e-30));
+        const bool pass = evenOddDb <= -30.0;                      // very safe, theory = -∞
+        std::printf("\nT50 EXT-BASS B1 PULSE-SPECTRUM  (PW=0.5 ⇒ odd-only harmonics)\n");
+        std::printf("   max even-harmonic / max odd-harmonic: %.1f dB  (want ≤ -30)\n",
+                    evenOddDb);
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if (!pass) ++failures;
+    }
+
+    // ---- T51  EXT-BASS B1 PULSE-ALIAS  -------------------------------------
+    //  Pulse alias floor ≤ -74 dBc, same coherent FFT method as T1 (saw).
+    //  The PolyBLEP + 4× Decimator chain is shared, so the aliasing budget
+    //  carries over; this proves it for the new waveform.
+    {
+        const int    N     = 32768;
+        const int    k     = 1779;
+        const double binHz = sr / N;
+        const double f0    = k * binHz;
+
+        para3::Oscillator osc;
+        osc.prepare(sr);
+        osc.setWave(1);                                            // EXT-BASS B1 Pulse
+        for (int i = 0; i < 8192; ++i) osc.process(f0);
+        std::vector<double> buf(N);
+        for (int i = 0; i < N; ++i) buf[i] = osc.process(f0);
+
+        std::vector<cd> sp(N);
+        for (int i = 0; i < N; ++i) sp[i] = cd(buf[i], 0.0);
+        fft(sp);
+
+        double fund = 0.0, alias = 0.0;
+        for (int b = 2; b < N / 2; ++b) {
+            const double m = std::abs(sp[b]);
+            if (b % k == 0) fund  = std::max(fund, m);             // true harmonic
+            else            alias = std::max(alias, m);            // alias/noise
+        }
+        const double aliasDb = 20.0 * std::log10((alias + 1e-30) / (fund + 1e-30));
+        const bool pass = aliasDb <= -74.0;
+        std::printf("\nT51 EXT-BASS B1 PULSE-ALIAS  (max alias ≤ -74 dBc, coherent FFT)\n");
+        std::printf("   alias floor                       : %.1f dBc  (want ≤ -74)\n",
+                    aliasDb);
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if (!pass) ++failures;
+    }
+
+    // ---- T52  EXT-BASS B1 PULSE-PEROSC  ------------------------------------
+    //  setOscWave plumbing through Controller→Engine→Oscillator. API getter
+    //  reports back. Out-of-range indices silently ignored. Audio-wise:
+    //  mixing 2 saws + 1 pulse at the same pitch (Unison) drops the
+    //  even/odd-harmonic ratio vs 3-saw baseline (pulse contributes 0 to
+    //  evens, saw contributes 1/h to both).
+    {
+        para3::ParaEngine eng;
+        eng.prepare(sr, 4096);
+
+        // API plumbing
+        eng.setOscWave(0, 1);
+        eng.setOscWave(1, 0);
+        eng.setOscWave(2, 1);
+        const bool getterOk = (eng.oscWave(0)==1) && (eng.oscWave(1)==0) && (eng.oscWave(2)==1);
+        eng.setOscWave(-1, 1);                                     // out-of-range ignored
+        eng.setOscWave( 9, 1);                                     // out-of-range ignored
+        const bool oorOk = (eng.oscWave(-1)==0) && (eng.oscWave(9)==0);
+
+        // Audio-level: Unison mode, all 3 oscs active at f0
+        const int    N     = 32768;
+        const int    k     = 1779;
+        const double binHz = sr / N;
+        const double f0    = k * binHz;
+        const double midiF = 69.0 + 12.0 * std::log2(f0 / 440.0);
+        const int    note  = (int)std::lround(midiF);
+
+        auto evenOdd = [&](int w0, int w1, int w2) {
+            para3::ParaEngine e; e.prepare(sr, 4096);
+            e.setMode(para3::ParaAllocator::Mode::Unison);
+            e.setOscWave(0, w0); e.setOscWave(1, w1); e.setOscWave(2, w2);
+            e.setParamNorm(para3::ParaEngine::Param::Cutoff, 1.0);     // VCF wide open
+            e.setParamNorm(para3::ParaEngine::Param::Resonance, 0.0);
+            e.setParamNorm(para3::ParaEngine::Param::Drive, 0.0);
+            e.setParamNorm(para3::ParaEngine::Param::Sustain, 1.0);
+            e.setParamNorm(para3::ParaEngine::Param::Attack, 0.0);
+            e.setParamNorm(para3::ParaEngine::Param::Detune, 0.0);     // E2.1 0 ⇒ no detune
+            e.setParamNorm(para3::ParaEngine::Param::EgCutDepth, 0.5); // bipolar centre
+            e.setParamNorm(para3::ParaEngine::Param::LfoCutDepth, 0.0);
+            e.setParamNorm(para3::ParaEngine::Param::LfoPitchDepth, 0.0);
+            e.setParamNorm(para3::ParaEngine::Param::DelayMix, 0.0);
+            e.noteOn(note);
+            std::vector<float> ramp(8192);
+            e.process(ramp.data(), 8192);                              // settle env+FIR
+            std::vector<float> y(N);
+            e.process(y.data(), N);
+            std::vector<cd> sp(N);
+            for (int i = 0; i < N; ++i) sp[i] = cd(y[i], 0.0);
+            fft(sp);
+            double mo = 0.0, me = 0.0;
+            for (int h = 1; h <= 9; ++h) {
+                const int bin = h * k;
+                if (bin >= N/2) break;
+                const double m = std::abs(sp[bin]);
+                if (h & 1) mo = std::max(mo, m);
+                else       me = std::max(me, m);
+            }
+            return 20.0 * std::log10((me + 1e-30) / (mo + 1e-30));
+        };
+        const double dbAllSaw    = evenOdd(0, 0, 0);
+        const double dbOnePulse  = evenOdd(1, 0, 0);
+        const double dropDb      = dbAllSaw - dbOnePulse;          // expect positive (evens lose)
+        // 1 pulse + 2 saws: evens ∝ 2/h, odds ∝ (2 + 4/π)/h → ratio drop ≈ 3-4 dB.
+        const bool effect = dropDb >= 2.0;
+        const bool finiteOk = std::isfinite(dbAllSaw) && std::isfinite(dbOnePulse);
+        const bool pass = getterOk && oorOk && effect && finiteOk;
+
+        std::printf("\nT52 EXT-BASS B1 PULSE-PEROSC  (setOscWave plumbing + per-osc mix audible)\n");
+        std::printf("   API getter/setter (incl OOR)     : %s / %s\n",
+                    getterOk?"OK":"FAIL", oorOk?"OK":"FAIL");
+        std::printf("   even/odd ratio  all-saw / 1-pulse: %.1f / %.1f dB  (Δ = %.1f dB, want ≥ 2.0)\n",
+                    dbAllSaw, dbOnePulse, dropDb);
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if (!pass) ++failures;
+    }
+
+    // ---- T53  EXT-BASS B1 PULSE-NOCLICK  -----------------------------------
+    //  Switching wave mid-note is a deliberate waveform change; the band-
+    //  limited PolyBLEP + decimator FIR spread the transition over ~kTap/kOS
+    //  samples and keep max|dx| comparable to steady-state. Metric: max|dx|
+    //  in a window around the switch event vs steady-state max|dx|. Threshold
+    //  generous (≤ 3×) — proves "no click", not "no transition".
+    {
+        para3::ParaEngine eng;
+        eng.prepare(sr, 4096);
+        eng.setMode(para3::ParaAllocator::Mode::Unison);
+        eng.setParamNorm(para3::ParaEngine::Param::Sustain, 1.0);
+        eng.setParamNorm(para3::ParaEngine::Param::Attack, 0.0);
+        eng.setParamNorm(para3::ParaEngine::Param::Cutoff, 0.8);
+        eng.setParamNorm(para3::ParaEngine::Param::Resonance, 0.0);
+        eng.noteOn(60);
+        const int N1 = 24000, N2 = 24000;
+        std::vector<float> buf(N1 + N2);
+        eng.process(buf.data(),       N1);                         // Saw default
+        eng.setOscWave(0, 1); eng.setOscWave(1, 1); eng.setOscWave(2, 1);
+        eng.process(buf.data() + N1,  N2);                         // Pulse after switch
+
+        const double switchDx = maxAbsDelta(buf, N1 - 128, N1 + 384);
+        const double sawDx    = maxAbsDelta(buf,    8000,  16000);  // Saw steady
+        const double pulseDx  = maxAbsDelta(buf, N1+8000, N1+16000); // Pulse steady
+        const double steadyDx = std::max(sawDx, pulseDx);
+        const bool bounded    = (switchDx <= 3.0 * steadyDx);
+        const bool finiteOk   = std::isfinite(switchDx) && std::isfinite(steadyDx);
+        const bool pass       = bounded && finiteOk;
+        std::printf("\nT53 EXT-BASS B1 PULSE-NOCLICK  (mid-note wave switch, |dx|-bounded)\n");
+        std::printf("   max|dx| switch / saw / pulse     : %.3e / %.3e / %.3e\n",
+                    switchDx, sawDx, pulseDx);
+        std::printf("   switch / max(steady)             : %.2fx  (want ≤ 3.0)\n",
+                    switchDx / std::max(steadyDx, 1e-30));
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if (!pass) ++failures;
+    }
+
     std::printf("\n==================================================\n");
     std::printf("%s  (%d failure%s)\n",
                 failures ? "OVERALL: FAIL" : "OVERALL: PASS",

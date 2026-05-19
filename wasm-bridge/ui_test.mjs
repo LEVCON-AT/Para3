@@ -39,15 +39,20 @@ const REPO = join(__dirname, '..');
 // commit. This is NOT a frozen "never change" gate, it is a "no-stealth-
 // change" gate.
 const md5_baseline = {
-  'Para3Engine.hpp':                            'b76635293ae9654e53c2cbf80434da30',
-  'offline_test.cpp':                           '7017375961c3b54b36b5f877064af039',
-  'wasm-bridge/para3_capi.h':                   '57b61cf6cac7a9fef00f0dfcf3388d08',
-  'wasm-bridge/para3_capi.cpp':                 'ed3a33e389a0d39b8c3686bc946749a2',
-  'wasm-bridge/capi_test.cpp':                  '27c7a36fe0731c0e22eb3c795b0d7708',
+  // EXT-BASS B1 rebaseline (Para3Engine.hpp, offline_test.cpp, capi_test.cpp,
+  // para3_capi.{h,cpp}, build_wasm.sh): pulse-waveform infrastructure +
+  // T49-T53 + WA9 + new EXPORTED_FUNCTIONS entry. All 11 non-engine baseline
+  // files below stay frozen at their FIX-PRE state — that is what proves
+  // this sprint did not stealth-touch transport/scope/parity files.
+  'Para3Engine.hpp':                            'efa5da85754b4417ddd54fe46d41c76f',
+  'offline_test.cpp':                           '8c240505ccc52cdcf3956efaf570c71b',
+  'wasm-bridge/para3_capi.h':                   '91c3ee9bef64cdb5e8a23d85f695222c',
+  'wasm-bridge/para3_capi.cpp':                 'afb87b81681e67eac2979501985e8fd9',
+  'wasm-bridge/capi_test.cpp':                  '3b6a456c006d66b2a1f66ff76a77ebb1',
   'wasm-bridge/scope_source_test.cpp':          '646828487b3a002a565b9ec87a7abe55',
   'wasm-bridge/parity_native.cpp':              'ffdb9666262ae54961d58dc7ec19d4b0',
   'wasm-bridge/parity_seq.h':                   '9043aba77b26cecb2aa1324ba805e07a',
-  'wasm-bridge/build_wasm.sh':                  '0ddb7f815c7b8c610a065a590cc52abb',
+  'wasm-bridge/build_wasm.sh':                  '90f00f13bde8b77db0b38e5352243271',
   'wasm-bridge/wasm_parity.mjs':                '9a396e68954d830a3aac0bde40b887cb',
   'wasm-bridge/para3-audio.js':                 'af6597f5c9ebb2f3965064673284e9c0',
   'wasm-bridge/para3-ring.js':                  'ebefab2358f25164c735d15e78c0cfdf',
@@ -65,7 +70,10 @@ let fails = 0;
   const drift = [];
   for (const [rel, want] of Object.entries(md5_baseline)) {
     const buf = readFileSync(join(REPO, rel));
-    const got = createHash('md5').update(buf).digest('hex');
+    // Normalize CRLF → LF so the test is reproducible on Windows checkouts
+    // (autocrlf=true) AND on the Linux VPS — the canonical repo format is LF.
+    const norm = Buffer.from(buf.toString('binary').replace(/\r\n/g, '\n'), 'binary');
+    const got = createHash('md5').update(norm).digest('hex');
     if (got !== want) drift.push(`${rel}: want ${want}, got ${got}`);
   }
   const pass = drift.length === 0;

@@ -171,6 +171,12 @@ void para3_arp_hold   (Para3* p, int on)       { if (p) p->ctrl.setArpHold(on !=
 void para3_arp_seed   (Para3* p, unsigned int s){ if (p) p->ctrl.setArpSeed(s); }      // EXT-ARP Block C
 long para3_arp_dropped(Para3* p)               { return p ? p->ctrl.arpDropped() : 0; } // EXT-ARP Block C
 
+// EXT-BASS B1 — per-oscillator waveform (discrete, no funnel). Default
+// wave=0 (Saw) ⇒ engine bit-identical to pre-B1 build (T49 max|d|=0).
+void para3_osc_wave(Para3* p, int osc, int wave) {                                       // EXT-BASS B1
+    if (p) p->engine.setOscWave(osc, wave);
+}
+
 void para3_render(Para3* p, float* out, int n) {
     if (!p) return;
     p->ctrl.render(out, n);                              // RT-safe path
