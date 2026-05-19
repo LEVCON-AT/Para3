@@ -486,6 +486,76 @@ body{
 .splash .splashErr{font-family:'DM Mono',monospace;font-size:11px;color:#ff8a3d;
   max-width:80%;text-align:center;padding-top:10px;display:none}
 .splash.error .splashErr{display:block}
+
+/* EXT-BASS panel — separates Modul, hazard-rand markiert "Erweiterung,
+   nicht Volca-Keys-Treue". Default off → opacity:.5 + pointer-events:none.
+   Per Spec §5: kein UI-Restructure des Keys-Bereichs; EXT-Params NICHT in
+   KNOB_PARAM/INERT_KNOBS, eigene Steuer-Hooks. */
+.extbass{margin:14px 6px 6px;border-radius:10px;
+  background:linear-gradient(180deg,#15110c,#0c0a0d 60%,#0a080b);
+  border:1px solid rgba(255,191,61,.18);
+  box-shadow:0 4px 16px -8px #000,inset 0 1px 0 rgba(255,238,210,.04);
+  position:relative;overflow:hidden}
+.extbass.live{border-color:rgba(255,191,61,.5)}
+.extbass::before{content:"";position:absolute;inset:0;border-radius:10px;
+  pointer-events:none;
+  background:repeating-linear-gradient(135deg,
+    rgba(122,84,16,.45) 0 8px,transparent 8px 16px);
+  -webkit-mask:linear-gradient(#000,#000) content-box,linear-gradient(#000,#000);
+  -webkit-mask-composite:xor;mask-composite:exclude;padding:2px;opacity:.55}
+.extbass-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding:10px 14px;border-bottom:1px solid rgba(255,238,210,.05);
+  background:linear-gradient(180deg,rgba(255,191,61,.04),transparent)}
+.ext-badge{font-size:10px;font-weight:700;letter-spacing:.16em;
+  color:#15110a;background:#ffbf3d;padding:4px 8px;border-radius:4px;
+  box-shadow:0 0 12px rgba(255,191,61,.4)}
+.ext-warn{font-size:9px;color:#ffbf3d;letter-spacing:.04em;opacity:.85}
+.ext-master{font-size:10px;font-weight:600;letter-spacing:.08em;
+  padding:5px 10px;border-radius:5px;cursor:pointer;
+  background:#1b1620;border:1px solid rgba(255,238,210,.1);
+  color:#9b9485;text-transform:uppercase;margin-left:auto}
+.extbass.live .ext-master{background:#7a5410;color:#ffbf3d;
+  border-color:#ffbf3d}
+.ext-preset{font-size:10px;font-weight:600;letter-spacing:.08em;
+  padding:5px 10px;border-radius:5px;cursor:pointer;
+  background:linear-gradient(180deg,#ffbf3d,#d99a23);color:#1a1206;
+  border:none;text-transform:uppercase}
+.ext-body{padding:12px 14px 14px;opacity:.42;pointer-events:none;
+  transition:opacity .25s}
+.extbass.live .ext-body{opacity:1;pointer-events:auto}
+.ext-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;
+  margin-bottom:10px;font-size:10px;color:#9b9485;letter-spacing:.04em}
+.ext-row .lbl{font-weight:600;color:#e6ddc9;min-width:42px}
+.ext-wave-pick{display:inline-flex;gap:2px;align-items:center}
+.ext-wave-pick .num{color:#ffbf3d;font-weight:600;margin-right:3px;font-size:9px}
+.ext-wave-pick button{font-size:9px;padding:3px 6px;border-radius:3px;
+  background:#1b1620;border:1px solid rgba(255,238,210,.08);
+  color:#9b9485;cursor:pointer;letter-spacing:.04em;font-weight:600}
+.ext-wave-pick button.sel{background:#7a5410;color:#ffbf3d;
+  border-color:#ffbf3d}
+.ext-knobs{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));
+  gap:8px;margin-bottom:10px}
+.ext-cell{background:rgba(20,16,22,.6);border:1px solid rgba(255,238,210,.06);
+  border-radius:6px;padding:7px 9px}
+.ext-cell label{font-size:9px;letter-spacing:.08em;color:#9b9485;
+  text-transform:uppercase;font-weight:600;display:block;margin-bottom:3px}
+.ext-cell input[type=range]{width:100%;height:6px;
+  appearance:none;-webkit-appearance:none;
+  background:linear-gradient(90deg,#7a5410 0,#7a5410 var(--p,0%),#1b1620 var(--p,0%));
+  border-radius:3px;border:1px solid rgba(255,238,210,.08);outline:none;
+  margin:2px 0}
+.ext-cell input[type=range]::-webkit-slider-thumb{appearance:none;
+  -webkit-appearance:none;width:14px;height:14px;border-radius:50%;
+  background:#ffbf3d;border:1px solid #1a1206;cursor:pointer;
+  box-shadow:0 0 6px rgba(255,191,61,.4)}
+.ext-cell input[type=range]::-moz-range-thumb{width:14px;height:14px;
+  border-radius:50%;background:#ffbf3d;border:1px solid #1a1206;cursor:pointer}
+.ext-val{font-size:10px;color:#ffbf3d;font-family:'DM Mono',monospace;
+  letter-spacing:.04em}
+.ext-stack{display:inline-flex;align-items:center;gap:6px;font-size:10px;
+  letter-spacing:.06em;color:#e6ddc9;cursor:pointer}
+.ext-stack input{accent-color:#ffbf3d;width:14px;height:14px;cursor:pointer}
+.ext-stack-warn{font-size:9px;color:#ffbf3d;opacity:.7;margin-left:6px}
 </style>
 </head>
 <body>
@@ -640,6 +710,63 @@ body{
 
   <button class="kbtn" id="kbtn">⌨ KEYS</button>
   <div class="kbd" id="kbd"><div class="octind" id="octind"></div></div>
+
+  <!-- EXT-BASS panel — Erweiterung, KEIN Restructure des Keys-Bereichs.
+       Default OFF ⇒ alle Teilblöcke neutral ⇒ Engine bitidentisch zum
+       Volca-Keys-Pfad. Master-Toggle aktiviert das Panel; Fat-Preset setzt
+       eine kohärente Konfiguration; einzelne Regler steuern direkt die
+       in B1..B5 verifizierten Params. -->
+  <div class="extbass" id="extbass">
+    <div class="extbass-head">
+      <span class="ext-badge">EXT · BASS</span>
+      <span class="ext-warn">▲ Erweiterung – nicht Volca-Keys-Treue</span>
+      <button class="ext-master" id="extMaster">BASS MODE: OFF</button>
+      <button class="ext-preset" id="extPreset">◇ FAT PRESET</button>
+    </div>
+    <div class="ext-body" id="extBody">
+      <div class="ext-row">
+        <span class="lbl">WAVE</span>
+        <span class="ext-wave-pick" data-osc="0">
+          <span class="num">OSC1</span>
+          <button data-w="0" class="sel">SAW</button><button data-w="1">PULSE</button>
+        </span>
+        <span class="ext-wave-pick" data-osc="1">
+          <span class="num">OSC2</span>
+          <button data-w="0" class="sel">SAW</button><button data-w="1">PULSE</button>
+        </span>
+        <span class="ext-wave-pick" data-osc="2">
+          <span class="num">OSC3</span>
+          <button data-w="0" class="sel">SAW</button><button data-w="1">PULSE</button>
+        </span>
+      </div>
+      <div class="ext-knobs">
+        <div class="ext-cell"><label>Pulse Width</label>
+          <input type="range" min="0" max="1" step="0.001" value="0.5" id="eb-pw">
+          <span class="ext-val" id="ebv-pw">0.50</span></div>
+        <div class="ext-cell"><label>PWM Depth</label>
+          <input type="range" min="0" max="1" step="0.001" value="0" id="eb-pwm">
+          <span class="ext-val" id="ebv-pwm">0.00</span></div>
+        <div class="ext-cell"><label>Spread</label>
+          <input type="range" min="0" max="1" step="0.001" value="0" id="eb-spread">
+          <span class="ext-val" id="ebv-spread">0.00</span></div>
+        <div class="ext-cell"><label>Drift Rate</label>
+          <input type="range" min="0" max="1" step="0.001" value="0.2" id="eb-drate">
+          <span class="ext-val" id="ebv-drate">0.20</span></div>
+        <div class="ext-cell"><label>Drift Depth</label>
+          <input type="range" min="0" max="1" step="0.001" value="0" id="eb-ddepth">
+          <span class="ext-val" id="ebv-ddepth">0.00</span></div>
+        <div class="ext-cell"><label>Sub Level</label>
+          <input type="range" min="0" max="1" step="0.001" value="0" id="eb-sub">
+          <span class="ext-val" id="ebv-sub">0.00</span></div>
+      </div>
+      <div class="ext-row">
+        <label class="ext-stack">
+          <input type="checkbox" id="extStack"> STACK / MONO (3 OSCs gestapelt)
+        </label>
+        <span class="ext-stack-warn">▲ übersteuert Voice-Mode wenn aktiv</span>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script type="module">
@@ -2100,6 +2227,10 @@ function emit(fn) {
     // and an explicit final enable need a manual emit (arpEnable last
     // so the engine starts in the user-visible state).
     emit((c) => { c.arpHold(arpHoldState); c.arpEnable(arpOnState); });
+    // EXT-BASS — flush initial state. Default Master=OFF ⇒ neutralizingly
+    // setze alle Sub-Werte auf 0 / Waveforms auf Saw / Stack=off, sodass
+    // die Engine bitidentisch zum Volca-Keys-Pfad spielt (US-COLD).
+    extBassFlushNeutral();
     flushPattern();
   }
   async function start() {
@@ -2389,6 +2520,129 @@ function emit(fn) {
     requestAnimationFrame(updateScrollMask);
     requestAnimationFrame(updateScrollMask);   // belt + braces for first frame
   }
+
+  // =========================================================================
+  //  EXT-BASS Panel-Wiring
+  // -------------------------------------------------------------------------
+  //  Verbindet das HTML-Panel (separates EXT-Modul, kein KNOB_PARAM-Eintrag)
+  //  mit der Bridge:
+  //   * Continuous params (PW/PWM/Spread/DriftRate/DriftDepth/SubLevel) →
+  //     setParam mit PARAM.BASS_*-IDs (17..22).
+  //   * Discrete controls (Waveform per OSC, Stack) → bassOscWave/bassStack.
+  //  Default Master=OFF ⇒ alle Werte werden auf neutral gepusht (Saw,
+  //  PWM/Spread/Drift/Sub=0, Stack=off) ⇒ Engine spielt bitidentisch zum
+  //  faithful Volca-Keys-Pfad. Master=ON ⇒ aktuelle UI-Werte werden gepusht.
+  // =========================================================================
+  const extPanel   = document.getElementById('extbass');
+  const extBody    = document.getElementById('extBody');
+  const extMaster  = document.getElementById('extMaster');
+  const extPreset  = document.getElementById('extPreset');
+  const extStack   = document.getElementById('extStack');
+  let extLive = false;
+  // UI-Zustand (knob values + waveforms + stack). Engine sieht diese nur
+  // wenn extLive=true; sonst werden Neutralwerte gepusht.
+  const extState = {
+    pw:0.5, pwm:0.0, spread:0.0, drate:0.2, ddepth:0.0, sub:0.0,
+    wave:[0,0,0], stack:false
+  };
+  const EXT_PIDS = {
+    pw: PARAM.BASS_PULSE_WIDTH, pwm: PARAM.BASS_PWM_DEPTH,
+    spread: PARAM.BASS_SPREAD, drate: PARAM.BASS_DRIFT_RATE,
+    ddepth: PARAM.BASS_DRIFT_DEPTH, sub: PARAM.BASS_SUB_LEVEL
+  };
+  // Default-Norm-Werte für Neutralität:
+  // PW=0.5 (taper → PW 0.5 = B1 hardcoded), Drift-Rate=0.2 (irrelevant
+  // wenn Depth=0), alle anderen = 0.
+  const EXT_NEUTRAL_NORMS = { pw:0.5, pwm:0.0, spread:0.0, drate:0.2, ddepth:0.0, sub:0.0 };
+  function pushExtSliderValue(key) {
+    const v = extLive ? extState[key] : EXT_NEUTRAL_NORMS[key];
+    emit((c) => c.setParam(EXT_PIDS[key], v));
+  }
+  function pushExtWaves() {
+    for (let osc = 0; osc < 3; ++osc) {
+      const w = extLive ? extState.wave[osc] : 0;     // Saw if not live
+      emit(((osc, w) => (c) => c.bassOscWave(osc, w))(osc, w));
+    }
+  }
+  function pushExtStack() {
+    const on = extLive ? extState.stack : false;
+    emit((c) => c.bassStack(on ? 1 : 0));
+  }
+  function extBassFlushNeutral() {
+    Object.keys(EXT_NEUTRAL_NORMS).forEach(pushExtSliderValue);
+    pushExtWaves();
+    pushExtStack();
+  }
+  function extBassFlushLive() {
+    Object.keys(EXT_NEUTRAL_NORMS).forEach(pushExtSliderValue);
+    pushExtWaves();
+    pushExtStack();
+  }
+  // Master-Toggle
+  function setExtMaster(on) {
+    extLive = !!on;
+    extPanel.classList.toggle('live', extLive);
+    extMaster.textContent = 'BASS MODE: ' + (extLive ? 'ON' : 'OFF');
+    if (extLive) extBassFlushLive(); else extBassFlushNeutral();
+  }
+  extMaster.addEventListener('click', () => setExtMaster(!extLive));
+  // Sliders
+  ['pw','pwm','spread','drate','ddepth','sub'].forEach((key) => {
+    const sl = document.getElementById('eb-' + key);
+    const lab = document.getElementById('ebv-' + key);
+    function paint() {
+      lab.textContent = extState[key].toFixed(2);
+      sl.style.setProperty('--p', (extState[key] * 100).toFixed(1) + '%');
+    }
+    sl.addEventListener('input', () => {
+      extState[key] = parseFloat(sl.value);
+      paint();
+      pushExtSliderValue(key);
+    });
+    paint();
+  });
+  // Waveform pickers
+  document.querySelectorAll('.ext-wave-pick').forEach((pick) => {
+    const osc = parseInt(pick.dataset.osc, 10);
+    pick.querySelectorAll('button').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const w = parseInt(btn.dataset.w, 10);
+        extState.wave[osc] = w;
+        pick.querySelectorAll('button').forEach((b) =>
+          b.classList.toggle('sel', parseInt(b.dataset.w, 10) === w));
+        emit(((osc, w) => (c) => c.bassOscWave(osc, w))(osc, extLive ? w : 0));
+      });
+    });
+  });
+  // Stack toggle
+  extStack.addEventListener('change', () => {
+    extState.stack = extStack.checked;
+    emit((c) => c.bassStack(extLive ? (extState.stack ? 1 : 0) : 0));
+  });
+  // FAT PRESET — kohärente fette Defaults, dann Master einschalten
+  extPreset.addEventListener('click', () => {
+    extState.pw = 0.42; extState.pwm = 0.28;
+    extState.spread = 0.46; extState.drate = 0.30; extState.ddepth = 0.22;
+    extState.sub = 0.55;
+    extState.wave = [1,1,1];                                // alle Pulse
+    extState.stack = true;
+    // UI-Paint
+    ['pw','pwm','spread','drate','ddepth','sub'].forEach((key) => {
+      const sl = document.getElementById('eb-' + key);
+      const lab = document.getElementById('ebv-' + key);
+      sl.value = String(extState[key]);
+      lab.textContent = extState[key].toFixed(2);
+      sl.style.setProperty('--p', (extState[key] * 100).toFixed(1) + '%');
+    });
+    document.querySelectorAll('.ext-wave-pick').forEach((pick) => {
+      pick.querySelectorAll('button').forEach((b) =>
+        b.classList.toggle('sel', parseInt(b.dataset.w, 10) === 1));
+    });
+    extStack.checked = true;
+    if (!extLive) setExtMaster(true); else extBassFlushLive();
+  });
+  // expose for pushInitialState
+  window.__para3ExtBassFlushNeutral = extBassFlushNeutral;
 
 })();
 </script>

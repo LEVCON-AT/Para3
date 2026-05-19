@@ -41,6 +41,10 @@ const OP = {
   SEQ_FLUX_QUANTIZE:39,      // EXT-FLUX — i0=on (1/16 snap; off=F·FINE)
   SEQ_STEP_VEL:40,           // EXT-FLUX-VEL  — i0=idx d=norm 0..1
   SEQ_STEP_GATE:41,          // EXT-FLUX-GATE — i0=idx d=norm 0..1
+  // EXT-BASS discrete controls (cont. params go through SET_PARAM IDs 17..22):
+  BASS_OSC_WAVE:42,          // EXT-BASS B1 — i0=osc (0..2) i1=wave (0=Saw 1=Pulse)
+  BASS_STACK:43,             // EXT-BASS B4 — i0=on (0|1) Mono/Stack override
+  BASS_DRIFT_SEED:44,        // EXT-BASS B3 — i0=seed (uint32) reseed drift PRNG
 };
 
 function makeImports(memory) {
@@ -146,6 +150,9 @@ class Para3Processor extends AudioWorkletProcessor {
         case OP.ARP_OCTAVES:       x.para3_arp_octaves(p, i0); break;           // EXT-ARP
         case OP.ARP_HOLD:          x.para3_arp_hold   (p, i0); break;           // EXT-ARP
         case OP.ARP_SEED:          x.para3_arp_seed   (p, i0); break;           // EXT-ARP
+        case OP.BASS_OSC_WAVE:     x.para3_osc_wave   (p, i0, i1); break;       // EXT-BASS B1
+        case OP.BASS_STACK:        x.para3_bass_stack (p, i0); break;           // EXT-BASS B4
+        case OP.BASS_DRIFT_SEED:   x.para3_bass_drift_seed(p, i0); break;       // EXT-BASS B3
         default: break;
       }
       r = (r + 1) | 0;
