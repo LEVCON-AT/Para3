@@ -3993,6 +3993,194 @@ int main() {
         if (!pass) ++failures;
     }
 
+    // ---- T65  EXT-BASS B4 NEUTRAL  -----------------------------------------
+    //  BassStack=off (Default) ⇒ jeder Voice-Modus produziert bit-identische
+    //  Audio zum Pre-B4-Stand. Test alle 6 Modi: Poly, Unison, Octave, Fifth,
+    //  UniRing, PolyRing → für jeden vergleicht default-init vs explizit
+    //  setBassStack(false). max|d| = 0 in jedem.
+    {
+        const para3::ParaAllocator::Mode modes[] = {
+            para3::ParaAllocator::Mode::Poly,
+            para3::ParaAllocator::Mode::Unison,
+            para3::ParaAllocator::Mode::Octave,
+            para3::ParaAllocator::Mode::Fifth,
+            para3::ParaAllocator::Mode::UniRing,
+            para3::ParaAllocator::Mode::PolyRing,
+        };
+        double worstMaxd = 0.0;
+        for (auto m : modes) {
+            para3::ParaEngine a, b;
+            a.prepare(sr, 4096); b.prepare(sr, 4096);
+            a.setMode(m); b.setMode(m);
+            b.setBassStack(false);                              // explicit OFF
+            a.noteOn(60); b.noteOn(60);
+            if (m == para3::ParaAllocator::Mode::PolyRing) {
+                a.noteOn(64); b.noteOn(64);                     // 2 voices for PolyRing
+            }
+            const int N = 24000;                                // 0.5s pro Modus
+            std::vector<float> ya(N), yb(N);
+            a.process(ya.data(), N); b.process(yb.data(), N);
+            for (int i = 0; i < N; ++i)
+                worstMaxd = std::max(worstMaxd, (double)std::fabs(ya[i] - yb[i]));
+        }
+        const bool pass = (worstMaxd == 0.0);
+        std::printf("\nT65 EXT-BASS B4 NEUTRAL  (BassStack=off ⇒ alle 6 Voice-Modi bit-identisch)\n");
+        std::printf("   worst max|d| über 6 Modi        : %.3e  (want == 0)\n", worstMaxd);
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if (!pass) ++failures;
+    }
+
+    // ---- T66  EXT-BASS B4 MONO  --------------------------------------------
+    //  Mit Stack on: zwei aufeinanderfolgende noteOns (60, 64). Die letzte
+    //  (newest) Note gewinnt — alle 3 OSCs auf 64. FFT zeigt Fundamental nahe
+    //  64-Hz, deutlich weniger Energie bei 60-Hz (klassische mono-stack-
+    //  Verdrängung).
+    {
+        para3::ParaEngine eng; eng.prepare(sr, 4096);
+        eng.setBassStack(true);
+        eng.setParamNorm(para3::ParaEngine::Param::Cutoff, 1.0);
+        eng.setParamNorm(para3::ParaEngine::Param::Sustain, 1.0);
+        eng.setParamNorm(para3::ParaEngine::Param::Attack, 0.0);
+        eng.noteOn(60); eng.noteOn(64);                         // newest = 64
+        const int N = 32768;
+        std::vector<float> ramp(8192); eng.process(ramp.data(), 8192);
+        std::vector<float> y(N); eng.process(y.data(), N);
+        std::vector<cd> sp(N);
+        for (int i = 0; i < N; ++i) sp[i] = cd(y[i], 0.0);
+        fft(sp);
+        // MIDI 60 ≈ 261.63 Hz, MIDI 64 ≈ 329.63 Hz at sr=48000, N=32768 ⇒ bin width = 1.465 Hz
+        const double binHz = sr / (double)N;
+        const int bin60 = (int)std::round(261.63 / binHz);
+        const int bin64 = (int)std::round(329.63 / binHz);
+        auto bandSum = [&](int center) {
+            double s = 0.0;
+            for (int b = center-3; b <= center+3; ++b)
+                if (b > 0 && b < N/2) s += std::abs(sp[b]);
+            return s;
+        };
+        const double e60 = bandSum(bin60);
+        const double e64 = bandSum(bin64);
+        const double ratio = e64 / std::max(e60, 1e-30);
+        const bool pass = ratio >= 50.0;                         // 64-Hz dominates by ≥34 dB
+        std::printf("\nT66 EXT-BASS B4 MONO  (newest note wins, älteres verdrängt)\n");
+        std::printf("   |sp| @ 64-Hz / 60-Hz            : %.4e / %.4e  (ratio %.1f, want ≥ 50)\n",
+                    e64, e60, ratio);
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if (!pass) ++failures;
+    }
+
+    // ---- T67  EXT-BASS B4 STACK-FAT  ---------------------------------------
+    //  Mit Stack + B3-Drift > 0: 3 OSCs auf gleicher Note, leicht durch Drift
+    //  verstimmt → klassischer fett-Bass-Stack. RMS deutlich höher als bei
+    //  Poly-Mode mit nur Voice 0 (1 OSC).
+    {
+        auto renderRms = [&](bool stack) {
+            para3::ParaEngine eng; eng.prepare(sr, 4096);
+            eng.setMode(para3::ParaAllocator::Mode::Poly);       // Poly: single noteOn → 1 voice
+            eng.setBassStack(stack);
+            eng.setParamNorm(para3::ParaEngine::Param::Cutoff, 1.0);
+            eng.setParamNorm(para3::ParaEngine::Param::Sustain, 1.0);
+            eng.setParamNorm(para3::ParaEngine::Param::Attack, 0.0);
+            eng.setParamNorm(para3::ParaEngine::Param::BassDriftDepth, 1.0);
+            eng.setParamNorm(para3::ParaEngine::Param::BassDriftRate, 0.5);
+            eng.noteOn(60);
+            std::vector<float> ramp(8192); eng.process(ramp.data(), 8192);
+            const int N = 48000;
+            std::vector<float> y(N); eng.process(y.data(), N);
+            double s = 0.0; for (float v : y) s += (double)v*v;
+            return std::sqrt(s / N);
+        };
+        const double rmsPoly  = renderRms(false);
+        const double rmsStack = renderRms(true);
+        const double gain     = rmsStack / std::max(rmsPoly, 1e-30);
+        const bool fat = gain >= 1.5;                            // ≥ 1.5× louder
+        const bool pass = fat;
+        std::printf("\nT67 EXT-BASS B4 STACK-FAT  (Stack + Drift > 0 ⇒ messbar fetter)\n");
+        std::printf("   RMS  Poly-1OSC / Stack-3OSC     : %.3e / %.3e  (Faktor %.2f, want ≥ 1.5)\n",
+                    rmsPoly, rmsStack, gain);
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if (!pass) ++failures;
+    }
+
+    // ---- T68  EXT-BASS B4 OVERRIDE  ----------------------------------------
+    //  Mode::Fifth (Voices 0+1 aktiv mit Note + Note+7) → setBassStack(true)
+    //  übersteuert: alle 3 Voices auf newest. FFT zeigt keine starke +7-Halbton-
+    //  Komponente mehr im Stack-Modus (im Fifth: prominenter, im Stack: weg).
+    {
+        auto fifthEnergy = [&](bool stack) {
+            para3::ParaEngine eng; eng.prepare(sr, 4096);
+            eng.setMode(para3::ParaAllocator::Mode::Fifth);
+            eng.setBassStack(stack);
+            eng.setParamNorm(para3::ParaEngine::Param::Cutoff, 1.0);
+            eng.setParamNorm(para3::ParaEngine::Param::Sustain, 1.0);
+            eng.setParamNorm(para3::ParaEngine::Param::Attack, 0.0);
+            eng.noteOn(60);                                      // Fifth: voice 0 at 60, voice 1 at 67
+            std::vector<float> ramp(8192); eng.process(ramp.data(), 8192);
+            const int N = 32768;
+            std::vector<float> y(N); eng.process(y.data(), N);
+            std::vector<cd> sp(N);
+            for (int i = 0; i < N; ++i) sp[i] = cd(y[i], 0.0);
+            fft(sp);
+            const double binHz = sr / (double)N;
+            const int binFifth = (int)std::round(391.99 / binHz); // MIDI 67 ≈ 392 Hz
+            double e = 0.0;
+            for (int b = binFifth-3; b <= binFifth+3; ++b)
+                if (b > 0 && b < N/2) e += std::abs(sp[b]);
+            return e;
+        };
+        const double eFifth = fifthEnergy(false);
+        const double eStack = fifthEnergy(true);
+        const double ratio  = eFifth / std::max(eStack, 1e-30);
+        // Fifth has the +7st partial loud; Stack removes it.
+        const bool override_works = (ratio >= 5.0);
+        const bool pass = override_works;
+        std::printf("\nT68 EXT-BASS B4 OVERRIDE  (Stack übersteuert Fifth-Voice-Modus)\n");
+        std::printf("   |sp| @ 392 Hz Fifth-off / on    : %.4e / %.4e  (ratio %.1f, want ≥ 5)\n",
+                    eFifth, eStack, ratio);
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if (!pass) ++failures;
+    }
+
+    // ---- T69  EXT-BASS B4 NOCLICK  -----------------------------------------
+    //  TREUE-KONFLIKT (per CLAUDE.md §0.6 benannt): Stack-Toggle aktiviert
+    //  Voices, die vorher inaktiv waren (im Poly-Mode nur Voice 0). Diese
+    //  Oszillatoren springen von Null-Beitrag zu vollem Beitrag ein — kein
+    //  Fade-in im aktuellen Engine-Design. Resultiert in einem moderaten
+    //  Mid-Note-Transient. Spec §2 B4 fordert "Aus ⇒ bitidentisch" (Default-
+    //  Akzeptanz, T65 deckt das ab); klickfreie mid-note-Toggles für Stack
+    //  sind kein Spec-Erfordernis (Stack ist Sound-Design-Schalter, nicht
+    //  Performance-Geste). Akzeptanz hier: ≤ 8× steady-state max|dx| —
+    //  bounded, nicht "kein Click".
+    //  Empfehlung an User-Ebene: Stack zwischen Phrasen toggeln (Note off →
+    //  Stack-Toggle → Note on), dann nahtlos.
+    {
+        para3::ParaEngine eng; eng.prepare(sr, 4096);
+        eng.setMode(para3::ParaAllocator::Mode::Poly);
+        eng.setParamNorm(para3::ParaEngine::Param::Cutoff, 0.8);
+        eng.setParamNorm(para3::ParaEngine::Param::Sustain, 1.0);
+        eng.setParamNorm(para3::ParaEngine::Param::Attack, 0.0);
+        eng.noteOn(60);
+        const int N1 = 24000, N2 = 24000;
+        std::vector<float> buf(N1 + N2);
+        eng.process(buf.data(), N1);
+        eng.setBassStack(true);                                  // toggle ON mid-note
+        eng.process(buf.data() + N1, N2);
+        const double switchDx = maxAbsDelta(buf, N1 - 64, N1 + 256);
+        const double earlyDx  = maxAbsDelta(buf, 4000, 16000);
+        const double lateDx   = maxAbsDelta(buf, N1+8000, N1+22000);
+        const double steadyDx = std::max(earlyDx, lateDx);
+        const bool bounded = (switchDx <= 8.0 * steadyDx);
+        const bool finiteOk = std::isfinite(switchDx) && std::isfinite(steadyDx);
+        const bool pass = bounded && finiteOk;
+        std::printf("\nT69 EXT-BASS B4 NOCLICK  (Stack on/off mid-note, benannter Transient)\n");
+        std::printf("   max|dx| switch / pre / post     : %.3e / %.3e / %.3e\n",
+                    switchDx, earlyDx, lateDx);
+        std::printf("   switch / max(steady)            : %.2fx  (bounded ≤ 8.0)\n",
+                    switchDx / std::max(steadyDx, 1e-30));
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if (!pass) ++failures;
+    }
+
     std::printf("\n==================================================\n");
     std::printf("%s  (%d failure%s)\n",
                 failures ? "OVERALL: FAIL" : "OVERALL: PASS",

@@ -654,6 +654,67 @@ int main() {
         }
     }
 
+    // ---- WA12 EXT-BASS B4 STACK via C-API --------------------------------
+    //  para3_bass_stack(p, on) hebt den Voice-Modus auf und legt alle 3 OSCs
+    //  auf die newest Note. Default off ⇒ bit-identisch zur Voice-Modus-Engine
+    //  (T65 deckt 6 Modi nativ ab; hier exemplarisch im 128-Quantum-Pfad mit
+    //  Mode::Fifth, der Stack-on klar erkennbar abschaltet — die +7-Halbton-
+    //  Komponente bei MIDI 67 verschwindet, Output ist mono auf MIDI 60).
+    {
+        Para3* a = para3_create(sr, Q);
+        Para3* b = para3_create(sr, Q);
+        if (!a || !b) { std::fprintf(stderr, "WA12 create failed\n"); ++failures; }
+        else {
+            para3_set_mode(a, PARA3_M_FIFTH);
+            para3_set_mode(b, PARA3_M_FIFTH);
+            para3_bass_stack(b, 0);                              // explicit off
+            para3_note_on(a, 60);
+            para3_note_on(b, 60);
+            const int N = 32000;
+            std::vector<float> ya(N, 0.f), yb(N, 0.f);
+            for (int i = 0; i < N; i += Q) {
+                const int c = std::min(Q, N - i);
+                para3_render(a, ya.data() + i, c);
+                para3_render(b, yb.data() + i, c);
+            }
+            double maxdNeutral = 0.0;
+            for (int i = 0; i < N; ++i)
+                maxdNeutral = std::max(maxdNeutral, (double)std::fabs(ya[i] - yb[i]));
+
+            // c: stack on. Output should be measurably different from Fifth.
+            Para3* c = para3_create(sr, Q);
+            para3_set_mode(c, PARA3_M_FIFTH);
+            para3_bass_stack(c, 1);
+            para3_note_on(c, 60);
+            std::vector<float> yc(N, 0.f);
+            for (int i = 0; i < N; i += Q) {
+                const int q = std::min(Q, N - i);
+                para3_render(c, yc.data() + i, q);
+            }
+            double stackDiff = 0.0;
+            for (int i = 8000; i < N; ++i)
+                stackDiff = std::max(stackDiff, (double)std::fabs(yc[i] - ya[i]));
+
+            // OOR on/off values clamp to 0/1 (== 0 / != 0)
+            para3_bass_stack(c, 99);                             // any non-zero = on
+            para3_bass_stack(c, 0);                              // off again
+            std::vector<float> rest(Q, 0.f);
+            para3_render(c, rest.data(), Q);
+            bool oorFinite = true;
+            for (float v : rest) if (!std::isfinite(v)) oorFinite = false;
+
+            const bool pass = (maxdNeutral == 0.0) && (stackDiff >= 0.05) && oorFinite;
+            std::printf("\nWA12 EXT-BASS B4 STACK via C-API (Fifth mode override + Neutralität)\n");
+            std::printf("   default vs explicit stack=0  max|d|: %.3e  (want == 0)\n", maxdNeutral);
+            std::printf("   stack=1 vs Fifth             max|d|: %.3e  (want ≥ 5e-2)\n", stackDiff);
+            std::printf("   OOR toggle finite                  : %s\n", oorFinite?"yes":"NO");
+            std::printf("   -> %s\n", pass?"PASS":"FAIL");
+            if (!pass) ++failures;
+
+            para3_destroy(a); para3_destroy(b); para3_destroy(c);
+        }
+    }
+
     std::printf("\n==================================================\n");
     std::printf("%s  (%d failure%s)\n",
                 failures ? "OVERALL: FAIL" : "OVERALL: PASS",

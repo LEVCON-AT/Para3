@@ -521,7 +521,13 @@ public:
 
     void setMode(Mode m) noexcept { mode_ = m; }
     void reset() noexcept { count_ = 0; }
+    // EXT-BASS B4 — Stack/Mono override. Wenn aktiv: alle 3 OSCs spielen die
+    // newest Note (gestapelt, monophon) und übersteuern den Voice-Modus.
+    // Aus (Default) ⇒ ring() und resolve() liefern Pre-B4-Werte ⇒ bit-identisch.
+    void setBassStack(bool on) noexcept { bassStack_ = on; }     // EXT-BASS B4
+    bool bassStack() const noexcept { return bassStack_; }       // EXT-BASS B4
     bool ring() const noexcept {
+        if (bassStack_) return false;                            // EXT-BASS B4 Stack ⇒ kein Ring
         return mode_ == Mode::UniRing || mode_ == Mode::PolyRing;
     }
 
@@ -548,6 +554,14 @@ public:
         for (int i = 0; i < 3; ++i) { outNote[i] = 0.0; active[i] = false; }
         if (count_ == 0) return;
         const double newest = held_[count_ - 1];
+        // EXT-BASS B4 — Stack/Mono override: alle 3 OSCs auf newest Note,
+        // alle aktiv. Voice-Modus wird ignoriert. B3-Drift macht die 3 OSCs
+        // dann hörbar verstimmt — der "fette" Bass-Bauprinzip-Stack.
+        if (bassStack_) {
+            outNote[0] = outNote[1] = outNote[2] = newest;
+            active[0] = active[1] = active[2] = true;
+            return;
+        }
         switch (mode_) {
             case Mode::Poly:
                 for (int i = 0; i < 3; ++i) {
@@ -591,6 +605,7 @@ private:
     int  held_[kMax] = {0};
     int  count_ = 0;
     Mode mode_  = Mode::Poly;
+    bool bassStack_ = false;                                      // EXT-BASS B4 default OFF
 };
 
 // -----------------------------------------------------------------------------
@@ -870,6 +885,14 @@ public:
         if (driftState_[2] == 0) driftState_[2] = 1u;
         for (int i = 0; i < 3; ++i) driftLp_[i] = 0.0;
     }
+    // EXT-BASS B4 — Stack/Mono override. Toggle löst refresh() aus damit der
+    // active_[v]/pitch_[v]-Zustand sofort übernommen wird. Wenn keine Note
+    // gehalten, ist refresh() ein No-op. Aus (Default) ⇒ bit-identisch.
+    void setBassStack(bool on) noexcept {                                              // EXT-BASS B4
+        alloc_.setBassStack(on);
+        if (alloc_.anyHeld()) refresh();
+    }
+    bool bassStack() const noexcept { return alloc_.bassStack(); }                     // EXT-BASS B4
     // B1-fix: panic any held voice and release the envelope BEFORE changing
     // the shift. Reuses the engine's own allNotesOff (below) so seqStop, the
     // C-API panic path, and this one all converge on the same primitive.
@@ -1375,6 +1398,10 @@ public:
     // EXT-BASS B3 — Drift-Seed passthrough. Discrete control (reproducibility).
     void setBassDriftSeed(unsigned int s) noexcept {                     // EXT-BASS B3
         if (eng_) eng_->setBassDriftSeed(s);
+    }
+    // EXT-BASS B4 — Stack/Mono passthrough. Discrete (kein Trichter).
+    void setBassStack(bool on) noexcept {                                // EXT-BASS B4
+        if (eng_) eng_->setBassStack(on);
     }
 
     // ---- E5 FLUX -------------------------------------------------------

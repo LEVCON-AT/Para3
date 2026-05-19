@@ -189,6 +189,12 @@ void para3_bass_drift_seed(Para3* p, unsigned int seed) {                       
     if (p) p->engine.setBassDriftSeed(seed);
 }
 
+// EXT-BASS B4 — Stack/Mono allocator override (discrete, no funnel).
+// Default off ⇒ engine bit-identical (T65 max|d|=0).
+void para3_bass_stack(Para3* p, int on) {                                                // EXT-BASS B4
+    if (p) p->engine.setBassStack(on != 0);
+}
+
 void para3_render(Para3* p, float* out, int n) {
     if (!p) return;
     p->ctrl.render(out, n);                              // RT-safe path

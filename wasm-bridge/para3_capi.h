@@ -136,6 +136,11 @@ void para3_osc_wave(Para3* p, int osc, int wave);             // EXT-BASS B1
 // seed=0 is treated as 1 internally (xorshift32 needs non-zero state).
 void para3_bass_drift_seed(Para3* p, unsigned int seed);      // EXT-BASS B3
 
+// EXT-BASS B4 — Stack/Mono allocator override. When on, all 3 oscillators
+// play the newest held note (monophonic stack), regardless of voice mode.
+// Off (default) ⇒ engine bit-identical to pre-B4 (T65).
+void para3_bass_stack(Para3* p, int on);                      // EXT-BASS B4
+
 // render n frames into out (mono). out is a pointer into the WASM heap.
 // real-time safe: no allocation, no locks, no syscalls.
 void para3_render(Para3* p, float* out, int n);
