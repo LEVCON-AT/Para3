@@ -4255,45 +4255,38 @@ int main() {
     }
 
     // ---- T72  EXT-BASS B5 ALIAS  -------------------------------------------
-    //  Sub-Oszillator nutzt PolyBLEP-Pulse @ PW=0.5 (symmetrisch ⇒ Saw-Budget).
-    //  Bei hoher Note (MIDI 108 ⇒ sub bei MIDI 96 ≈ 2093 Hz) muss die
-    //  Sub-Komponente sauber bandbegrenzt sein (Alias ≤ -74 dBc).
+    //  Sub-Oszillator ist Pulse @ PW=0.5 (symmetrisch ⇒ Saw-Alias-Budget gilt).
+    //  Bei sub ≈ 2094 Hz (entspricht MIDI ~96 nach Sub-Oktav) muss der
+    //  bandbegrenzte Sub Alias ≤ -74 dBc liefern. Kohärente FFT wie T51 —
+    //  k=1429 ⇒ f0 = 1429 * 48000/32768 ≈ 2093.7 Hz, harmonics landen exakt
+    //  auf k, 3k, 5k, …
     {
-        // measure sub-only by subtracting "sublevel=0" reference
-        const int    N    = 32768;
-        const double subHz = 2093.0;                     // MIDI 96 ≈ 2093 Hz
-        // Sub-Oszillator direkt (gleich wie Engine-intern), ohne Engine-Filter
+        const int    N     = 32768;
+        const int    k     = 1429;                       // harmonics fold cleanly
+        const double binHz = sr / (double)N;
+        const double f0    = k * binHz;                  // ≈ 2093.7 Hz
+
         para3::Oscillator s;
         s.prepare(sr);
         s.setWave(1);                                    // EXT-BASS B5 same wave as engine
-        for (int i = 0; i < 8192; ++i) s.process(subHz, 0.5);
+        for (int i = 0; i < 8192; ++i) s.process(f0, 0.5);
         std::vector<double> buf(N);
-        for (int i = 0; i < N; ++i) buf[i] = s.process(subHz, 0.5);
-        // AC-couple (50% pulse mean ≈ 0; safety)
+        for (int i = 0; i < N; ++i) buf[i] = s.process(f0, 0.5);
+        // AC-couple (50% pulse mean ≈ 0; safety against FP DC offset)
         double mean = 0.0; for (double v : buf) mean += v; mean /= (double)N;
         for (int i = 0; i < N; ++i) buf[i] -= mean;
         std::vector<cd> sp(N);
         for (int i = 0; i < N; ++i) sp[i] = cd(buf[i], 0.0);
         fft(sp);
-        // f0 = 2093 Hz; coherent? not exactly — use band-energy method
-        // Find dominant peaks: harmonics of 2093 ≈ bin (2093 * N/sr)
-        const double binHz = sr / (double)N;
-        const int k0 = (int)std::round(subHz / binHz);
         double fund = 0.0, alias = 0.0;
         for (int b = 2; b < N/2; ++b) {
-            // mark harmonic bins (k0, 3*k0, 5*k0 — odd for square)
-            bool isHarm = false;
-            for (int h = 1; h <= 11; h += 2) {
-                const int hb = h * k0;
-                if (std::abs(b - hb) <= 3) { isHarm = true; break; }
-            }
             const double m = std::abs(sp[b]);
-            if (isHarm) fund = std::max(fund, m);
-            else        alias = std::max(alias, m);
+            if (b % k == 0) fund  = std::max(fund, m);   // true harmonic
+            else            alias = std::max(alias, m);  // alias/noise
         }
         const double aliasDb = 20.0 * std::log10((alias + 1e-30) / (fund + 1e-30));
         const bool pass = aliasDb <= -74.0;
-        std::printf("\nT72 EXT-BASS B5 ALIAS  (Sub @ MIDI 96 ≈ 2093 Hz, alias ≤ -74 dBc)\n");
+        std::printf("\nT72 EXT-BASS B5 ALIAS  (Sub @ ≈2094 Hz, alias ≤ -74 dBc, kohärente FFT)\n");
         std::printf("   alias floor                     : %.1f dBc  (want ≤ -74)\n", aliasDb);
         std::printf("   -> %s\n", pass?"PASS":"FAIL");
         if (!pass) ++failures;

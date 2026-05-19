@@ -46,7 +46,7 @@ const md5_baseline = {
   // ⇒ subSamp * 0 = 0 exakt ⇒ bit-identisch (T70). Tests: T70-T74 + WA13.
   // Keine neuen C-API-Funktionen (Level läuft über para3_set_param).
   'Para3Engine.hpp':                            'ae49a0187047c4b774ea0e148d32ccdd',
-  'offline_test.cpp':                           '5921574006a3ece537cf415fac827232',
+  'offline_test.cpp':                           '11a100ceed98a7c6815adb1eb9d87083',
   'wasm-bridge/para3_capi.h':                   '7baab254d08164e9f87a0fa860483a2c',
   'wasm-bridge/para3_capi.cpp':                 'c5c29b61a1bca8025e4feb56b402c802',
   'wasm-bridge/capi_test.cpp':                  '91602e00bd13b33af5e1603ede52b8c8',
