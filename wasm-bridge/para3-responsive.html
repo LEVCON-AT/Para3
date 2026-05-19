@@ -574,6 +574,12 @@ body{
           <button class="tbtn"    data-d="2">1/2</button>
           <button class="tbtn"    data-d="4">1/4</button>
         </span>
+        <span class="seg" id="swing" title="SWING · off-beat delay (Korg-Volca/Electribe shuffle, odd 1/16 steps delayed)">
+          <button class="tbtn on" data-sw="0">0%</button>
+          <button class="tbtn"    data-sw="0.15">15%</button>
+          <button class="tbtn"    data-sw="0.30">30%</button>
+          <button class="tbtn"    data-sw="0.45">45%</button>
+        </span>
         <button class="tbtn" id="flux"   title="FLUX MODE · sample-accurate event sequence">FLUX</button>
         <button class="tbtn" id="flxrec" title="FLUX REC · arm event capture (engine T23/T42)">F·REC</button>
         <button class="tbtn" id="flxclr" title="FLUX CLEAR · drop queued+published events">F·CLR</button>
@@ -1579,6 +1585,22 @@ function emit(fn) {
     }
   });
 
+  // FLUX-6 SWING — segmented off-beat delay selector (Korg-Volca/Electribe).
+  // Engine swing_ defaults to 0 (anti-blender: 0% bit-identical to legacy).
+  // 15/30/45% map to clock.setSwing(0.15/0.30/0.45). Odd-indexed 1/16 steps
+  // are delayed by swing × stepSamples — classic shuffle.
+  const swingSeg = document.getElementById('swing');
+  let swingVal = 0;
+  swingSeg.addEventListener('click', (e) => {
+    const b = e.target.closest('button.tbtn[data-sw]');
+    if (!b) return;
+    [...swingSeg.children].forEach(x => x.classList.remove('on'));
+    b.classList.add('on');
+    swingVal = +b.dataset.sw;
+    show('SWING', Math.round(swingVal*100) + '%', '');
+    emit((c) => c.seqSwing(swingVal));
+  });
+
   // EXT-ARP UI2: only ON / HOLD are toggles. MODE / RATE / OCT / GATE are
   // knobs (data-int="1" for the discrete ones). Industry-standard layout:
   // the rotary controls match every other section of the synth; the two
@@ -2012,6 +2034,8 @@ function emit(fn) {
     emit((c) => c.setMode(VOICE_MODE[voiceIx]));
     emit((c) => c.setLfoShape(LFO_FROM_LW[lw]));
     emit((c) => c.seqTempo(K.tmp.get()));
+    // FLUX-6 SWING — flush initial swing value so US-COLD holds (default 0).
+    emit((c) => c.seqSwing(swingVal));
     // EXT-ARP UI2: the four arp knobs (mode/rate/oct/gate) are already
     // emitted by the K loop above. Only the two toggles (hold/enable)
     // and an explicit final enable need a manual emit (arpEnable last

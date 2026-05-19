@@ -342,6 +342,77 @@ test.describe('FLUX-2 — Note + Param events, Timeline UI, Clear', () => {
     await page.locator('#vmode').click();   // cleanup
   });
 
+  test('US-SWING — swing 30 % delays odd-step onset (off-beat shuffle)', async ({ page }) => {
+    await bootstrap(page);
+    const fs = await page.evaluate(() => (window as any).__para3CaptureSampleRate());
+
+    // Gate ONLY step 1. At 30 BPM × 1/16 = 500 ms/step the swing=0 case fires
+    // step 1 at t≈500 ms; swing=0.45 delays it to t≈725 ms (0.45 × 500 ms).
+    // Capture a window inside the swing=0 onset that swing=0.45 has NOT yet
+    // reached → audible vs silent.
+    async function swingPeak(swing: number): Promise<number> {
+      return await page.evaluate(async (sw) => {
+        const c = (window as any).__para3Debug().audio.controls;
+        c.seqStop();
+        await new Promise(r => setTimeout(r, 300));
+        c.setParam(0, 0.8); c.setParam(11, 0.85); c.setParam(9, 0.0);
+        c.setParam(10, 0.08); c.setParam(4, 0.0); c.setParam(15, 1.0);
+        for (let i = 0; i < 16; ++i) c.seqStep(i, 60, 0, 0, 0.5);
+        c.seqStep(1, 60, 1, 0, 0.5);   // ONLY step 1 gated
+        c.seqCommit();
+        c.seqTempo(30);                 // 500 ms / step
+        c.seqSwing(sw);
+        c.seqStart();
+        // Wait until 600 ms post-Start: inside swing=0 onset (step 1 at 500 ms),
+        // before swing=0.45 onset (725 ms).
+        await new Promise(r => setTimeout(r, 600));
+        const fs = (window as any).__para3CaptureSampleRate();
+        const samp = Array.from((window as any).__para3Capture(Math.round(fs * 0.08)));
+        c.seqStop();
+        c.seqSwing(0);                  // restore default for next test
+        await new Promise(r => setTimeout(r, 400));
+        const W = Math.round(fs * 0.020);
+        let m = 0;
+        for (let j = 0; j + W < samp.length; j += W) {
+          let a = 0;
+          for (let k = 0; k < W; ++k) a += samp[j+k] * samp[j+k];
+          m = Math.max(m, Math.sqrt(a / W));
+        }
+        return m;
+      }, swing);
+    }
+
+    const straight = await swingPeak(0);
+    const swung    = await swingPeak(0.45);
+    expect(straight).toBeGreaterThan(0.05);   // step 1 audible at swing=0
+    expect(swung).toBeLessThan(straight * 0.3);  // delayed past capture window
+  });
+
+  test('US-SWING-UI — swing segmented control toggles on class and persists', async ({ page }) => {
+    await bootstrap(page);
+
+    // Default: 0 % selected.
+    const initial = await page.locator('#swing button.on').getAttribute('data-sw');
+    expect(initial).toBe('0');
+
+    // Click 30 %.
+    await page.locator('#swing button[data-sw="0.30"]').click();
+    await page.waitForTimeout(120);
+    const sel30 = await page.locator('#swing button.on').getAttribute('data-sw');
+    expect(sel30).toBe('0.30');
+    // Only one button has on.
+    const onCount = await page.locator('#swing button.on').count();
+    expect(onCount).toBe(1);
+
+    // Click 15 %.
+    await page.locator('#swing button[data-sw="0.15"]').click();
+    await page.waitForTimeout(120);
+    expect(await page.locator('#swing button.on').getAttribute('data-sw')).toBe('0.15');
+
+    // Restore default 0 % for following tests.
+    await page.locator('#swing button[data-sw="0"]').click();
+  });
+
   test('US-FLUX-TIMELINE-UI — Timeline shows when fluxOn, step grid hides', async ({ page }) => {
     await bootstrap(page);
 

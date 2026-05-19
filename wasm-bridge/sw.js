@@ -14,7 +14,7 @@
 //  the worklet and needs no SAB.
 // =============================================================================
 
-const CACHE_VER  = 'para3-v35'; // FLUX-5: per-step gate-length (EXT-FLUX-GATE) + GATE mode + Gate-bar per step
+const CACHE_VER  = 'para3-v36'; // FLUX-6: SWING / Shuffle segmented control (0/15/30/45%, odd 1/16 steps delayed)
 const PRECACHE   = [
   './',
   './index.html',

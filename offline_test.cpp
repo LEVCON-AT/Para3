@@ -3204,6 +3204,76 @@ int main() {
         if (!pass) ++failures;
     }
 
+    // ---- T48  FLUX-6 Swing / Shuffle: odd-step onset shift ------------------
+    // Neutral (anti-blender): swing=0 explicit must be bit-identical to default
+    //   (no setSwing call) — the existing default member init is swing_=0.0.
+    // Effect: only step 1 has gate=true. At swing=0 step 1 onset = stepSamples;
+    //   at swing=0.3 step 0's extended duration delays step 1 by ~0.3 ×
+    //   stepSamples. Detect onset by first sample above threshold; the
+    //   difference must approach 0.3 × stepSamples within 1% (sample-accurate).
+    {
+        const double sr_ = sr; using PE=para3::ParaEngine;
+        const int W = 24000;   // 0.5 s @ 48k
+        std::vector<float> a(W), b(W), c0(W);
+
+        auto run = [&](double swing, bool writeSwing, std::vector<float>& out){
+            PE e; e.prepare(sr_, W);
+            e.setParamNorm(PE::Param::Cutoff,   0.8);
+            e.setParamNorm(PE::Param::Resonance,0.3);
+            e.setParamNorm(PE::Param::Attack,   0.0);
+            e.setParamNorm(PE::Param::DecRel,   0.10);
+            e.setParamNorm(PE::Param::Sustain,  0.85);
+            e.setParamNorm(PE::Param::Volume,   1.0);
+            e.setParamNorm(PE::Param::DelayMix, 0.0);
+            para3::Controller c; c.prepare(e, sr_);
+            para3::Pattern& ep = c.editPattern();
+            ep.length = 16;
+            // Only step 1 gated — its onset is the swing observable.
+            ep.steps[1].gate = true; ep.steps[1].note = 60;
+            c.commitEdit();
+            c.setSeqTempo(60, 4);                 // 1 step = 12000 samples
+            if (writeSwing) c.clock().setSwing(swing);
+            c.seqStart();
+            c.render(out.data(), W);
+        };
+
+        run(0.0, false, c0);   // never call setSwing — default
+        run(0.0, true,  a);    // explicit swing=0
+        run(0.3, true,  b);    // swing=0.3 → step 1 onset shifted late by 0.3*step
+
+        // Bit identity between defaulted-vs-explicit swing=0
+        double maxNeutral = 0;
+        for (int i=0;i<W;++i) maxNeutral = std::max(maxNeutral,
+            std::fabs((double)a[i]-(double)c0[i]));
+
+        // First sample above 0.05 amplitude = note-on onset (fast attack)
+        auto onsetOf = [&](const std::vector<float>& y){
+            for (int i=0;i<W;++i) if (std::fabs(y[i]) > 0.05f) return i;
+            return -1;
+        };
+        const int onsetA = onsetOf(a);
+        const int onsetB = onsetOf(b);
+        const double stepSamples = sr_ * (60.0 / 60.0) / 4.0;  // = 12000
+        const double expectedShift = 0.3 * stepSamples;        // = 3600
+        const double actualShift   = (onsetB >= 0 && onsetA >= 0)
+                                       ? (double)(onsetB - onsetA) : 0.0;
+
+        const bool neutral = maxNeutral == 0.0;
+        const bool onsets  = onsetA > 0 && onsetB > onsetA;
+        // Allow ±2 samples slack for accumulator rounding.
+        const bool effect  = std::fabs(actualShift - expectedShift) <= 2.0;
+        const bool pass    = neutral && onsets && effect;
+
+        std::printf("\nT48 FLUX-6 SWING  (odd-step onset shifted by swing × step)\n");
+        std::printf("   swing=0 default vs explicit max|d|: %.3e  (want == 0)\n", maxNeutral);
+        std::printf("   step-1 onset  swing=0 / swing=0.3 : %d / %d samples\n",
+                    onsetA, onsetB);
+        std::printf("   shift actual / expected           : %.0f / %.0f samples\n",
+                    actualShift, expectedShift);
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if (!pass) ++failures;
+    }
+
     std::printf("\n==================================================\n");
     std::printf("%s  (%d failure%s)\n",
                 failures ? "OVERALL: FAIL" : "OVERALL: PASS",
