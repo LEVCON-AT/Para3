@@ -48,8 +48,8 @@ const md5_baseline = {
   // Tests: T54-T58 + WA10. KEINE neuen C-API-Funktionen (Werte gehen über
   // existierendes para3_set_param) → build_wasm.sh / bridge JS / scope /
   // transport-Dateien byte-frozen.
-  'Para3Engine.hpp':                            '17a8281d2f83b3ce2d728bb0a1852a94',
-  'offline_test.cpp':                           'b1331892bfbff0a611f0acfd4d114ae1',
+  'Para3Engine.hpp':                            '9342dcfd4dd227d2092cf079f346230a',
+  'offline_test.cpp':                           'd7c183de1eeab66973f2ec83a86d82af',
   'wasm-bridge/para3_capi.h':                   '4a4067aee93fea15fa4bc668eec00e9b',
   'wasm-bridge/para3_capi.cpp':                 '5fa4354e1fba917d2b72c7501edb3e14',
   'wasm-bridge/capi_test.cpp':                  '0da50e274112f2af23ca92a26ac159ca',

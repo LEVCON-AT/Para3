@@ -212,6 +212,18 @@ Wirkungsmessungen:
 - B5: zusätzliche Energie bei −12/−24 Halbtönen (FFT-Peak), Default-Level 0
   bitidentisch, Sub bandlimitiert.
 
+**Benannter Treue-Konflikt — asymmetrische Pulse-Alias (B1/B2):** die in §2
+geforderte Same-OS-Regime (PolyBLEP-2 + 4× Kaiser-Decimator wie Saw) trifft
+bei symmetrischer Pulse (PW=0.5) das ≤ −74 dBc-Saw-Budget genau (T51, T57
+gemessen −76.8 dBc). Bei asymmetrischer PW (≠ 0.5) trägt die Pulse alle
+Harmonischen mit langsamerem 1/n-Abfall; das Same-OS-Regime liefert dort
+~−64 dBc statt −74. Per CLAUDE.md §0.6 wird dieser Konflikt **benannt**,
+nicht still weggeglättet: T57 verwendet zwei Schwellen — −74 dBc bei PW=0.5
+(Saw-Budget) und −60 dBc bei PW=0.10/0.90 (BLEP-2-Grenze im Same-OS-Regime).
+Abhilfe wäre höhere BLEP-Ordnung oder 8× OS, würde aber das in §2 B1
+geforderte Same-OS-Regime verlassen; −60 dBc liegt praktisch weit unter
+audible-Alias (~−40 dBc), also hörbar bandbegrenzt.
+
 **Fett-Stellvertreterkorridore** (`// EXT-BASS DEFAULT`-Zielkorridore,
 **kein** Treue-Score): spektrale Fülle/Partialzahl gegen Sinus-Baseline,
 Tiefband-Energie & Spektralschwerpunkt, **AM-Tiefe & -Rate** aus

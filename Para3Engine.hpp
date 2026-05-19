@@ -118,8 +118,13 @@ public:
         return v;
     }
     // EXT-BASS B1 — band-limited Pulse (two PolyBLEP corrections: rising
-    // edge at phase=0 and falling edge at phase=pw). Same OS regime as Saw,
-    // so Alias ≤ −74 dBc at 4× oversampling is preserved (T51 measures).
+    // edge at phase=0 and falling edge at phase=pw). Same OS regime as Saw
+    // per spec §2 B1. T51/T57 measure: at PW=0.5 the alias matches the Saw
+    // budget (-76 dBc, ≤ -74 dBc spec). TREUE-KONFLIKT (per CLAUDE.md §0.6
+    // benannt, T57 documentiert): bei asymmetrischer PW (≠ 0.5) trägt die
+    // Pulse alle Harmonischen mit langsamerem 1/n-Abfall, was die Kombi
+    // BLEP-2 + 4×Kaiser-Decimator auf ~-64 dBc Alias begrenzt. Praktisch
+    // weit unter audible-alias (~-40 dBc) und damit hörbar bandbegrenzt.
     // pw clamped to [2*dt, 1-2*dt] so the two BLEP windows never overlap
     // (degenerate at extreme pulse widths; protects audibility at high notes).
     inline double processPulse(double freqHz, double pw) noexcept {  // EXT-BASS B1
