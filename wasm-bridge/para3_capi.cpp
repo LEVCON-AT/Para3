@@ -135,6 +135,8 @@ void para3_seq_flux_mode    (Para3* p, int on)            { if (p) p->ctrl.setFl
 void para3_seq_flux_loop_len(Para3* p, unsigned int s)    { if (p) p->ctrl.fluxSetLoopLen(s); }
 void para3_seq_flux_rec     (Para3* p, int on)            { if (p) p->ctrl.fluxRec(on!=0); }
 void para3_seq_flux_note    (Para3* p, int n, int on)     { if (p) p->ctrl.fluxNote(n,on!=0); }
+void para3_seq_flux_param   (Para3* p, int pid, double n) { if (p) p->ctrl.fluxParam(pid, n); }
+void para3_seq_flux_clear   (Para3* p)                    { if (p) p->ctrl.fluxClear(); }
 void para3_seq_flux_commit  (Para3* p)                    { if (p) p->ctrl.fluxCommit(); }
 long para3_seq_flux_dropped (Para3* p) { return p ? p->ctrl.fluxDropped() : 0; }
 

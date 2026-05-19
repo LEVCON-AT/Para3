@@ -85,11 +85,16 @@ void para3_seq_tempo_div   (Para3* p, int div);           // E4.2 1, 2 or 4
 void para3_seq_active_step (Para3* p, int idx, int on);   // E4.3 enable/skip step
 void para3_seq_metronome   (Para3* p, int on);            // E4.4 metronome (delay bypass)
 
-// E5 FLUX (sample-accurate event sequence)
+// E5 FLUX (sample-accurate event sequence) + EXT-FLUX param-event extension.
+// type=0 NoteOn, type=1 NoteOff, type=2 ParamSet (pid 0..15, norm 0..1).
+// Same loop cursor & click-free wrap; commit re-sorts PARAM->OFF->ON at each
+// offset so parameter changes settle before concurrent triggers.
 void para3_seq_flux_mode     (Para3* p, int on);          // step-grid <-> flux (click-free)
 void para3_seq_flux_loop_len (Para3* p, unsigned int samples);
 void para3_seq_flux_rec      (Para3* p, int on);
 void para3_seq_flux_note     (Para3* p, int note, int on);// append at live cursor
+void para3_seq_flux_param    (Para3* p, int pid, double norm01); // EXT-FLUX append param event
+void para3_seq_flux_clear    (Para3* p);                  // EXT-FLUX drop queued+published events
 void para3_seq_flux_commit   (Para3* p);                  // stable-sort + publish
 long para3_seq_flux_dropped  (Para3* p);                  // observable overflow
 

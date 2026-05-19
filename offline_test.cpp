@@ -2817,6 +2817,166 @@ int main() {
         if (!pass) ++failures;
     }
 
+    // ---- T42  EXT-FLUX-PARAM: param event audibly modifies output + repeatable
+    // Sample-bit-identity loop-over-loop is not achievable here because the
+    // oscillator phase runs continuously across loop wraps (intentional —
+    // matches Volca/Korg "no phase reset on noteOn" behaviour). We measure
+    // the signature that DOES matter for users:
+    //  (a) the param event has an audible effect at its sample offset
+    //      (Q3/Q4 quarter-RMS << Q1/Q2 quarter-RMS once cutoff drops)
+    //  (b) two consecutive replay loops produce matching RMS-quartile profiles
+    //      (≤ 10 % deviation — phase smears at filter output bound this).
+    {
+        const double sr_ = sr; using PE=para3::ParaEngine;
+        const unsigned int L = 48000;     // 1 s loop
+        PE e; e.prepare(sr_, 4096);
+        e.setParamNorm(PE::Param::Cutoff,    0.7);   // bright baseline
+        e.setParamNorm(PE::Param::Resonance, 0.4);
+        e.setParamNorm(PE::Param::Attack,    0.0);
+        e.setParamNorm(PE::Param::DecRel,    0.05);
+        e.setParamNorm(PE::Param::Sustain,   0.8);
+        e.setParamNorm(PE::Param::DelayMix,  0.0);
+        para3::Controller c; c.prepare(e, sr_);
+        c.setFluxMode(true); c.fluxSetLoopLen(L); c.fluxRec(true);
+
+        std::vector<float> one(1);
+        // Self-resetting loop: bright-restart at start, dark-drop mid-loop. The
+        // bright event resets the cutoff smoother each loop so the periodic
+        // steady state is well-defined (otherwise the smoother stays stuck at
+        // 0.05). NoteOff at 40000 leaves ≈167 ms for the release tail to
+        // complete before the loop wraps — both replay loops then begin from
+        // env=0 / active=false, identical engine state.
+        const int OBright=50, ONote=200, ODark=24000, OOff=40000;
+        for (unsigned int i=0; i<L; ++i) {
+            if ((int)i==OBright) c.fluxParam(0 /*Cutoff*/, 0.7);   // bright restart
+            if ((int)i==ONote)   c.fluxNote(60, true);
+            if ((int)i==ODark)   c.fluxParam(0 /*Cutoff*/, 0.05);  // dark mid-loop
+            if ((int)i==OOff)    c.fluxNote(60, false);
+            c.render(one.data(), 1);
+        }
+        c.fluxRec(false); c.fluxCommit();
+
+        // Warmup discarded so smoother + envelope reach periodic steady state
+        std::vector<float> warm(L); for (unsigned int i=0;i<L;++i) c.render(&warm[i],1);
+        std::vector<float> a(L), b(L);
+        for (unsigned int i=0;i<L;++i) c.render(&a[i],1);
+        for (unsigned int i=0;i<L;++i) c.render(&b[i],1);
+
+        auto rmsW = [](const std::vector<float>& y, int st, int en){
+            double s=0; for (int i=st;i<en;++i) s += (double)y[i]*y[i];
+            return std::sqrt(s / std::max(1, en-st));
+        };
+        const int Q1s=L/8, Q2s=3*L/8, Q3s=5*L/8, Q4s=7*L/8, W=L/8;
+        const double q1A=rmsW(a,Q1s,Q1s+W), q2A=rmsW(a,Q2s,Q2s+W);
+        const double q3A=rmsW(a,Q3s,Q3s+W), q4A=rmsW(a,Q4s,Q4s+W);
+        const double q1B=rmsW(b,Q1s,Q1s+W), q2B=rmsW(b,Q2s,Q2s+W);
+        const double q3B=rmsW(b,Q3s,Q3s+W), q4B=rmsW(b,Q4s,Q4s+W);
+
+        auto ratio = [](double x, double y){
+            return std::max(x,y) / std::max(std::min(x,y), 1e-9);
+        };
+        // (a) Param event drops energy: Q3 + Q4 << Q1 + Q2
+        const bool effectVisible = q3A < q1A * 0.5 && q4A < q2A * 0.5;
+        // (b) loop-pair quartile match within 10 % — only enforced in the loud
+        // regions Q1+Q2. Q3 is the post-event smoother-transition trajectory
+        // (≈ -60 dB residue at cut=0.05) and Q4 is the release tail; tiny
+        // floating-point differences amplify into spurious ratios at these
+        // noise-floor levels. The audible determinism is what matters.
+        const bool loopsMatch = ratio(q1A,q1B) < 1.10 && ratio(q2A,q2B) < 1.10;
+        bool finite=true; for (float v:a) if(!std::isfinite(v)) finite=false;
+                          for (float v:b) if(!std::isfinite(v)) finite=false;
+        const bool pass = finite && effectVisible && loopsMatch;
+        std::printf("\nT42 EXT-FLUX-PARAM  (param event audible + repeatable)\n");
+        std::printf("   q1A=%.4f q2A=%.4f q3A=%.4f q4A=%.4f\n", q1A, q2A, q3A, q4A);
+        std::printf("   q3/q1 ratio (effect) : %.3f  (want <0.5)\n", q3A/std::max(q1A,1e-9));
+        std::printf("   loop A vs B ratios   : %.3f %.3f %.3f %.3f  (want <1.10)\n",
+                    ratio(q1A,q1B), ratio(q2A,q2B), ratio(q3A,q3B), ratio(q4A,q4B));
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if (!pass) ++failures;
+    }
+
+    // ---- T43  EXT-FLUX-PARAM-SORT: at same offset PARAM(2) -> OFF(1) -> ON(0)
+    // Insertion order is ON, PARAM, OFF; after commit the sort must reorder to
+    // PARAM -> OFF -> ON so params settle before any new note triggers.
+    {
+        const double sr_ = sr; using PE=para3::ParaEngine;
+        PE e; e.prepare(sr_, 4096);
+        para3::Controller c; c.prepare(e, sr_);
+        c.setFluxMode(true); c.fluxSetLoopLen(48000); c.fluxRec(true);
+
+        // Advance live cursor to a known offset, then record three events there
+        std::vector<float> warm(2000);
+        for (int i=0;i<2000;++i) c.render(&warm[i],1);
+        c.fluxNote(60, true);   // ON  (inserted 1st)
+        c.fluxParam(0, 0.7);    // PARAM (inserted 2nd)
+        c.fluxNote(60, false);  // OFF (inserted 3rd)
+        c.fluxRec(false); c.fluxCommit();
+
+        const para3::FluxPattern& fp = c.fluxBank().read();
+        bool pass = fp.count == 3
+                 && fp.ev[0].type == 2   // PARAM first
+                 && fp.ev[1].type == 1   // OFF second
+                 && fp.ev[2].type == 0;  // ON last
+        std::printf("\nT43 EXT-FLUX-PARAM-SORT  (PARAM->OFF->ON at same offset)\n");
+        std::printf("   count=%u  types=[%u,%u,%u]  (want [2,1,0])\n",
+                    (unsigned)fp.count, fp.ev[0].type, fp.ev[1].type, fp.ev[2].type);
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if (!pass) ++failures;
+    }
+
+    // ---- T44  EXT-FLUX-CLEAR: dropping events stops triggers, output decays ---
+    // After fluxClear() during active replay, the bank is empty, no new note
+    // events fire; the envelope on currently-sounding voices completes its
+    // release without click. We measure |x| activity over equal post-windows.
+    {
+        const double sr_ = sr; using PE=para3::ParaEngine;
+        const unsigned int L = 48000;
+        PE e; e.prepare(sr_, 4096);
+        e.setParamNorm(PE::Param::Cutoff,   0.6);
+        e.setParamNorm(PE::Param::Attack,   0.0);
+        e.setParamNorm(PE::Param::DecRel,   0.1);
+        e.setParamNorm(PE::Param::Sustain,  0.6);
+        e.setParamNorm(PE::Param::DelayMix, 0.0);
+        para3::Controller c; c.prepare(e, sr_);
+        c.setFluxMode(true); c.fluxSetLoopLen(L); c.fluxRec(true);
+
+        std::vector<float> one(1);
+        for (unsigned int i=0; i<L; ++i) {
+            if (i==1000)  c.fluxNote(60, true);
+            if (i==5000)  c.fluxParam(0, 0.8);
+            if (i==15000) c.fluxNote(60, false);
+            if (i==25000) c.fluxNote(64, true);
+            if (i==40000) c.fluxNote(64, false);
+            c.render(one.data(), 1);
+        }
+        c.fluxRec(false); c.fluxCommit();
+
+        // Capture pre-clear window (replays the dense pattern)
+        std::vector<float> yPre(L);
+        for (unsigned int i=0;i<L;++i) c.render(&yPre[i],1);
+        double sumPre=0; for (float v:yPre) sumPre += std::fabs(v);
+
+        c.fluxClear();
+
+        // Capture post-clear window (same duration). No new triggers; held
+        // notes (if any) release through envelope, then silence.
+        std::vector<float> yPost(L);
+        for (unsigned int i=0;i<L;++i) c.render(&yPost[i],1);
+        double sumPost=0; for (float v:yPost) sumPost += std::fabs(v);
+
+        const bool bankEmpty = c.fluxBank().read().count == 0;
+        bool finite=true; for (float v:yPost) if(!std::isfinite(v)) finite=false;
+        const bool decayed = sumPost < sumPre * 0.1;   // post-clear ≥10× quieter
+        const bool pass = bankEmpty && finite && decayed;
+        std::printf("\nT44 EXT-FLUX-CLEAR  (clear drops events, output decays)\n");
+        std::printf("   bank.count post-clear: %u\n", (unsigned)c.fluxBank().read().count);
+        std::printf("   sumPre=%.3f sumPost=%.3f  ratio=%.4f (want <0.1)\n",
+                    sumPre, sumPost, sumPost/std::max(sumPre,1e-9));
+        std::printf("   finite               : %s\n", finite?"yes":"NO");
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if (!pass) ++failures;
+    }
+
     std::printf("\n==================================================\n");
     std::printf("%s  (%d failure%s)\n",
                 failures ? "OVERALL: FAIL" : "OVERALL: PASS",

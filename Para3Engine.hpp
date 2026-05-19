@@ -1042,9 +1042,12 @@ private:
 //  E5 FLUX — sample-accurate event sequence (micro-timing). Replaces the step
 //  grid with absolute sample offsets in a loop. Fixed-capacity, no allocation.
 // =============================================================================
-static constexpr int FLUX_CAP = 256;
-struct FluxEvent { unsigned int off=0; unsigned char type=0; /*0=ON 1=OFF*/
-                   unsigned char note=60; };
+static constexpr int FLUX_CAP = 512;   // EXT-FLUX raised from 256 to fit
+                                       // realistic param-event-rate per loop
+struct FluxEvent { unsigned int off=0; unsigned char type=0;  // 0=ON 1=OFF 2=PARAM
+                   unsigned char note=60;                      // also pid when type=2
+                   float         val=0.f;                      // norm 0..1 when type=2
+                 };
 struct FluxPattern {
     unsigned int  loopLen = 0;          // samples; 0 => silent
     unsigned short count  = 0;
@@ -1223,16 +1226,50 @@ public:
         e.off  = (fluxEdit_.loopLen ? (fcur_ % fluxEdit_.loopLen) : fcur_);
         e.type = on ? 0 : 1;
         e.note = (unsigned char)note;
+        e.val  = 0.f;
         fluxEdit_.ev[fluxEdit_.count++] = e;
+    }
+    // EXT-FLUX param event: same offset semantics as fluxNote, encodes pid+norm.
+    // pid is an API-PID 0..15 (mirrors ParaEngine::Param ordering — see
+    // wasm-bridge/para3_capi.h enum). At replay the dispatcher casts back to
+    // Param and routes through setParamNorm (Trichter + RampParam smoother) —
+    // same path as midiCC + UI knob, so determinism + click-freedom hold.
+    void fluxParam(int pid, double norm) noexcept {          // EXT-FLUX
+        if (!fluxRec_) return;
+        if (pid < 0 || pid >= 16) return;                    // audio-Param range only
+        if (fluxEdit_.count >= FLUX_CAP) { ++fluxDropped_; return; }
+        FluxEvent e;
+        e.off  = (fluxEdit_.loopLen ? (fcur_ % fluxEdit_.loopLen) : fcur_);
+        e.type = 2;
+        e.note = (unsigned char)pid;
+        e.val  = (float)clamp(norm, 0.0, 1.0);
+        fluxEdit_.ev[fluxEdit_.count++] = e;
+    }
+    // EXT-FLUX clear: drops all queued + published events. The engine's envelope
+    // stays on its own release path (click-free per E5 design — fluxMode_ still
+    // on, just no events fire). Notes already physically ON via earlier replay
+    // hold their envelope until the natural noteOff arrives via another path —
+    // or until the user retriggers / disarms FLUX-mode.
+    void fluxClear() noexcept {                              // EXT-FLUX
+        fluxEdit_.count = 0;
+        const unsigned int L = fluxEdit_.loopLen;
+        FluxPattern p; p.loopLen = L; p.count = 0;
+        fluxBank_.edit() = p;
+        fluxBank_.commit();
+        fpos_ = 0;
     }
     void fluxCommit() noexcept {                             // stable-sort, publish
         const int n = fluxEdit_.count;
-        // OFF before ON at the same offset; stable to preserve insertion order
+        // At the same sample offset: PARAM(2) -> OFF(1) -> ON(0). Params first
+        // so parameter changes (cutoff, etc.) settle before any concurrent
+        // note triggers; OFF before ON preserves the original click-free rule.
+        // Stable sort to preserve insertion order within each rank.
         std::stable_sort(fluxEdit_.ev, fluxEdit_.ev + n,
             [](const FluxEvent& a, const FluxEvent& b){
                 if (a.off != b.off) return a.off < b.off;
-                const int ra = (a.type==1)?0:1, rb = (b.type==1)?0:1;
-                return ra < rb;                              // OFF(1)->rank0 first
+                const int ra = (a.type==2)?0 : (a.type==1)?1 : 2;
+                const int rb = (b.type==2)?0 : (b.type==1)?1 : 2;
+                return ra < rb;
             });
         fluxBank_.edit() = fluxEdit_;
         fluxBank_.commit();
@@ -1292,8 +1329,14 @@ public:
                 if (fp.loopLen > 0) {
                     while (fpos_ < fp.count && fp.ev[fpos_].off == fcur_) {
                         const FluxEvent& e = fp.ev[fpos_++];
-                        if (e.type == 1) eng_->noteOff(e.note);  // OFF first (sorted)
-                        else             eng_->noteOn (e.note);
+                        if      (e.type == 2) {                  // EXT-FLUX param
+                            // Cast is safe: fluxParam clamps pid to 0..15 which
+                            // matches Param enum ordering Cutoff..Volume.
+                            using P = para3::ParaEngine::Param;
+                            eng_->setParamNorm(static_cast<P>(e.note), (double)e.val);
+                        }
+                        else if (e.type == 1) eng_->noteOff(e.note); // OFF first (sorted)
+                        else                  eng_->noteOn (e.note);
                     }
                 }
                 // cursor runs on the active loop length, or the edit-buffer

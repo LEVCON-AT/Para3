@@ -235,11 +235,13 @@ int main() {
         para3_seq_metronome(p, 1);    pump(20);
         para3_seq_metronome(p, 0);
 
-        // E5 flux: mode + record + overflow drop counter
+        // E5 flux: mode + record + overflow drop counter. FLUX_CAP is 512
+        // (EXT-FLUX raised from 256 in v8 to fit param-events on top of notes);
+        // pump 700 to comfortably trip the drop counter.
         para3_seq_flux_mode(p, 1);
         para3_seq_flux_loop_len(p, 24000);
         para3_seq_flux_rec(p, 1);
-        for(int i=0;i<400;++i){ para3_seq_flux_note(p, 48, (i&1)==0);
+        for(int i=0;i<700;++i){ para3_seq_flux_note(p, 48, (i&1)==0);
                                 pump(0); para3_render(p,buf.data(),8); }
         para3_seq_flux_rec(p, 0);
         para3_seq_flux_commit(p);
@@ -333,6 +335,88 @@ int main() {
             std::printf("   arp dropped (>16 notes) : %ld  (>0 expected)\n", dropped);
             std::printf("   off-state parity max|d| : %.3e  (== 0)\n", maxD);
             std::printf("   -> %s\n", pass ? "PASS" : "FAIL");
+            if (!pass) ++failures;
+        }
+    }
+
+    // ---- WA8  EXT-FLUX-PARAM via C-API: record param events, replay determ. -
+    // Same idea as offline T42 but through the WASM-facing bridge:
+    //   1. Enable FLUX-mode, arm record, inject 1 bright-restart + 1 note + 1
+    //      dark-drop + 1 note-off via render-driven live cursor
+    //   2. Commit, warm-up loop, capture 2 measured loops
+    //   3. Quartile-RMS metric:
+    //        (a) param effect visible (Q3 << Q1)
+    //        (b) loud quartiles match between loops within 10 %
+    //      Q3+Q4 are near-silent residue/release and not used for the match
+    //      check (floating-point noise amplifies into spurious ratios there).
+    //   4. para3_seq_flux_clear → bank empty + tail still finite
+    {
+        Para3* p = para3_create(48000.0, 64);
+        if (!p) { std::fprintf(stderr, "WA8 create failed\n"); ++failures; }
+        else {
+            const unsigned int L = 48000;
+            std::vector<float> one(1);
+            para3_set_param(p, PARA3_P_CUTOFF,    0.7);
+            para3_set_param(p, PARA3_P_RESONANCE, 0.4);
+            para3_set_param(p, PARA3_P_ATTACK,    0.0);
+            para3_set_param(p, PARA3_P_DECREL,    0.05);
+            para3_set_param(p, PARA3_P_SUSTAIN,   0.8);
+            para3_set_param(p, PARA3_P_DELAY_MIX, 0.0);
+            para3_seq_flux_mode(p, 1);
+            para3_seq_flux_loop_len(p, L);
+            para3_seq_flux_rec(p, 1);
+
+            const int OBRIGHT=50, ONOTE=200, ODARK=24000, OOFF=40000;
+            for (unsigned int i=0;i<L;++i) {
+                if ((int)i==OBRIGHT) para3_seq_flux_param(p, PARA3_P_CUTOFF, 0.7);
+                if ((int)i==ONOTE)   para3_seq_flux_note (p, 60, 1);
+                if ((int)i==ODARK)   para3_seq_flux_param(p, PARA3_P_CUTOFF, 0.05);
+                if ((int)i==OOFF)    para3_seq_flux_note (p, 60, 0);
+                para3_render(p, one.data(), 1);
+            }
+            para3_seq_flux_rec(p, 0);
+            para3_seq_flux_commit(p);
+
+            // Warm-up loop discarded
+            std::vector<float> warmL(L); for (unsigned int i=0;i<L;++i) para3_render(p, &warmL[i], 1);
+            std::vector<float> a(L), b(L);
+            for (unsigned int i=0;i<L;++i) para3_render(p, &a[i], 1);
+            for (unsigned int i=0;i<L;++i) para3_render(p, &b[i], 1);
+
+            auto rmsW = [](const std::vector<float>& y, int st, int en){
+                double s=0; for (int i=st;i<en;++i) s += (double)y[i]*y[i];
+                return std::sqrt(s / std::max(1, en-st));
+            };
+            const int Q1s=L/8, Q2s=3*L/8, Q3s=5*L/8, W=L/8;
+            const double q1A=rmsW(a,Q1s,Q1s+W), q2A=rmsW(a,Q2s,Q2s+W);
+            const double q3A=rmsW(a,Q3s,Q3s+W);
+            const double q1B=rmsW(b,Q1s,Q1s+W), q2B=rmsW(b,Q2s,Q2s+W);
+            auto ratio = [](double x, double y){
+                return std::max(x,y) / std::max(std::min(x,y), 1e-9);
+            };
+            bool finite=true; for (float v:a) if(!std::isfinite(v)) finite=false;
+                              for (float v:b) if(!std::isfinite(v)) finite=false;
+            const bool effectVisible = q3A < q1A * 0.5;
+            const bool loudMatch     = ratio(q1A,q1B) < 1.10 && ratio(q2A,q2B) < 1.10;
+            const long dropped       = para3_seq_flux_dropped(p);
+
+            para3_seq_flux_clear(p);
+            std::vector<float> tail(L);
+            for (unsigned int i=0;i<L;++i) para3_render(p, &tail[i], 1);
+            bool tailFinite=true; for (float v:tail) if(!std::isfinite(v)) tailFinite=false;
+
+            para3_destroy(p);
+
+            const bool pass = finite && tailFinite && effectVisible && loudMatch
+                           && dropped == 0;
+            std::printf("\nWA8 EXT-FLUX-PARAM via C-API (param event audible + repeatable + clear)\n");
+            std::printf("   q1A=%.4f q2A=%.4f q3A=%.4f\n", q1A, q2A, q3A);
+            std::printf("   q3/q1 (effect)       : %.3f  (want <0.5)\n", q3A/std::max(q1A,1e-9));
+            std::printf("   loud match q1/q2     : %.3f / %.3f  (want <1.10)\n",
+                        ratio(q1A,q1B), ratio(q2A,q2B));
+            std::printf("   dropped              : %ld  (0 expected for 4 events)\n", dropped);
+            std::printf("   tail finite post-clr : %s\n", tailFinite?"yes":"NO");
+            std::printf("   -> %s\n", pass?"PASS":"FAIL");
             if (!pass) ++failures;
         }
     }
