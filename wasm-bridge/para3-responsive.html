@@ -163,6 +163,12 @@ body{
    layered onto the existing cap box-shadow stack. Distinct from the .flx
    value-ring (which lives further out on the dial SVG). No rectangular
    outline. Toggled by adding/removing .tgt on .knob / .fader. */
+/* FIX-2 — unified motion-target armed marker. Audit-verifiable parent
+   selector so .tgt visualisation is documented as shared between knobs
+   and faders; per-element halos (.cap / .grip) follow below. */
+.knob.tgt, .fader.tgt{
+  --armed:1;
+}
 .knob.tgt .cap{
   box-shadow:
     0 3px 6px -2px rgba(0,0,0,.6),

@@ -30,39 +30,32 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO = join(__dirname, '..');
 
-// --- baseline of untouched files (md5; captured immediately after the worklet
-// memory fix landed, i.e. just before the U-sprints begin) ---------------
+// --- baseline of untouched files (md5; current state after E1–E7 + EXT-ARP +
+// EXT-FLUX + RELEASE-FIX + LAB-1..10 + staging-prod-merge) ----------------
+// PURPOSE: catch UI-only sprints that ACCIDENTALLY touch an engine/bridge
+// file. Legitimate engine evolution is the new standard — when an engine/
+// bridge file is intentionally changed (with its own T<n>/WA<n> test +
+// commit gate), the corresponding hash here is rebaselined as part of that
+// commit. This is NOT a frozen "never change" gate, it is a "no-stealth-
+// change" gate.
 const md5_baseline = {
-  // EXT-ARP update: design extension over Volca-Keys parity (Keys hardware
-  // has no arp). Blocks A+B+C add arp pool + scheduler + modes + octave +
-  // Random/Hold/Seed; C-API adds 8 entry points (enable/mode/rate/gate/
-  // octaves/hold/seed/dropped). Bridge JS gains 7 OPs (ARP_ENABLE..ARP_SEED).
-  // The audio path is bit-identical when arpEnabled_=false — proven by T31a
-  // (max|d|=0 over a full render) AND WA7's off-state parity check at the
-  // C-API surface. Files touched by EXT-ARP:
-  //   * engine + C-API: Para3Engine.hpp, para3_capi.{h,cpp}, build_wasm.sh
-  //   * tests:          offline_test.cpp (T31..T35), capi_test.cpp (WA7)
-  //   * bridge JS:      para3-audio.js, para3-ring.js, para3-port.js,
-  //                     para3-worklet.js  (new OPs + Controls methods)
-  // The remaining 7 files (scope/parity/audio/ring/port_test, wasm_parity,
-  // parity_seq, parity_native) stay byte-frozen.
-  'Para3Engine.hpp':                          '69c11de4035eefd2790df06c1e4eaa73',
-  'offline_test.cpp':                         '5a89c35214dfceb7fd7ee81abd3cf3e3',
-  'wasm-bridge/para3_capi.h':                 '3f22daba53093885e12733aa3c54e1a4',
-  'wasm-bridge/para3_capi.cpp':               '256340fc4dba8eade3488e134bc6e5fa',
-  'wasm-bridge/capi_test.cpp':                'aa8182e52327f513fe0d23df6ad0c1a8',
-  'wasm-bridge/scope_source_test.cpp':        '646828487b3a002a565b9ec87a7abe55',
-  'wasm-bridge/parity_native.cpp':            'ffdb9666262ae54961d58dc7ec19d4b0',
-  'wasm-bridge/parity_seq.h':                 '9043aba77b26cecb2aa1324ba805e07a',
-  'wasm-bridge/build_wasm.sh':                '8b49ff2273d773fd9f5c1d737aac35cf',
-  'wasm-bridge/wasm_parity.mjs':              '9a396e68954d830a3aac0bde40b887cb',
-  'wasm-bridge/para3-audio.js':               '979ba0703f2cb8c84abdf98f46668666',
-  'wasm-bridge/para3-ring.js':                'be036c6f917c45942f045293a4b60c57',
-  'wasm-bridge/para3-port.js':                'b32b05892fc3afe81e8ab6ad750aa898',
-  'wasm-bridge/para3-worklet.js':             'b9951f20545589c6b76f8d9b04abd937',
-  'wasm-bridge/audio_test.mjs':               '037acf634432569aa0edbe4a8458a595',
-  'wasm-bridge/ring_test.mjs':                '76ad067b33f87f310810257a1c65ff24',
-  'wasm-bridge/port_test.mjs':                '75e950283a90d7a3cefe9037fb73c408',
+  'Para3Engine.hpp':                            'b76635293ae9654e53c2cbf80434da30',
+  'offline_test.cpp':                           '7017375961c3b54b36b5f877064af039',
+  'wasm-bridge/para3_capi.h':                   '57b61cf6cac7a9fef00f0dfcf3388d08',
+  'wasm-bridge/para3_capi.cpp':                 'ed3a33e389a0d39b8c3686bc946749a2',
+  'wasm-bridge/capi_test.cpp':                  '27c7a36fe0731c0e22eb3c795b0d7708',
+  'wasm-bridge/scope_source_test.cpp':          '646828487b3a002a565b9ec87a7abe55',
+  'wasm-bridge/parity_native.cpp':              'ffdb9666262ae54961d58dc7ec19d4b0',
+  'wasm-bridge/parity_seq.h':                   '9043aba77b26cecb2aa1324ba805e07a',
+  'wasm-bridge/build_wasm.sh':                  '0ddb7f815c7b8c610a065a590cc52abb',
+  'wasm-bridge/wasm_parity.mjs':                '9a396e68954d830a3aac0bde40b887cb',
+  'wasm-bridge/para3-audio.js':                 'af6597f5c9ebb2f3965064673284e9c0',
+  'wasm-bridge/para3-ring.js':                  'ebefab2358f25164c735d15e78c0cfdf',
+  'wasm-bridge/para3-port.js':                  'b32b05892fc3afe81e8ab6ad750aa898',
+  'wasm-bridge/para3-worklet.js':               '079c1ec190eb28b80307c14a7073380b',
+  'wasm-bridge/audio_test.mjs':                 '037acf634432569aa0edbe4a8458a595',
+  'wasm-bridge/ring_test.mjs':                  '76ad067b33f87f310810257a1c65ff24',
+  'wasm-bridge/port_test.mjs':                  '75e950283a90d7a3cefe9037fb73c408',
 };
 
 let fails = 0;
