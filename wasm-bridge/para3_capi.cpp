@@ -47,6 +47,7 @@ static para3::ParaEngine::Param mapParam(int id) {
         case PARA3_P_BASS_SPREAD:      return P::BassSpread;       // EXT-BASS B3
         case PARA3_P_BASS_DRIFT_RATE:  return P::BassDriftRate;    // EXT-BASS B3
         case PARA3_P_BASS_DRIFT_DEPTH: return P::BassDriftDepth;   // EXT-BASS B3
+        case PARA3_P_BASS_SUB_LEVEL:   return P::BassSubLevel;     // EXT-BASS B5
         default:                       return P::Cutoff;
     }
 }

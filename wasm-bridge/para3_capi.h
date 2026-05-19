@@ -47,7 +47,8 @@ enum {
     PARA3_P_BASS_PWM_DEPTH   = 18,  // EXT-BASS B2 unipolar, 0 = static PW (default, bit-identical to B1)
     PARA3_P_BASS_SPREAD      = 19,  // EXT-BASS B3 unipolar 0..2 semitones half-spread (additive auf E2.1)
     PARA3_P_BASS_DRIFT_RATE  = 20,  // EXT-BASS B3 unipolar 0.05..5 Hz LP cutoff
-    PARA3_P_BASS_DRIFT_DEPTH = 21   // EXT-BASS B3 unipolar 0..0.15 semitones pitch wander
+    PARA3_P_BASS_DRIFT_DEPTH = 21,  // EXT-BASS B3 unipolar 0..0.15 semitones pitch wander
+    PARA3_P_BASS_SUB_LEVEL   = 22   // EXT-BASS B5 unipolar 0..0.5 sub-osc amplitude (pre-VCF, -1 octave)
 };
 // voice modes mirror ParaAllocator::Mode
 enum {

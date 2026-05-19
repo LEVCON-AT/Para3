@@ -715,6 +715,67 @@ int main() {
         }
     }
 
+    // ---- WA13 EXT-BASS B5 SUB-LEVEL via C-API ----------------------------
+    //  para3_set_param(PARA3_P_BASS_SUB_LEVEL) routes the sub level through
+    //  the engine trichter. Default (no call) = explicit 0 ⇒ bit-identical.
+    //  Setting to max produces audible sub content (RMS rises measurably).
+    {
+        Para3* a = para3_create(sr, Q);
+        Para3* b = para3_create(sr, Q);
+        if (!a || !b) { std::fprintf(stderr, "WA13 create failed\n"); ++failures; }
+        else {
+            para3_set_mode(a, PARA3_M_POLY);
+            para3_set_mode(b, PARA3_M_POLY);
+            para3_set_param(b, PARA3_P_BASS_SUB_LEVEL, 0.0);     // explicit
+            para3_note_on(a, 60);
+            para3_note_on(b, 60);
+            const int N = 32000;
+            std::vector<float> ya(N, 0.f), yb(N, 0.f);
+            for (int i = 0; i < N; i += Q) {
+                const int c = std::min(Q, N - i);
+                para3_render(a, ya.data() + i, c);
+                para3_render(b, yb.data() + i, c);
+            }
+            double maxdNeutral = 0.0;
+            for (int i = 0; i < N; ++i)
+                maxdNeutral = std::max(maxdNeutral, (double)std::fabs(ya[i] - yb[i]));
+
+            // c: sub level=max. RMS comparison.
+            Para3* c = para3_create(sr, Q);
+            para3_set_mode(c, PARA3_M_POLY);
+            para3_set_param(c, PARA3_P_BASS_SUB_LEVEL, 1.0);
+            para3_note_on(c, 60);
+            std::vector<float> yc(N, 0.f);
+            for (int i = 0; i < N; i += Q) {
+                const int q = std::min(Q, N - i);
+                para3_render(c, yc.data() + i, q);
+            }
+            // RMS comparison over the second half (skip initial ramp settle)
+            double rmsBase = 0.0, rmsSub = 0.0;
+            for (int i = 8000; i < N; ++i) {
+                rmsBase += (double)ya[i] * ya[i];
+                rmsSub  += (double)yc[i] * yc[i];
+            }
+            rmsBase = std::sqrt(rmsBase / (N - 8000));
+            rmsSub  = std::sqrt(rmsSub  / (N - 8000));
+            const double rmsGain = rmsSub / std::max(rmsBase, 1e-9);
+
+            bool finiteOk = true;
+            for (int i = 1000; i < N; ++i)
+                if (!std::isfinite(yc[i])) { finiteOk = false; break; }
+
+            const bool pass = (maxdNeutral == 0.0) && (rmsGain >= 1.2) && finiteOk;
+            std::printf("\nWA13 EXT-BASS B5 SUB-LEVEL via C-API\n");
+            std::printf("   default vs explicit 0    max|d|: %.3e  (want == 0)\n", maxdNeutral);
+            std::printf("   rms(sub-on) / rms(base)        : %.3f  (want ≥ 1.2)\n", rmsGain);
+            std::printf("   finite under SubLevel=max     : %s\n", finiteOk?"yes":"NO");
+            std::printf("   -> %s\n", pass?"PASS":"FAIL");
+            if (!pass) ++failures;
+
+            para3_destroy(a); para3_destroy(b); para3_destroy(c);
+        }
+    }
+
     std::printf("\n==================================================\n");
     std::printf("%s  (%d failure%s)\n",
                 failures ? "OVERALL: FAIL" : "OVERALL: PASS",

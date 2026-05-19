@@ -4181,6 +4181,198 @@ int main() {
         if (!pass) ++failures;
     }
 
+    // ---- T70  EXT-BASS B5 NEUTRAL  -----------------------------------------
+    //  SubLevel=0 ⇒ subOsc-Beitrag = subSamp * 0 = 0 (IEEE exakt) ⇒ Engine
+    //  bit-identisch zum B4-Stand. Test mehrere Konfigurationen: default,
+    //  + Stack-on, + Unison, + Fifth — alle mit subLevel=0 explizit gesetzt.
+    {
+        struct Cfg { para3::ParaAllocator::Mode mode; bool stack; };
+        const Cfg cfgs[] = {
+            { para3::ParaAllocator::Mode::Poly,   false },
+            { para3::ParaAllocator::Mode::Unison, false },
+            { para3::ParaAllocator::Mode::Fifth,  false },
+            { para3::ParaAllocator::Mode::Poly,   true  },
+        };
+        double worstMaxd = 0.0;
+        for (auto c : cfgs) {
+            para3::ParaEngine a, b;
+            a.prepare(sr, 4096); b.prepare(sr, 4096);
+            a.setMode(c.mode); b.setMode(c.mode);
+            a.setBassStack(c.stack); b.setBassStack(c.stack);
+            b.setParamNorm(para3::ParaEngine::Param::BassSubLevel, 0.0);  // explicit
+            a.noteOn(60); b.noteOn(60);
+            const int N = 24000;
+            std::vector<float> ya(N), yb(N);
+            a.process(ya.data(), N); b.process(yb.data(), N);
+            for (int i = 0; i < N; ++i)
+                worstMaxd = std::max(worstMaxd, (double)std::fabs(ya[i] - yb[i]));
+        }
+        const bool pass = (worstMaxd == 0.0);
+        std::printf("\nT70 EXT-BASS B5 NEUTRAL  (SubLevel=0 ⇒ bit-identisch zum B4-Stand)\n");
+        std::printf("   worst max|d| über 4 Konfigs     : %.3e  (want == 0)\n", worstMaxd);
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if (!pass) ++failures;
+    }
+
+    // ---- T71  EXT-BASS B5 FUNDAMENTAL  -------------------------------------
+    //  SubLevel > 0, noteOn(60) ⇒ Sub spielt MIDI 48 (≈ 130.81 Hz). FFT zeigt
+    //  Energie bei sub-Frequenz deutlich über dem Niveau ohne Sub.
+    {
+        auto subEnergy = [&](double levelNorm) {
+            para3::ParaEngine eng; eng.prepare(sr, 4096);
+            eng.setMode(para3::ParaAllocator::Mode::Poly);
+            eng.setParamNorm(para3::ParaEngine::Param::Cutoff, 1.0);
+            eng.setParamNorm(para3::ParaEngine::Param::Resonance, 0.0);
+            eng.setParamNorm(para3::ParaEngine::Param::Sustain, 1.0);
+            eng.setParamNorm(para3::ParaEngine::Param::Attack, 0.0);
+            eng.setParamNorm(para3::ParaEngine::Param::LfoCutDepth, 0.0);
+            eng.setParamNorm(para3::ParaEngine::Param::LfoPitchDepth, 0.0);
+            eng.setParamNorm(para3::ParaEngine::Param::DelayMix, 0.0);
+            eng.setParamNorm(para3::ParaEngine::Param::BassSubLevel, levelNorm);
+            eng.noteOn(60);
+            std::vector<float> ramp(8192); eng.process(ramp.data(), 8192);
+            const int N = 32768;
+            std::vector<float> y(N); eng.process(y.data(), N);
+            std::vector<cd> sp(N);
+            for (int i = 0; i < N; ++i) sp[i] = cd(y[i], 0.0);
+            fft(sp);
+            const double binHz = sr / (double)N;
+            const int binSub = (int)std::round(130.81 / binHz);  // MIDI 48
+            double e = 0.0;
+            for (int b = binSub-3; b <= binSub+3; ++b)
+                if (b > 0 && b < N/2) e += std::abs(sp[b]);
+            return e;
+        };
+        const double eOff = subEnergy(0.0);
+        const double eOn  = subEnergy(1.0);
+        const double ratio = eOn / std::max(eOff, 1e-30);
+        const bool pass = ratio >= 5.0;
+        std::printf("\nT71 EXT-BASS B5 FUNDAMENTAL  (Sub @ MIDI 48 ≈ 131 Hz bei noteOn 60)\n");
+        std::printf("   |sp| @ sub-bin  SubLevel=0/max  : %.4e / %.4e  (ratio %.1f, want ≥ 5)\n",
+                    eOff, eOn, ratio);
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if (!pass) ++failures;
+    }
+
+    // ---- T72  EXT-BASS B5 ALIAS  -------------------------------------------
+    //  Sub-Oszillator nutzt PolyBLEP-Pulse @ PW=0.5 (symmetrisch ⇒ Saw-Budget).
+    //  Bei hoher Note (MIDI 108 ⇒ sub bei MIDI 96 ≈ 2093 Hz) muss die
+    //  Sub-Komponente sauber bandbegrenzt sein (Alias ≤ -74 dBc).
+    {
+        // measure sub-only by subtracting "sublevel=0" reference
+        const int    N    = 32768;
+        const double subHz = 2093.0;                     // MIDI 96 ≈ 2093 Hz
+        // Sub-Oszillator direkt (gleich wie Engine-intern), ohne Engine-Filter
+        para3::Oscillator s;
+        s.prepare(sr);
+        s.setWave(1);                                    // EXT-BASS B5 same wave as engine
+        for (int i = 0; i < 8192; ++i) s.process(subHz, 0.5);
+        std::vector<double> buf(N);
+        for (int i = 0; i < N; ++i) buf[i] = s.process(subHz, 0.5);
+        // AC-couple (50% pulse mean ≈ 0; safety)
+        double mean = 0.0; for (double v : buf) mean += v; mean /= (double)N;
+        for (int i = 0; i < N; ++i) buf[i] -= mean;
+        std::vector<cd> sp(N);
+        for (int i = 0; i < N; ++i) sp[i] = cd(buf[i], 0.0);
+        fft(sp);
+        // f0 = 2093 Hz; coherent? not exactly — use band-energy method
+        // Find dominant peaks: harmonics of 2093 ≈ bin (2093 * N/sr)
+        const double binHz = sr / (double)N;
+        const int k0 = (int)std::round(subHz / binHz);
+        double fund = 0.0, alias = 0.0;
+        for (int b = 2; b < N/2; ++b) {
+            // mark harmonic bins (k0, 3*k0, 5*k0 — odd for square)
+            bool isHarm = false;
+            for (int h = 1; h <= 11; h += 2) {
+                const int hb = h * k0;
+                if (std::abs(b - hb) <= 3) { isHarm = true; break; }
+            }
+            const double m = std::abs(sp[b]);
+            if (isHarm) fund = std::max(fund, m);
+            else        alias = std::max(alias, m);
+        }
+        const double aliasDb = 20.0 * std::log10((alias + 1e-30) / (fund + 1e-30));
+        const bool pass = aliasDb <= -74.0;
+        std::printf("\nT72 EXT-BASS B5 ALIAS  (Sub @ MIDI 96 ≈ 2093 Hz, alias ≤ -74 dBc)\n");
+        std::printf("   alias floor                     : %.1f dBc  (want ≤ -74)\n", aliasDb);
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if (!pass) ++failures;
+    }
+
+    // ---- T73  EXT-BASS B5 FILTERED  ----------------------------------------
+    //  Spec §2 B5: "Summe **vor** dem Filter" — Sub durchläuft VCF/VCA wie
+    //  die regulären Stimmen. Beweis: Sub-Energie steigt monoton mit Cutoff.
+    {
+        auto subBandEnergy = [&](double cutoffNorm) {
+            para3::ParaEngine eng; eng.prepare(sr, 4096);
+            eng.setMode(para3::ParaAllocator::Mode::Poly);
+            eng.setParamNorm(para3::ParaEngine::Param::Cutoff, cutoffNorm);
+            eng.setParamNorm(para3::ParaEngine::Param::Resonance, 0.0);
+            eng.setParamNorm(para3::ParaEngine::Param::Sustain, 1.0);
+            eng.setParamNorm(para3::ParaEngine::Param::Attack, 0.0);
+            eng.setParamNorm(para3::ParaEngine::Param::LfoCutDepth, 0.0);
+            eng.setParamNorm(para3::ParaEngine::Param::LfoPitchDepth, 0.0);
+            eng.setParamNorm(para3::ParaEngine::Param::DelayMix, 0.0);
+            eng.setParamNorm(para3::ParaEngine::Param::BassSubLevel, 1.0);
+            eng.noteOn(60);
+            std::vector<float> ramp(8192); eng.process(ramp.data(), 8192);
+            const int N = 32768;
+            std::vector<float> y(N); eng.process(y.data(), N);
+            std::vector<cd> sp(N);
+            for (int i = 0; i < N; ++i) sp[i] = cd(y[i], 0.0);
+            fft(sp);
+            const double binHz = sr / (double)N;
+            const int binSub = (int)std::round(130.81 / binHz);
+            double e = 0.0;
+            for (int b = binSub-3; b <= binSub+3; ++b)
+                if (b > 0 && b < N/2) e += std::abs(sp[b]);
+            return e;
+        };
+        const double eLow  = subBandEnergy(0.20);    // tiefer Cutoff
+        const double eHigh = subBandEnergy(1.00);    // VCF voll offen
+        const double ratio = eHigh / std::max(eLow, 1e-30);
+        // Sub @ 131 Hz, taper(Cutoff, 0.20) = 20*900^0.20 ≈ 80 Hz → Sub stark gedämpft.
+        // taper(Cutoff, 1.00) = 18 kHz → Sub passt voll durch.
+        const bool pass = ratio >= 5.0;
+        std::printf("\nT73 EXT-BASS B5 FILTERED  (Sub durchläuft VCF — Cutoff dämpft den Sub)\n");
+        std::printf("   |sp| sub-bin  Cutoff=20%%/100%%   : %.4e / %.4e  (Ratio %.1f, want ≥ 5)\n",
+                    eLow, eHigh, ratio);
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if (!pass) ++failures;
+    }
+
+    // ---- T74  EXT-BASS B5 NOCLICK  -----------------------------------------
+    //  SubLevel-Ramp 0→max während gehaltener Note: max|dx| ≤ 3× steady-state.
+    //  Klick-frei durch RampParam-Glättung (15 ms).
+    {
+        para3::ParaEngine eng; eng.prepare(sr, 4096);
+        eng.setMode(para3::ParaAllocator::Mode::Poly);
+        eng.setParamNorm(para3::ParaEngine::Param::Cutoff, 0.8);
+        eng.setParamNorm(para3::ParaEngine::Param::Resonance, 0.0);
+        eng.setParamNorm(para3::ParaEngine::Param::Sustain, 1.0);
+        eng.setParamNorm(para3::ParaEngine::Param::Attack, 0.0);
+        eng.setParamNorm(para3::ParaEngine::Param::BassSubLevel, 0.0);
+        eng.noteOn(60);
+        const int N1 = 24000, N2 = 24000;
+        std::vector<float> buf(N1 + N2);
+        eng.process(buf.data(), N1);
+        eng.setParamNorm(para3::ParaEngine::Param::BassSubLevel, 1.0);   // ramp to max
+        eng.process(buf.data() + N1, N2);
+        const double switchDx = maxAbsDelta(buf, N1 - 64, N1 + 2400);
+        const double earlyDx  = maxAbsDelta(buf, 4000, 16000);
+        const double lateDx   = maxAbsDelta(buf, N1+12000, N1+22000);
+        const double steadyDx = std::max(earlyDx, lateDx);
+        const bool bounded = (switchDx <= 3.0 * steadyDx);
+        const bool pass = bounded;
+        std::printf("\nT74 EXT-BASS B5 NOCLICK  (SubLevel-Ramp 0→max während gehaltener Note)\n");
+        std::printf("   max|dx| switch / off / on       : %.3e / %.3e / %.3e\n",
+                    switchDx, earlyDx, lateDx);
+        std::printf("   switch / max(steady)            : %.2fx  (want ≤ 3.0)\n",
+                    switchDx / std::max(steadyDx, 1e-30));
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if (!pass) ++failures;
+    }
+
     std::printf("\n==================================================\n");
     std::printf("%s  (%d failure%s)\n",
                 failures ? "OVERALL: FAIL" : "OVERALL: PASS",
