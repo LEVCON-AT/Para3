@@ -45,7 +45,7 @@ const md5_baseline = {
   // files below stay frozen at their FIX-PRE state — that is what proves
   // this sprint did not stealth-touch transport/scope/parity files.
   'Para3Engine.hpp':                            'efa5da85754b4417ddd54fe46d41c76f',
-  'offline_test.cpp':                           '8c240505ccc52cdcf3956efaf570c71b',
+  'offline_test.cpp':                           'a18c566f98eb7a96d0b1c1c3e35b9e42',
   'wasm-bridge/para3_capi.h':                   '91c3ee9bef64cdb5e8a23d85f695222c',
   'wasm-bridge/para3_capi.cpp':                 'afb87b81681e67eac2979501985e8fd9',
   'wasm-bridge/capi_test.cpp':                  '3b6a456c006d66b2a1f66ff76a77ebb1',

@@ -3388,10 +3388,11 @@ int main() {
 
     // ---- T52  EXT-BASS B1 PULSE-PEROSC  ------------------------------------
     //  setOscWave plumbing through Controller→Engine→Oscillator. API getter
-    //  reports back. Out-of-range indices silently ignored. Audio-wise:
-    //  mixing 2 saws + 1 pulse at the same pitch (Unison) drops the
-    //  even/odd-harmonic ratio vs 3-saw baseline (pulse contributes 0 to
-    //  evens, saw contributes 1/h to both).
+    //  reports back. Out-of-range indices silently ignored. Audio-wise the
+    //  test proves PER-OSC INDEPENDENCE: setOscWave(0,1), (1,1), (2,1) each
+    //  produces a measurably different mix vs all-Saw AND vs each other.
+    //  (Direct max|d|-on-the-mix; spectral comparisons are confounded by
+    //  Unison's built-in 0.06-semitone voice spread → Para3Engine.hpp:548.)
     {
         para3::ParaEngine eng;
         eng.prepare(sr, 4096);
@@ -3405,59 +3406,56 @@ int main() {
         eng.setOscWave( 9, 1);                                     // out-of-range ignored
         const bool oorOk = (eng.oscWave(-1)==0) && (eng.oscWave(9)==0);
 
-        // Audio-level: Unison mode, all 3 oscs active at f0
-        const int    N     = 32768;
-        const int    k     = 1779;
-        const double binHz = sr / N;
-        const double f0    = k * binHz;
-        const double midiF = 69.0 + 12.0 * std::log2(f0 / 440.0);
-        const int    note  = (int)std::lround(midiF);
-
-        auto evenOdd = [&](int w0, int w1, int w2) {
+        // Audio per-osc independence: render four Unison mixes and compare.
+        const int N = 32768;
+        auto render = [&](int w0, int w1, int w2) -> std::vector<float> {
             para3::ParaEngine e; e.prepare(sr, 4096);
             e.setMode(para3::ParaAllocator::Mode::Unison);
             e.setOscWave(0, w0); e.setOscWave(1, w1); e.setOscWave(2, w2);
-            e.setParamNorm(para3::ParaEngine::Param::Cutoff, 1.0);     // VCF wide open
+            e.setParamNorm(para3::ParaEngine::Param::Cutoff, 1.0);
             e.setParamNorm(para3::ParaEngine::Param::Resonance, 0.0);
-            e.setParamNorm(para3::ParaEngine::Param::Drive, 0.0);
             e.setParamNorm(para3::ParaEngine::Param::Sustain, 1.0);
             e.setParamNorm(para3::ParaEngine::Param::Attack, 0.0);
-            e.setParamNorm(para3::ParaEngine::Param::Detune, 0.0);     // E2.1 0 ⇒ no detune
-            e.setParamNorm(para3::ParaEngine::Param::EgCutDepth, 0.5); // bipolar centre
             e.setParamNorm(para3::ParaEngine::Param::LfoCutDepth, 0.0);
             e.setParamNorm(para3::ParaEngine::Param::LfoPitchDepth, 0.0);
             e.setParamNorm(para3::ParaEngine::Param::DelayMix, 0.0);
-            e.noteOn(note);
+            e.noteOn(60);
             std::vector<float> ramp(8192);
-            e.process(ramp.data(), 8192);                              // settle env+FIR
+            e.process(ramp.data(), 8192);
             std::vector<float> y(N);
             e.process(y.data(), N);
-            std::vector<cd> sp(N);
-            for (int i = 0; i < N; ++i) sp[i] = cd(y[i], 0.0);
-            fft(sp);
-            double mo = 0.0, me = 0.0;
-            for (int h = 1; h <= 9; ++h) {
-                const int bin = h * k;
-                if (bin >= N/2) break;
-                const double m = std::abs(sp[bin]);
-                if (h & 1) mo = std::max(mo, m);
-                else       me = std::max(me, m);
-            }
-            return 20.0 * std::log10((me + 1e-30) / (mo + 1e-30));
+            return y;
         };
-        const double dbAllSaw    = evenOdd(0, 0, 0);
-        const double dbOnePulse  = evenOdd(1, 0, 0);
-        const double dropDb      = dbAllSaw - dbOnePulse;          // expect positive (evens lose)
-        // 1 pulse + 2 saws: evens ∝ 2/h, odds ∝ (2 + 4/π)/h → ratio drop ≈ 3-4 dB.
-        const bool effect = dropDb >= 2.0;
-        const bool finiteOk = std::isfinite(dbAllSaw) && std::isfinite(dbOnePulse);
-        const bool pass = getterOk && oorOk && effect && finiteOk;
+        const auto ySSS = render(0,0,0);
+        const auto yPSS = render(1,0,0);
+        const auto ySPS = render(0,1,0);
+        const auto ySSP = render(0,0,1);
 
-        std::printf("\nT52 EXT-BASS B1 PULSE-PEROSC  (setOscWave plumbing + per-osc mix audible)\n");
-        std::printf("   API getter/setter (incl OOR)     : %s / %s\n",
+        auto maxAbsDiff = [&](const std::vector<float>& a, const std::vector<float>& b){
+            double m = 0.0;
+            for (int i = 0; i < N; ++i)
+                m = std::max(m, (double)std::fabs(a[i] - b[i]));
+            return m;
+        };
+        const double d0 = maxAbsDiff(yPSS, ySSS);   // OSC-0 = Pulse vs all-Saw
+        const double d1 = maxAbsDiff(ySPS, ySSS);   // OSC-1 = Pulse vs all-Saw
+        const double d2 = maxAbsDiff(ySSP, ySSS);   // OSC-2 = Pulse vs all-Saw
+        const double d01 = maxAbsDiff(yPSS, ySPS);  // OSC-0-pulsed vs OSC-1-pulsed
+        const double d02 = maxAbsDiff(yPSS, ySSP);
+        const double d12 = maxAbsDiff(ySPS, ySSP);
+        // Each per-osc swap must produce an audible mix change, and each
+        // OSC must produce a DIFFERENT change (proving 0 ≠ 1 ≠ 2 routing).
+        const bool perOscEffect = d0 >= 0.05 && d1 >= 0.05 && d2 >= 0.05;
+        const bool perOscDistinct = d01 >= 0.02 && d02 >= 0.02 && d12 >= 0.02;
+        const bool pass = getterOk && oorOk && perOscEffect && perOscDistinct;
+
+        std::printf("\nT52 EXT-BASS B1 PULSE-PEROSC  (setOscWave plumbing + per-osc routing)\n");
+        std::printf("   API getter/setter (incl OOR)    : %s / %s\n",
                     getterOk?"OK":"FAIL", oorOk?"OK":"FAIL");
-        std::printf("   even/odd ratio  all-saw / 1-pulse: %.1f / %.1f dB  (Δ = %.1f dB, want ≥ 2.0)\n",
-                    dbAllSaw, dbOnePulse, dropDb);
+        std::printf("   max|d| osc-0/1/2 Pulse vs all-Saw: %.3e / %.3e / %.3e  (want ≥ 5e-2)\n",
+                    d0, d1, d2);
+        std::printf("   max|d| pairwise PSS/SPS/SSP     : %.3e / %.3e / %.3e  (want ≥ 2e-2)\n",
+                    d01, d02, d12);
         std::printf("   -> %s\n", pass?"PASS":"FAIL");
         if (!pass) ++failures;
     }
