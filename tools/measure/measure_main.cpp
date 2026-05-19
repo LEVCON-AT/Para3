@@ -2221,6 +2221,431 @@ static MEntry M8_4_fluxLoopLen() {
 }
 
 // =============================================================================
+//  LAB-6 :: M9.x Arpeggiator (EXT-ARP)
+// =============================================================================
+
+// Helper: track arp note sequence by sliding FFT. Returns sequence of MIDI
+// notes (rounded from peak frequency). Skips silent windows (peak < threshold).
+[[maybe_unused]]
+static std::vector<int> arpSequence(P3::Controller& c,
+                                     std::size_t totalSamples,
+                                     double winSec,
+                                     double hopSec,
+                                     double thresh = 0.05) {
+    std::vector<float> all(totalSamples);
+    c.render(all.data(), (int)totalSamples);
+    const std::size_t W = (std::size_t)(SR * winSec);
+    const std::size_t H = (std::size_t)(SR * hopSec);
+    std::vector<int> seq;
+    int lastNote = -999;
+    for (std::size_t i = 0; i + W <= all.size(); i += H) {
+        std::vector<float> seg(all.begin() + i, all.begin() + i + W);
+        double s2 = 0; for (float v : seg) s2 += (double)v * v;
+        const double rms = std::sqrt(s2 / seg.size());
+        if (rms < thresh) { lastNote = -999; continue; }
+        auto sp = spectrum(seg);
+        const double f = peakFreqInterp(sp.magDb, sp.N, SR);
+        const int midi = (int)std::round(12.0 * std::log2(f / 440.0) + 69.0);
+        if (midi != lastNote) { seq.push_back(midi); lastNote = midi; }
+    }
+    return seq;
+}
+
+// Same but with candidate-note band-energy detection (robust for ARP tests
+// where candidate MIDIs are known up front). Picks the loudest-band candidate
+// in each window instead of free peak detection — robust during ARP note
+// transitions which briefly mix two frequencies.
+static std::vector<int> arpSeqBanded(P3::Controller& c,
+                                      std::size_t totalSamples,
+                                      double winSec,
+                                      double hopSec,
+                                      const std::vector<int>& candidates,
+                                      double thresh = 0.02) {
+    std::vector<float> all(totalSamples);
+    c.render(all.data(), (int)totalSamples);
+    const std::size_t W = (std::size_t)(SR * winSec);
+    const std::size_t H = (std::size_t)(SR * hopSec);
+    std::vector<int> seq;
+    int lastNote = -999;
+    for (std::size_t i = 0; i + W <= all.size(); i += H) {
+        std::vector<float> seg(all.begin() + i, all.begin() + i + W);
+        double s2 = 0; for (float v : seg) s2 += (double)v * v;
+        const double rms = std::sqrt(s2 / seg.size());
+        // ⚠ Don't reset lastNote on silence — gate < 1 creates brief gaps
+        //   between arp notes. We only push when the *non-silent* detection
+        //   actually changes; identical notes separated by a gate-gap don't
+        //   produce a duplicate.
+        if (rms < thresh) { continue; }
+        auto sp = spectrum(seg);
+        int best = candidates[0]; double bestE = -1e9;
+        for (int cand : candidates) {
+            const double f = midiHz(cand);
+            double e = 0;
+            for (std::size_t k = 1; k < sp.magDb.size(); ++k) {
+                const double fk = (double)k * SR / sp.N;
+                if (fk < f - 10) { continue; }
+                if (fk > f + 10) { break; }
+                e += std::pow(10.0, sp.magDb[k] / 10.0);   // linear power
+            }
+            if (e > bestE) { bestE = e; best = cand; }
+        }
+        if (best != lastNote) { seq.push_back(best); lastNote = best; }
+    }
+    return seq;
+}
+
+// -- M9.1 ARP UP --------------------------------------------------------------
+// Frage:  Spielt ARP-Mode UP die Akkord-Noten aufsteigend zyklisch ab?
+// Mess:   noteOn 60, 64, 67. ARP enable, mode=0 (UP), rate=2 (1/8T = 187.5 ms
+//         pro Note → genug Zeit für 2-3 stabile FFT-Windows). HOLD on, Sustain
+//         hoch → stabiler Pegel pro Note. Sliding FFT mit Band-Energy-Detektor.
+static MEntry M9_1_arpUp() {
+    P3::ParaEngine e; e.prepare(SR, 256);
+    setNeutralPatch(e);
+    e.setParamNorm(P3::ParaEngine::Param::DecRel,  0.3);
+    e.setParamNorm(P3::ParaEngine::Param::Sustain, 0.8);
+    P3::Controller c; c.prepare(e, SR);
+    c.setSeqTempo(120.0, 4);
+    c.setArpHold(true);
+    c.setArpMode(0);
+    c.setArpRate(1);             // 1/8 = 250 ms / Note → 2 Notes/0.5 s
+    c.setArpGate(0.9);
+    c.setArpOctaves(1);
+    c.setArpEnabled(true);
+    c.midiNoteOn(60); c.midiNoteOn(64); c.midiNoteOn(67);
+    c.midiNoteOff(60); c.midiNoteOff(64); c.midiNoteOff(67);
+
+    auto seq = arpSeqBanded(c, (std::size_t)(SR * 2.5), 0.120, 0.060, {60, 64, 67});
+    const int exp[] = {60, 64, 67, 60, 64, 67};
+    bool ok = seq.size() >= 6;
+    if (ok) for (int i = 0; i < 6; ++i)
+        if (std::abs(seq[i] - exp[i]) > 1) ok = false;
+
+    MEntry m; m.id="M9.1"; m.section="ARP";
+    m.what="ARP UP plays chord ascending cyclically";
+    m.metric="first_6_notes"; m.unit="MIDI";
+    m.expected="60,64,67,60,64,67";
+    std::string mstr;
+    for (std::size_t i = 0; i < std::min<std::size_t>(seq.size(), 6); ++i) {
+        if (!mstr.empty()) mstr += ",";
+        char b[8]; std::snprintf(b, sizeof b, "%d", seq[i]); mstr += b;
+    }
+    m.measured = mstr;
+    m.pass = ok;
+    m.svgPath = "";
+    return m;
+}
+
+// -- M9.2 ARP DN --------------------------------------------------------------
+static MEntry M9_2_arpDn() {
+    P3::ParaEngine e; e.prepare(SR, 256);
+    setNeutralPatch(e);
+    e.setParamNorm(P3::ParaEngine::Param::DecRel,  0.3);
+    e.setParamNorm(P3::ParaEngine::Param::Sustain, 0.8);
+    P3::Controller c; c.prepare(e, SR);
+    c.setSeqTempo(120.0, 4);
+    c.setArpHold(true);
+    c.setArpMode(1);   // DN
+    c.setArpRate(1);
+    c.setArpGate(0.9);
+    c.setArpOctaves(1);
+    c.setArpEnabled(true);
+    c.midiNoteOn(60); c.midiNoteOn(64); c.midiNoteOn(67);
+    c.midiNoteOff(60); c.midiNoteOff(64); c.midiNoteOff(67);
+
+    auto seq = arpSeqBanded(c, (std::size_t)(SR * 2.5), 0.120, 0.060, {60, 64, 67});
+    const int exp[] = {67, 64, 60, 67, 64, 60};
+    bool ok = seq.size() >= 6;
+    if (ok) for (int i = 0; i < 6; ++i)
+        if (std::abs(seq[i] - exp[i]) > 1) ok = false;
+
+    MEntry m; m.id="M9.2"; m.section="ARP";
+    m.what="ARP DN plays chord descending cyclically";
+    m.metric="first_6_notes"; m.unit="MIDI";
+    m.expected="67,64,60,67,64,60";
+    std::string mstr;
+    for (std::size_t i = 0; i < std::min<std::size_t>(seq.size(), 6); ++i) {
+        if (!mstr.empty()) mstr += ",";
+        char b[8]; std::snprintf(b, sizeof b, "%d", seq[i]); mstr += b;
+    }
+    m.measured = mstr; m.pass = ok; m.svgPath = "";
+    return m;
+}
+
+// -- M9.3 ARP UP+DN -----------------------------------------------------------
+static MEntry M9_3_arpUpDn() {
+    P3::ParaEngine e; e.prepare(SR, 256);
+    setNeutralPatch(e);
+    e.setParamNorm(P3::ParaEngine::Param::DecRel,  0.3);
+    e.setParamNorm(P3::ParaEngine::Param::Sustain, 0.8);
+    P3::Controller c; c.prepare(e, SR);
+    c.setSeqTempo(120.0, 4);
+    c.setArpHold(true);
+    c.setArpMode(2);   // UP+DN
+    c.setArpRate(1);
+    c.setArpGate(0.9);
+    c.setArpOctaves(1);
+    c.setArpEnabled(true);
+    c.midiNoteOn(60); c.midiNoteOn(64); c.midiNoteOn(67);
+    c.midiNoteOff(60); c.midiNoteOff(64); c.midiNoteOff(67);
+
+    auto seq = arpSeqBanded(c, (std::size_t)(SR * 3.0), 0.120, 0.060, {60, 64, 67});
+    // Mind. enthält UP-Phase (60,64,67) + DN-Phase (im engineer's choice).
+    // Wir prüfen, dass sowohl aufsteigende als auch absteigende Übergänge
+    // vorkommen.
+    bool hasUp = false, hasDn = false;
+    for (std::size_t i = 1; i < seq.size(); ++i) {
+        if (seq[i] > seq[i-1]) hasUp = true;
+        if (seq[i] < seq[i-1]) hasDn = true;
+    }
+
+    MEntry m; m.id="M9.3"; m.section="ARP";
+    m.what="ARP UP+DN contains both ascending and descending steps";
+    m.metric="has_both_directions"; m.unit="";
+    m.expected="yes/yes";
+    m.measured = std::string(hasUp ? "up:y" : "up:n") + "/" + (hasDn ? "dn:y" : "dn:n");
+    m.pass = hasUp && hasDn;
+    m.svgPath = "";
+    return m;
+}
+
+// -- M9.4 ARP AS-PLAYED -------------------------------------------------------
+// Frage:  Spielt Mode AS-PLAYED die Noten in Reihenfolge der Eingabe?
+// Mess:   noteOn 67, 60, 64 (NICHT aufsteigend). Erwarteter Anfang: 67, 60, 64.
+static MEntry M9_4_arpAsPlayed() {
+    P3::ParaEngine e; e.prepare(SR, 256);
+    setNeutralPatch(e);
+    e.setParamNorm(P3::ParaEngine::Param::DecRel,  0.3);
+    e.setParamNorm(P3::ParaEngine::Param::Sustain, 0.8);
+    P3::Controller c; c.prepare(e, SR);
+    c.setSeqTempo(120.0, 4);
+    c.setArpHold(true);
+    c.setArpMode(3);   // AS-PLAYED
+    c.setArpRate(1);
+    c.setArpGate(0.9);
+    c.setArpOctaves(1);
+    c.setArpEnabled(true);
+    c.midiNoteOn(67); c.midiNoteOn(60); c.midiNoteOn(64);
+    c.midiNoteOff(67); c.midiNoteOff(60); c.midiNoteOff(64);
+
+    auto seq = arpSeqBanded(c, (std::size_t)(SR * 2.5), 0.120, 0.060, {60, 64, 67});
+    const int exp[] = {67, 60, 64};
+    bool ok = seq.size() >= 3;
+    if (ok) for (int i = 0; i < 3; ++i)
+        if (std::abs(seq[i] - exp[i]) > 1) ok = false;
+
+    MEntry m; m.id="M9.4"; m.section="ARP";
+    m.what="ARP AS-PLAYED honours input order";
+    m.metric="first_3_notes"; m.unit="MIDI";
+    m.expected="67,60,64 (input order)";
+    std::string mstr;
+    for (std::size_t i = 0; i < std::min<std::size_t>(seq.size(), 3); ++i) {
+        if (!mstr.empty()) mstr += ",";
+        char b[8]; std::snprintf(b, sizeof b, "%d", seq[i]); mstr += b;
+    }
+    m.measured = mstr; m.pass = ok; m.svgPath = "";
+    return m;
+}
+
+// -- M9.5 ARP RANDOM seed determinism -----------------------------------------
+// Frage:  Bei gleichem Seed muss die RANDOM-Sequenz identisch sein.
+static MEntry M9_5_arpRandomSeed() {
+    auto runWithSeed = [&](unsigned seed) -> std::vector<int> {
+        P3::ParaEngine e; e.prepare(SR, 256);
+        setNeutralPatch(e);
+        e.setParamNorm(P3::ParaEngine::Param::DecRel,  0.05);
+        e.setParamNorm(P3::ParaEngine::Param::Sustain, 0.0);
+        P3::Controller c; c.prepare(e, SR);
+        c.setSeqTempo(120.0, 4);
+        c.setArpHold(true);
+        c.setArpMode(4);   // RANDOM
+        c.setArpRate(3);
+        c.setArpGate(0.8);
+        c.setArpOctaves(1);
+        c.setArpSeed(seed);
+        c.setArpEnabled(true);
+        c.midiNoteOn(60); c.midiNoteOn(64); c.midiNoteOn(67); c.midiNoteOn(72);
+        c.midiNoteOff(60); c.midiNoteOff(64); c.midiNoteOff(67); c.midiNoteOff(72);
+        return arpSeqBanded(c, (std::size_t)(SR * 1.0), 0.080, 0.050, {60, 64, 67, 72});
+    };
+    auto s1 = runWithSeed(0xDEAD);
+    auto s2 = runWithSeed(0xDEAD);
+    bool ok = s1.size() == s2.size() && s1.size() >= 4;
+    if (ok) for (std::size_t i = 0; i < s1.size(); ++i)
+        if (s1[i] != s2[i]) ok = false;
+
+    MEntry m; m.id="M9.5"; m.section="ARP";
+    m.what="ARP RANDOM is reproducible with same seed";
+    m.metric="identical_sequence_runs"; m.unit="";
+    m.expected="identical";
+    m.measured = ok ? "identical" : "different";
+    m.pass = ok;
+    m.svgPath = "";
+    return m;
+}
+
+// -- M9.6 ARP rate accuracy ---------------------------------------------------
+// Frage:  Erhöht arpRate-Index die Note-Wechsel-Frequenz?
+// Mess:   Rate 0 (1/4) vs Rate 5 (1/32). 1 s Capture. Note-Wechsel zählen.
+static MEntry M9_6_arpRate() {
+    auto countTransitions = [&](int rate) -> int {
+        P3::ParaEngine e; e.prepare(SR, 256);
+        setNeutralPatch(e);
+        e.setParamNorm(P3::ParaEngine::Param::DecRel,  0.05);
+        e.setParamNorm(P3::ParaEngine::Param::Sustain, 0.0);
+        P3::Controller c; c.prepare(e, SR);
+        c.setSeqTempo(120.0, 4);
+        c.setArpHold(true);
+        c.setArpMode(0);
+        c.setArpRate(rate);
+        c.setArpGate(0.7);
+        c.setArpOctaves(1);
+        c.setArpEnabled(true);
+        c.midiNoteOn(60); c.midiNoteOn(64); c.midiNoteOn(67);
+        c.midiNoteOff(60); c.midiNoteOff(64); c.midiNoteOff(67);
+        auto seq = arpSeqBanded(c, (std::size_t)(SR * 1.0), 0.040, 0.020, {60, 64, 67});
+        return (int)seq.size();
+    };
+    const int slow = countTransitions(0);   // 1/4
+    const int fast = countTransitions(5);   // 1/32
+    MEntry m; m.id="M9.6"; m.section="ARP";
+    m.what="ARP rate index 0 → 5 increases transition count";
+    m.metric="ratio_fast_to_slow"; m.unit="";
+    m.expected="≥ 4";
+    const double ratio = (slow > 0) ? (double)fast / slow : 0;
+    char b[32]; std::snprintf(b, sizeof b, "%.1f", ratio); m.measured=b;
+    m.pass = ratio >= 4.0;
+    m.svgPath = "";
+    char nb[80]; std::snprintf(nb, sizeof nb,
+        "slow (1/4): %d transitions, fast (1/32): %d", slow, fast);
+    m.note = nb;
+    return m;
+}
+
+// -- M9.7 ARP octaves ---------------------------------------------------------
+// Frage:  Erhöht arpOctaves=3 die Oktaven-Spanne des Output-Spektrums?
+static MEntry M9_7_arpOctaves() {
+    auto runOct = [&](int octs) -> std::vector<int> {
+        P3::ParaEngine e; e.prepare(SR, 256);
+        setNeutralPatch(e);
+        e.setParamNorm(P3::ParaEngine::Param::DecRel,  0.05);
+        e.setParamNorm(P3::ParaEngine::Param::Sustain, 0.0);
+        P3::Controller c; c.prepare(e, SR);
+        c.setSeqTempo(120.0, 4);
+        c.setArpHold(true);
+        c.setArpMode(0);
+        c.setArpRate(3);
+        c.setArpGate(0.7);
+        c.setArpOctaves(octs);
+        c.setArpEnabled(true);
+        c.midiNoteOn(60); c.midiNoteOff(60);
+        return arpSeqBanded(c, (std::size_t)(SR * 1.5), 0.080, 0.050,
+                            {60, 72, 84, 96});
+    };
+    auto s1 = runOct(1);   // 1 oct → only 60 repeating
+    auto s3 = runOct(3);   // 3 oct → 60, 72, 84, 60 …
+
+    int mx1 = 0, mn1 = 128; for (int n : s1) { mx1 = std::max(mx1, n); mn1 = std::min(mn1, n); }
+    int mx3 = 0, mn3 = 128; for (int n : s3) { mx3 = std::max(mx3, n); mn3 = std::min(mn3, n); }
+    const int range1 = mx1 - mn1, range3 = mx3 - mn3;
+
+    MEntry m; m.id="M9.7"; m.section="ARP";
+    m.what="ARP octaves widens MIDI range";
+    m.metric="range_3oct_vs_1oct"; m.unit="semitones";
+    m.expected="≥ 20";
+    char b[32]; std::snprintf(b, sizeof b, "%d / %d", range3, range1); m.measured=b;
+    m.pass = range3 >= 20 && range1 <= 4;
+    m.svgPath = "";
+    return m;
+}
+
+// -- M9.8 ARP gate ------------------------------------------------------------
+// Frage:  Verkürzt arpGate < 1 die Note-Dauer (mehr Stille zwischen Noten)?
+// Mess:   Gate 0.3 vs 0.9. Sustain hoch + langes DecRel, damit die Note
+//         während des Gates auf vollem Pegel sitzt. RMS-Differenz = Gate-Effekt.
+static MEntry M9_8_arpGate() {
+    auto runGate = [&](double g) -> double {
+        P3::ParaEngine e; e.prepare(SR, 256);
+        setNeutralPatch(e);
+        e.setParamNorm(P3::ParaEngine::Param::Attack,  0.0);
+        e.setParamNorm(P3::ParaEngine::Param::DecRel,  0.3);
+        e.setParamNorm(P3::ParaEngine::Param::Sustain, 0.9);
+        P3::Controller c; c.prepare(e, SR);
+        c.setSeqTempo(120.0, 4);
+        c.setArpHold(true);
+        c.setArpMode(0);
+        c.setArpRate(1);              // 1/8 = 250 ms / Note
+        c.setArpGate(g);
+        c.setArpOctaves(1);
+        c.setArpEnabled(true);
+        c.midiNoteOn(60); c.midiNoteOn(64); c.midiNoteOn(67);
+        c.midiNoteOff(60); c.midiNoteOff(64); c.midiNoteOff(67);
+        auto out = ctlRender(c, (std::size_t)(SR * 2.0));
+        double s2 = 0; for (float v : out) s2 += (double)v * v;
+        return std::sqrt(s2 / out.size());
+    };
+    const double rmsLow  = runGate(0.3);
+    const double rmsHigh = runGate(0.9);
+    const double ratio = (rmsHigh > 0) ? rmsLow / rmsHigh : 0;
+
+    MEntry m; m.id="M9.8"; m.section="ARP";
+    m.what="ARP gate < 1 reduces total RMS";
+    m.metric="ratio_gate_0.3_to_0.9"; m.unit="";
+    m.expected="< 0.85";
+    char b[32]; std::snprintf(b, sizeof b, "%.3f", ratio); m.measured=b;
+    m.pass = ratio < 0.85;
+    m.svgPath = "";
+    return m;
+}
+
+// -- M9.9 ARP HOLD ------------------------------------------------------------
+// Frage:  Hält HOLD die Akkord-Noten auch nach noteOff fest? (Vergleich ohne
+//         HOLD: bei noteOff stoppt der ARP, RMS am Ende der 1 s ≈ 0.)
+static MEntry M9_9_arpHold() {
+    auto runHold = [&](bool hold) -> double {
+        P3::ParaEngine e; e.prepare(SR, 256);
+        setNeutralPatch(e);
+        e.setParamNorm(P3::ParaEngine::Param::DecRel,  0.05);
+        e.setParamNorm(P3::ParaEngine::Param::Sustain, 0.0);
+        P3::Controller c; c.prepare(e, SR);
+        c.setSeqTempo(120.0, 4);
+        c.setArpHold(hold);
+        c.setArpMode(0);
+        c.setArpRate(3);
+        c.setArpGate(0.7);
+        c.setArpOctaves(1);
+        c.setArpEnabled(true);
+        c.midiNoteOn(60); c.midiNoteOn(64); c.midiNoteOn(67);
+        // Release keys after 100 ms of arp running
+        std::vector<float> a((std::size_t)(SR * 0.1));
+        c.render(a.data(), (int)a.size());
+        c.midiNoteOff(60); c.midiNoteOff(64); c.midiNoteOff(67);
+        // Measure RMS in 700..1000 ms range (well after releases)
+        std::vector<float> b((std::size_t)(SR * 0.9));
+        c.render(b.data(), (int)b.size());
+        double s2 = 0; int n = 0;
+        const std::size_t a2 = (std::size_t)(SR * 0.6);  // 600 ms into b → 700 ms total
+        for (std::size_t i = a2; i < b.size(); ++i) { s2 += (double)b[i] * b[i]; ++n; }
+        return (n > 0) ? std::sqrt(s2 / n) : 0;
+    };
+    const double withHold = runHold(true);
+    const double noHold   = runHold(false);
+
+    MEntry m; m.id="M9.9"; m.section="ARP";
+    m.what="HOLD latches arp pool after noteOff";
+    m.metric="ratio_no_hold_to_hold"; m.unit="";
+    m.expected="< 0.1 (no-hold goes silent)";
+    const double ratio = (withHold > 1e-9) ? noHold / withHold : 1.0;
+    char b[32]; std::snprintf(b, sizeof b, "%.3f", ratio); m.measured=b;
+    m.pass = ratio < 0.1 && withHold > 0.01;
+    m.svgPath = "";
+    char nb[64]; std::snprintf(nb, sizeof nb,
+        "hold RMS=%.4f, no-hold RMS=%.4f", withHold, noHold);
+    m.note = nb;
+    return m;
+}
+
+// =============================================================================
 //  Driver
 // =============================================================================
 int main(int argc, char** argv) {
@@ -2283,7 +2708,16 @@ int main(int argc, char** argv) {
     if (want("M8.3")) manifest.add(M8_3_fluxQuantize());
     if (want("M8.4")) manifest.add(M8_4_fluxLoopLen());
 
-    // ---- LAB-6: M9.x werden in LAB-6 ergänzt ----
+    // ---- LAB-6 Arpeggiator ----
+    if (want("M9.1")) manifest.add(M9_1_arpUp());
+    if (want("M9.2")) manifest.add(M9_2_arpDn());
+    if (want("M9.3")) manifest.add(M9_3_arpUpDn());
+    if (want("M9.4")) manifest.add(M9_4_arpAsPlayed());
+    if (want("M9.5")) manifest.add(M9_5_arpRandomSeed());
+    if (want("M9.6")) manifest.add(M9_6_arpRate());
+    if (want("M9.7")) manifest.add(M9_7_arpOctaves());
+    if (want("M9.8")) manifest.add(M9_8_arpGate());
+    if (want("M9.9")) manifest.add(M9_9_arpHold());
 
     manifest.writeCsv(OUT_DIR + "/MANIFEST.csv");
     manifest.writeMarkdownTable(OUT_DIR + "/MANIFEST.md",

@@ -44,5 +44,14 @@
 | M8.2 | FLUX | FLUX param event darkens second half of loop | early_to_late_drop | > 8 | 106.0 | dB | PASS | [svg](../docs/measurements/M8.2-flux-param.svg) |
 | M8.3 | FLUX | Quantize snaps off-grid event onto loop/16 | quant_vs_fine_diff | ≥ 500 | 984 | samples | PASS |  |
 | M8.4 | FLUX | FLUX loop length respected, two onsets in two loops | onset_err_max | < 200 | 79 | samples | PASS |  |
+| M9.1 | ARP | ARP UP plays chord ascending cyclically | first_6_notes | 60,64,67,60,64,67 | 60,64,67,60,64,67 | MIDI | PASS |  |
+| M9.2 | ARP | ARP DN plays chord descending cyclically | first_6_notes | 67,64,60,67,64,60 | 67,64,60,67,64,60 | MIDI | PASS |  |
+| M9.3 | ARP | ARP UP+DN contains both ascending and descending steps | has_both_directions | yes/yes | up:y/dn:y |  | PASS |  |
+| M9.4 | ARP | ARP AS-PLAYED honours input order | first_3_notes | 67,60,64 (input order) | 67,60,64 | MIDI | PASS |  |
+| M9.5 | ARP | ARP RANDOM is reproducible with same seed | identical_sequence_runs | identical | identical |  | PASS |  |
+| M9.6 | ARP | ARP rate index 0 → 5 increases transition count | ratio_fast_to_slow | ≥ 4 | 17.0 |  | PASS |  |
+| M9.7 | ARP | ARP octaves widens MIDI range | range_3oct_vs_1oct | ≥ 20 | 24 / 0 | semitones | PASS |  |
+| M9.8 | ARP | ARP gate < 1 reduces total RMS | ratio_gate_0.3_to_0.9 | < 0.85 | 0.681 |  | PASS |  |
+| M9.9 | ARP | HOLD latches arp pool after noteOff | ratio_no_hold_to_hold | < 0.1 (no-hold goes silent) | 0.000 |  | PASS |  |
 
-Total: 42 — Failures: 0
+Total: 51 — Failures: 0
