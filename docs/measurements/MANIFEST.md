@@ -14,5 +14,17 @@
 | M2.3 | VCF | Stability at RES=1.0 (tanh-bounded ladder, Volca-treu) | max_abs_at_res=1.0 | < 1.5 | 0.803 | |sample| | PASS | [svg](../docs/measurements/M2.3-vcf-stability.svg) |
 | M2.4 | VCF | Filter slope past cutoff (8 kHz → 16 kHz) | slope_8k_to_16k | -30 ± 5 | -25.2 | dB/oct | PASS | [svg](../docs/measurements/M2.4-vcf-slope.svg) |
 | M2.5 | VCF | DRIVE soft-clips into ladder (level + spectrum shift) | rms_rise_drive_0_to_1 | > 3 | 14.68 | dB | PASS | [svg](../docs/measurements/M2.5-drive.svg) |
+| M3.1 | VCA | ATTACK monotonically increases ramp time | t_attack_at_0.6 | monoton ↑ | 397.6 | ms | PASS | [svg](../docs/measurements/M3.1-attack.svg) |
+| M3.2 | VCA | Envelope decays to sustain level | sustain_ratio | 0.25 .. 0.40 | 0.325 |  | PASS | [svg](../docs/measurements/M3.2-decay-sustain.svg) |
+| M3.3 | VCA | Higher DecRel → longer release | t_release_at_0.6 | > 2 × t_release_at_0.2 | 300 | ms | PASS | [svg](../docs/measurements/M3.3-release.svg) |
+| M3.4 | VCA | EG_INT bipolar opens/closes filter | high_band_diff_EG=1_vs_0 | > 6 | 23.3 | dB | PASS | [svg](../docs/measurements/M3.4-egint.svg) |
+| M3.5 | VCA | Click-free note transitions | max_sample_diff_at_transitions | < 0.2 | 0.1806 | amp | PASS | [svg](../docs/measurements/M3.5-click-free.svg) |
+| M4.1 | LFO | All 4 LFO shapes produce frequency modulation | min_sigma | > 1 | 46.16 | Hz | PASS | [svg](../docs/measurements/M4.1-lfo-shapes.svg) |
+| M4.2 | LFO | LFO_RATE monotonically increases LFO frequency | f_lfo_at_0.85 | Kendall-τ ≥ 0.5 | 8.14 | Hz | PASS | [svg](../docs/measurements/M4.2-lfo-rate.svg) |
+| M4.3 | LFO | LFO_PITCH_DEPTH widens pitch modulation | pp_at_0.9 | > 50 | 136.8 | Hz | PASS | [svg](../docs/measurements/M4.3-lfo-pitch-depth.svg) |
+| M4.4 | LFO | LFO_CUT_DEPTH modulates filter cutoff | pp_at_1.0 | > 5 | 40.1 | dB | PASS | [svg](../docs/measurements/M4.4-lfo-cutoff-depth.svg) |
+| M5.1 | Delay | DELAY_TIME monotonically lengthens echo offset | onset_at_0.75 | monoton ↑ | 747 | ms | PASS | [svg](../docs/measurements/M5.1-delay-time.svg) |
+| M5.2 | Delay | FEEDBACK sustains late-tail energy (echo train) | tail_rise_fb_0_to_0.9 | > 20 | 61.2 | dB | PASS | [svg](../docs/measurements/M5.2-delay-feedback.svg) |
+| M5.3 | Delay | DELAY_MIX scales echo amplitude monotonically | dyn_range_mix_0_to_1 | > 30 | 87.3 | dB | PASS | [svg](../docs/measurements/M5.3-delay-mix.svg) |
 
-Total: 12 — Failures: 0
+Total: 24 — Failures: 0

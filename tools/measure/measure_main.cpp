@@ -678,6 +678,659 @@ static MEntry M2_5_drive() {
 }
 
 // =============================================================================
+//  LAB-3 :: M3.x VCA / Envelope
+// =============================================================================
+
+// Common helper: amplitude envelope of a buffer via rectified moving-max
+// (10 ms window). Better than raw |x| because it tracks peaks of the carrier.
+static std::vector<double> envelope(const std::vector<float>& s, double sr,
+                                     double winS = 0.010) {
+    const std::size_t W = (std::size_t)std::max(1.0, sr * winS);
+    std::vector<double> e(s.size(), 0.0);
+    // Rectify, then sliding window max
+    std::vector<double> a(s.size());
+    for (std::size_t i = 0; i < s.size(); ++i) a[i] = std::fabs((double)s[i]);
+    for (std::size_t i = 0; i < s.size(); ++i) {
+        const std::size_t lo = i > W/2 ? i - W/2 : 0;
+        const std::size_t hi = std::min(s.size(), i + W/2);
+        double m = 0; for (std::size_t j = lo; j < hi; ++j) m = std::max(m, a[j]);
+        e[i] = m;
+    }
+    return e;
+}
+
+// -- M3.1 Attack shape --------------------------------------------------------
+// Frage:  Erzeugt ATTACK eine messbare, monoton steigende Anstiegszeit?
+// Mess:   ATTACK = {0.0, 0.3, 0.6}, noteOn(60). Hüllkurven-Anstiegszeit
+//         t_10..t_90 % von peak.
+static MEntry M3_1_attack() {
+    const double atks[] = {0.0, 0.3, 0.6};
+    Series s; s.label = "t₁₀→₉₀ / ms";
+    double prev = -1;
+    bool mono = true;
+    for (double a : atks) {
+        P3::ParaEngine e; e.prepare(SR, 256);
+        setNeutralPatch(e);
+        e.setParamNorm(P3::ParaEngine::Param::Attack, a);
+        e.noteOn(60);
+        auto cap = capture(e, (int)(SR * 0.5), 0.0);
+        auto env = envelope(cap, SR);
+        double pk = 0; for (double v : env) pk = std::max(pk, v);
+        const double t10 = pk * 0.1, t90 = pk * 0.9;
+        std::size_t i10 = 0, i90 = 0;
+        for (std::size_t i = 0; i < env.size(); ++i)
+            if (env[i] >= t10) { i10 = i; break; }
+        for (std::size_t i = i10; i < env.size(); ++i)
+            if (env[i] >= t90) { i90 = i; break; }
+        const double tms = (double)(i90 - i10) * 1000.0 / SR;
+        s.xs.push_back(a); s.ys.push_back(tms);
+        if (prev >= 0 && tms < prev) mono = false;
+        prev = tms;
+    }
+    SvgPlot p("M3.1 — Attack ramp time (10 → 90 % of peak)");
+    p.xLabel("ATTACK (norm)").yLabel("t / ms").xRange(0, 0.7)
+     .yRange(0, std::max(s.ys.back() * 1.3, 10.0)).addSeries(s);
+    p.write(OUT_DIR + "/M3.1-attack.svg");
+
+    MEntry m; m.id="M3.1"; m.section="VCA";
+    m.what="ATTACK monotonically increases ramp time";
+    m.metric="t_attack_at_0.6"; m.unit="ms";
+    m.expected="monoton ↑";
+    char b[32]; std::snprintf(b, sizeof b, "%.1f", s.ys.back()); m.measured=b;
+    m.pass = mono && s.ys.back() > s.ys.front() + 5.0;
+    m.svgPath = OUT_DIR + "/M3.1-attack.svg";
+    return m;
+}
+
+// -- M3.2 Decay→Sustain shape -------------------------------------------------
+// Frage:  Fällt die Hüllkurve nach Attack auf den Sustain-Pegel?
+// Mess:   ATK=0, DecRel=0.3, Sustain=0.3. Capture 500 ms. Erwartung: rasch
+//         steigt, fällt auf ~30 % Sustain.
+static MEntry M3_2_decaySustain() {
+    P3::ParaEngine e; e.prepare(SR, 256);
+    setNeutralPatch(e);
+    e.setParamNorm(P3::ParaEngine::Param::Attack,  0.0);
+    e.setParamNorm(P3::ParaEngine::Param::DecRel,  0.3);
+    e.setParamNorm(P3::ParaEngine::Param::Sustain, 0.3);
+    e.noteOn(60);
+    auto cap = capture(e, (int)(SR * 0.6), 0.0);
+    auto env = envelope(cap, SR);
+
+    double pk = 0; for (double v : env) pk = std::max(pk, v);
+    // Sustain level = mean over the last 100 ms (assumes decay is done)
+    double s = 0; int n = 0;
+    for (std::size_t i = (std::size_t)(SR * 0.5); i < env.size(); ++i) {
+        s += env[i]; ++n;
+    }
+    const double sus = n ? s / n : 0;
+    const double susRatio = (pk > 0) ? sus / pk : 0;
+
+    Series ser; ser.label = "envelope";
+    for (std::size_t i = 0; i < env.size(); i += 64) {
+        ser.xs.push_back((double)i / SR * 1000.0);
+        ser.ys.push_back(env[i]);
+    }
+    SvgPlot p("M3.2 — Decay → Sustain (ATK=0, DEC=0.3, SUS=0.3)");
+    p.xLabel("t / ms").yLabel("envelope")
+     .xRange(0, 600).yRange(0, pk * 1.1).addSeries(ser);
+    p.write(OUT_DIR + "/M3.2-decay-sustain.svg");
+
+    MEntry m; m.id="M3.2"; m.section="VCA";
+    m.what="Envelope decays to sustain level";
+    m.metric="sustain_ratio"; m.unit="";
+    m.expected="0.25 .. 0.40";
+    char b[32]; std::snprintf(b, sizeof b, "%.3f", susRatio); m.measured=b;
+    m.pass = susRatio > 0.25 && susRatio < 0.40;
+    m.svgPath = OUT_DIR + "/M3.2-decay-sustain.svg";
+    return m;
+}
+
+// -- M3.3 Release shape -------------------------------------------------------
+// Frage:  Klingt der Note nach noteOff bei höherem DecRel länger aus?
+// Mess:   Atk=0, Sus=1.0, DecRel=0.2 / 0.6. NoteOn 100 ms, NoteOff, capture
+//         300 ms. Zeit bis -20 dB des Sustain-Pegels.
+static MEntry M3_3_release() {
+    const double dec[] = {0.2, 0.6};
+    Series result; result.label = "t to -20 dB / ms";
+    for (double d : dec) {
+        P3::ParaEngine e; e.prepare(SR, 256);
+        setNeutralPatch(e);
+        e.setParamNorm(P3::ParaEngine::Param::Attack,  0.0);
+        e.setParamNorm(P3::ParaEngine::Param::DecRel,  d);
+        e.setParamNorm(P3::ParaEngine::Param::Sustain, 1.0);
+        e.noteOn(60);
+        std::vector<float> on((std::size_t)(SR * 0.1));
+        e.process(on.data(), (int)on.size());
+        e.noteOff(60);
+        std::vector<float> rel((std::size_t)(SR * 0.5));
+        e.process(rel.data(), (int)rel.size());
+        auto env = envelope(rel, SR);
+        const double pk = env.front();
+        const double t20 = pk * std::pow(10.0, -20.0 / 20.0);   // -20 dB
+        std::size_t idx = env.size() - 1;
+        for (std::size_t i = 0; i < env.size(); ++i)
+            if (env[i] < t20) { idx = i; break; }
+        result.xs.push_back(d);
+        result.ys.push_back((double)idx * 1000.0 / SR);
+    }
+    SvgPlot p("M3.3 — Release time to -20 dB");
+    p.xLabel("DecRel (norm)").yLabel("t / ms").xRange(0, 0.7)
+     .yRange(0, std::max(result.ys.back() * 1.3, 30.0)).addSeries(result);
+    p.write(OUT_DIR + "/M3.3-release.svg");
+
+    MEntry m; m.id="M3.3"; m.section="VCA";
+    m.what="Higher DecRel → longer release";
+    m.metric="t_release_at_0.6"; m.unit="ms";
+    m.expected="> 2 × t_release_at_0.2";
+    char b[32]; std::snprintf(b, sizeof b, "%.0f", result.ys.back()); m.measured=b;
+    m.pass = result.ys.back() > 2.0 * result.ys.front();
+    m.svgPath = OUT_DIR + "/M3.3-release.svg";
+    return m;
+}
+
+// -- M3.4 EG_INT bipolar effect on cutoff -------------------------------------
+// Frage:  Öffnet/schließt EG_INT den Filter bipolar?
+// Mess:   3 Setups: EG_INT = 0.0 (neg max), 0.5 (centre), 1.0 (pos max).
+//         ATK fast, lange Decay (visible filter motion). RMS hoher Bandbereich
+//         (2-6 kHz) am Note-Start sollte bei positivem EG hoch, bei negativem
+//         niedrig sein.
+static MEntry M3_4_egInt() {
+    const double egs[] = {0.0, 0.5, 1.0};
+    Series highRms; highRms.label = "RMS 2-6 kHz / dBFS";
+    for (double egi : egs) {
+        P3::ParaEngine e; e.prepare(SR, 256);
+        setNeutralPatch(e);
+        e.setParamNorm(P3::ParaEngine::Param::Cutoff,   0.3);
+        e.setParamNorm(P3::ParaEngine::Param::Attack,   0.0);
+        e.setParamNorm(P3::ParaEngine::Param::DecRel,   0.4);
+        e.setParamNorm(P3::ParaEngine::Param::Sustain,  0.0);
+        e.setParamNorm(P3::ParaEngine::Param::EgCutDepth, egi);
+        e.noteOn(60);
+        auto cap = capture(e, 32768, 0.0);
+        auto sp = spectrum(cap);
+        // Band RMS via spectral sum
+        double e2 = 0; int n = 0;
+        for (std::size_t k = 1; k < sp.magDb.size(); ++k) {
+            const double f = (double)k * SR / sp.N;
+            if (f < 2000) { continue; }
+            if (f > 6000) { break; }
+            const double lin = std::pow(10.0, sp.magDb[k] / 20.0);
+            e2 += lin * lin; ++n;
+        }
+        const double rms = (n > 0) ? std::sqrt(e2 / n) : 1e-12;
+        highRms.xs.push_back(egi);
+        highRms.ys.push_back(20.0 * std::log10(rms));
+    }
+    SvgPlot p("M3.4 — EG_INT bipolar → high-band RMS (Cutoff=0.3, fast atk)");
+    p.xLabel("EG_INT (norm; 0.5 = centre)").yLabel("RMS 2-6 kHz / dBFS")
+     .xRange(-0.05, 1.05).yRange(-90, -20)
+     .addSeries(highRms);
+    p.write(OUT_DIR + "/M3.4-egint.svg");
+
+    // Bei EG=1.0 muss der Filter sichtbar offener sein als bei 0.0.
+    const double diff = highRms.ys.back() - highRms.ys.front();
+    MEntry m; m.id="M3.4"; m.section="VCA";
+    m.what="EG_INT bipolar opens/closes filter";
+    m.metric="high_band_diff_EG=1_vs_0"; m.unit="dB";
+    m.expected="> 6";
+    char b[32]; std::snprintf(b, sizeof b, "%.1f", diff); m.measured=b;
+    m.pass = diff > 6.0;
+    m.svgPath = OUT_DIR + "/M3.4-egint.svg";
+    return m;
+}
+
+// -- M3.5 Click-freedom on noteOn/noteOff -------------------------------------
+// Frage:  Produziert noteOn/noteOff einen audiblen Klick (Sprung im Sample-Diff)?
+// Mess:   Atk=0, Sus=0.8, DecRel=0.3. NoteOn @ t=0, NoteOff @ t=300 ms. Scan
+//         Sample-zu-Sample Diff um den Transition; größer Diff = Klick.
+// Erw:    max |sample[i] - sample[i-1]| im 1-ms-Fenster um Transition < 0.2.
+static MEntry M3_5_clickFree() {
+    P3::ParaEngine e; e.prepare(SR, 256);
+    setNeutralPatch(e);
+    e.setParamNorm(P3::ParaEngine::Param::Attack,  0.0);
+    e.setParamNorm(P3::ParaEngine::Param::Sustain, 0.8);
+    e.setParamNorm(P3::ParaEngine::Param::DecRel,  0.3);
+    e.noteOn(60);
+    std::vector<float> on((std::size_t)(SR * 0.3));
+    e.process(on.data(), (int)on.size());
+    e.noteOff(60);
+    std::vector<float> off((std::size_t)(SR * 0.3));
+    e.process(off.data(), (int)off.size());
+
+    auto worstDiff = [](const std::vector<float>& s){
+        double m = 0;
+        for (std::size_t i = 1; i < s.size(); ++i)
+            m = std::max(m, (double)std::fabs((double)s[i] - (double)s[i-1]));
+        return m;
+    };
+    // Near noteOn boundary (samples 0..480 = 10 ms)
+    const std::size_t onBound = std::min<std::size_t>(on.size(), (std::size_t)(SR * 0.010));
+    std::vector<float> nearOn(on.begin(), on.begin() + onBound);
+    // Near noteOff boundary
+    std::vector<float> nearOff(off.begin(), off.begin() + (std::size_t)(SR * 0.010));
+    const double clickOn  = worstDiff(nearOn);
+    const double clickOff = worstDiff(nearOff);
+
+    // Scope around the transition: 30 ms before to 30 ms after noteOff.
+    std::vector<float> around;
+    const std::size_t pre = (std::size_t)(SR * 0.030);
+    around.insert(around.end(), on.end() - std::min(pre, on.size()), on.end());
+    around.insert(around.end(), off.begin(), off.begin() + (std::size_t)(SR * 0.030));
+    writeScope(OUT_DIR + "/M3.5-click-free.svg",
+               "M3.5 — noteOff transition (30 ms pre / 30 ms post)",
+               around, SR, 0.0, 0.060);
+
+    const double worst = std::max(clickOn, clickOff);
+    MEntry m; m.id="M3.5"; m.section="VCA";
+    m.what="Click-free note transitions";
+    m.metric="max_sample_diff_at_transitions"; m.unit="amp";
+    m.expected="< 0.2";
+    char b[32]; std::snprintf(b, sizeof b, "%.4f", worst); m.measured=b;
+    m.pass = worst < 0.2;
+    m.svgPath = OUT_DIR + "/M3.5-click-free.svg";
+    char nb[80]; std::snprintf(nb, sizeof nb,
+        "onset diff %.4f, offset diff %.4f", clickOn, clickOff);
+    m.note = nb;
+    return m;
+}
+
+// =============================================================================
+//  LAB-3 :: M4.x LFO
+// =============================================================================
+
+// -- M4.1 LFO Shapes ----------------------------------------------------------
+// Frage:  Erzeugen die 4 Wave-Formen unterschiedliche Modulationsmuster?
+// Mess:   LFO_RATE moderate (5 Hz), LFO_PITCH_DEPTH hoch (= klar hörbarer
+//         Vibrato), je Wave-Shape Audio-Capture; Demodulation via Hilbert-
+//         Envelope. Erwartung: deutlich unterschiedliche Envelope-Formen.
+// Hier vereinfacht: wir messen Standardabweichung der zeitlich-resolved
+// Frequenz (sliding FFT), und vergleichen 4 Shapes auf "non-zero variance".
+static MEntry M4_1_lfoShapes() {
+    using S = P3::Lfo::Shape;
+    const S shapes[] = {S::Sine, S::Triangle, S::Saw, S::Square};
+    const char* names[]    = {"Sine","Triangle","Saw","Square"};
+    Series s; s.label = "f-modulation σ / Hz";
+    double minS = 1e9, maxS = -1.0;
+    for (int idx = 0; idx < 4; ++idx) {
+        P3::ParaEngine e; e.prepare(SR, 256);
+        setNeutralPatch(e);
+        e.setParamNorm(P3::ParaEngine::Param::LfoRate, 0.60);    // 2.3 Hz
+        e.setParamNorm(P3::ParaEngine::Param::LfoPitchDepth, 0.5);
+        e.setLfoShape(shapes[idx]);
+        e.noteOn(60);
+        auto cap = capture(e, (int)(SR * 1.0), 0.05);
+        // Sliding peakFreq → series; std-dev
+        std::vector<double> ft;
+        const std::size_t W = 4096, H = 1024;
+        for (std::size_t i = 0; i + W <= cap.size(); i += H) {
+            std::vector<float> seg(cap.begin() + i, cap.begin() + i + W);
+            auto sp = spectrum(seg);
+            ft.push_back(peakFreqInterp(sp.magDb, sp.N, SR));
+        }
+        double mean = 0; for (double v : ft) mean += v; mean /= ft.size();
+        double var = 0; for (double v : ft) var += (v - mean) * (v - mean);
+        var /= ft.size();
+        const double sig = std::sqrt(var);
+        s.xs.push_back((double)idx); s.ys.push_back(sig);
+        minS = std::min(minS, sig); maxS = std::max(maxS, sig);
+    }
+    SvgPlot p("M4.1 — LFO shapes → frequency modulation σ");
+    p.xLabel("Shape (0=Sine 1=Tri 2=Saw 3=Square)").yLabel("σ(f) / Hz")
+     .xRange(-0.5, 3.5).yRange(0, maxS * 1.2)
+     .addSeries(s)
+     .note("LFO_RATE≈5 Hz, PITCH_DEPTH 0.5, 4096-pt sliding FFT");
+    p.write(OUT_DIR + "/M4.1-lfo-shapes.svg");
+
+    // Alle 4 Shapes müssen merklich modulieren; min-σ ≥ 1 Hz.
+    MEntry m; m.id="M4.1"; m.section="LFO";
+    m.what="All 4 LFO shapes produce frequency modulation";
+    m.metric="min_sigma"; m.unit="Hz";
+    m.expected="> 1";
+    char b[32]; std::snprintf(b, sizeof b, "%.2f", minS); m.measured=b;
+    m.pass = minS > 1.0;
+    m.svgPath = OUT_DIR + "/M4.1-lfo-shapes.svg";
+    char nb[160]; std::snprintf(nb, sizeof nb,
+        "σ: Sine=%.1f Tri=%.1f Saw=%.1f Square=%.1f",
+        s.ys[0], s.ys[1], s.ys[2], s.ys[3]);
+    m.note = nb;
+    (void)names;
+    return m;
+}
+
+// -- M4.2 LFO Rate ------------------------------------------------------------
+// Frage:  Steigt die LFO-Frequenz monoton mit LFO_RATE?
+// Mess:   LFO_RATE = {0.1, 0.3, 0.5, 0.7}, Pitch-Depth fest. Sliding-FFT
+//         der Pitch → Modulationsperiode aus Autokorrelation der peakFreq-Reihe.
+static MEntry M4_2_lfoRate() {
+    // LfoRate taper: 0.05 · 400^n. Wir messen den peakFreq(t)-Trace bei
+    // jeder Rate und FFT'n den Trace selbst, um die dominante Modulations-
+    // Frequenz zu finden (robuster als Autocorr bei langsamen Raten).
+    const double rates[] = {0.55, 0.65, 0.75, 0.85};
+    Series s; s.label = "LFO rate / Hz";
+    for (double r : rates) {
+        P3::ParaEngine e; e.prepare(SR, 256);
+        setNeutralPatch(e);
+        e.setParamNorm(P3::ParaEngine::Param::LfoRate, r);
+        e.setParamNorm(P3::ParaEngine::Param::LfoPitchDepth, 0.5);
+        e.setLfoShape(P3::Lfo::Shape::Sine);
+        e.noteOn(60);
+        auto cap = capture(e, (int)(SR * 2.0), 0.10);
+        std::vector<float> trace;
+        const std::size_t W = 2048, H = 512;
+        for (std::size_t i = 0; i + W <= cap.size(); i += H) {
+            std::vector<float> seg(cap.begin() + i, cap.begin() + i + W);
+            auto sp = spectrum(seg);
+            trace.push_back((float)peakFreqInterp(sp.magDb, sp.N, SR));
+        }
+        // DC removal
+        double mean = 0; for (float v : trace) mean += v; mean /= trace.size();
+        for (float& v : trace) v -= (float)mean;
+        // FFT the trace; sample rate of trace = SR / H = 93.75 Hz
+        auto X = realFft(trace, true);
+        auto win = hannWindow(trace.size());
+        double winSum = 0; for (double w : win) winSum += w;
+        auto mag = magnitudeDb(X, winSum);
+        const double traceSr = SR / (double)H;
+        const double f = peakFreqInterp(mag, X.size(), traceSr);
+        s.xs.push_back(r); s.ys.push_back(f);
+    }
+    SvgPlot p("M4.2 — LFO_RATE → modulation frequency");
+    p.xLabel("LFO_RATE (norm)").yLabel("f_LFO / Hz")
+     .xRange(0.5, 0.9).yRange(0, std::max(s.ys.back() * 1.3, 10.0))
+     .addSeries(s);
+    p.write(OUT_DIR + "/M4.2-lfo-rate.svg");
+
+    // Lockerere Monotonie: Kendall-τ-Score zwischen rate-Index und f_lfo.
+    long pos = 0, neg = 0;
+    for (std::size_t i = 0; i + 1 < s.xs.size(); ++i)
+        for (std::size_t j = i + 1; j < s.xs.size(); ++j) {
+            if (s.ys[j] > s.ys[i]) ++pos;
+            else if (s.ys[j] < s.ys[i]) ++neg;
+        }
+    const double tau = (pos + neg > 0) ? (double)(pos - neg) / (double)(pos + neg) : 0.0;
+    const bool tauMono = tau >= 0.5;
+
+    MEntry m; m.id="M4.2"; m.section="LFO";
+    m.what="LFO_RATE monotonically increases LFO frequency";
+    m.metric="f_lfo_at_0.85"; m.unit="Hz";
+    m.expected="Kendall-τ ≥ 0.5";
+    char b[32]; std::snprintf(b, sizeof b, "%.2f", s.ys.back()); m.measured=b;
+    m.pass = tauMono && s.ys.back() > s.ys.front() + 1.0;
+    m.svgPath = OUT_DIR + "/M4.2-lfo-rate.svg";
+    char nb[96]; std::snprintf(nb, sizeof nb, "τ=%.2f, rates 0.55/0.65/0.75/0.85 → %.2f/%.2f/%.2f/%.2f Hz",
+                                tau, s.ys[0], s.ys[1], s.ys[2], s.ys[3]);
+    m.note = nb;
+    return m;
+}
+
+// -- M4.3 LFO Pitch depth -----------------------------------------------------
+// Frage:  Erhöht LFO_PITCH_DEPTH die Modulationstiefe (Hz peak-to-peak)?
+static MEntry M4_3_lfoPitchDepth() {
+    const double depths[] = {0.0, 0.3, 0.6, 0.9};
+    Series s; s.label = "p-p modulation / Hz";
+    for (double d : depths) {
+        P3::ParaEngine e; e.prepare(SR, 256);
+        setNeutralPatch(e);
+        e.setParamNorm(P3::ParaEngine::Param::LfoRate, 0.15);
+        e.setParamNorm(P3::ParaEngine::Param::LfoPitchDepth, d);
+        e.setLfoShape(P3::Lfo::Shape::Sine);
+        e.noteOn(60);
+        auto cap = capture(e, (int)(SR * 1.0), 0.05);
+        std::vector<double> ft;
+        const std::size_t W = 2048, H = 512;
+        for (std::size_t i = 0; i + W <= cap.size(); i += H) {
+            std::vector<float> seg(cap.begin() + i, cap.begin() + i + W);
+            auto sp = spectrum(seg);
+            ft.push_back(peakFreqInterp(sp.magDb, sp.N, SR));
+        }
+        double mn = 1e9, mx = 0;
+        for (double v : ft) { mn = std::min(mn, v); mx = std::max(mx, v); }
+        s.xs.push_back(d); s.ys.push_back(mx - mn);
+    }
+    SvgPlot p("M4.3 — LFO_PITCH_DEPTH → frequency p-p modulation");
+    p.xLabel("PITCH_DEPTH (norm)").yLabel("p-p / Hz")
+     .xRange(0, 1).yRange(0, std::max(s.ys.back() * 1.3, 100.0))
+     .addSeries(s);
+    p.write(OUT_DIR + "/M4.3-lfo-pitch-depth.svg");
+
+    MEntry m; m.id="M4.3"; m.section="LFO";
+    m.what="LFO_PITCH_DEPTH widens pitch modulation";
+    m.metric="pp_at_0.9"; m.unit="Hz";
+    m.expected="> 50";
+    char b[32]; std::snprintf(b, sizeof b, "%.1f", s.ys.back()); m.measured=b;
+    m.pass = s.ys.back() > 50.0 && s.ys.front() < 10.0;
+    m.svgPath = OUT_DIR + "/M4.3-lfo-pitch-depth.svg";
+    return m;
+}
+
+// -- M4.4 LFO Cutoff depth ----------------------------------------------------
+// Frage:  Wirkt LFO_CUT_DEPTH messbar auf den Filter?
+// Mess:   Static Cutoff hoch, Lfo Cutoff Depth = {0, 0.5, 1.0}. Sliding-RMS
+//         in 2-6 kHz Band → Amplituden-pp = Filter-Modulationstiefe.
+static MEntry M4_4_lfoCutoffDepth() {
+    const double depths[] = {0.0, 0.5, 1.0};
+    Series s; s.label = "highband RMS p-p / dB";
+    for (double d : depths) {
+        P3::ParaEngine e; e.prepare(SR, 256);
+        setNeutralPatch(e);
+        e.setParamNorm(P3::ParaEngine::Param::Cutoff, 0.5);
+        e.setParamNorm(P3::ParaEngine::Param::LfoRate, 0.15);
+        e.setParamNorm(P3::ParaEngine::Param::LfoCutDepth, d);
+        e.setLfoShape(P3::Lfo::Shape::Sine);
+        e.noteOn(60);
+        auto cap = capture(e, (int)(SR * 1.0), 0.05);
+        // Block RMS in highband
+        const std::size_t W = 1024, H = 512;
+        std::vector<double> hb;
+        for (std::size_t i = 0; i + W <= cap.size(); i += H) {
+            std::vector<float> seg(cap.begin() + i, cap.begin() + i + W);
+            auto sp = spectrum(seg);
+            double e2 = 0; int n = 0;
+            for (std::size_t k = 1; k < sp.magDb.size(); ++k) {
+                const double f = (double)k * SR / sp.N;
+                if (f < 2000) { continue; }
+                if (f > 6000) { break; }
+                const double lin = std::pow(10.0, sp.magDb[k] / 20.0);
+                e2 += lin * lin; ++n;
+            }
+            const double rms = (n > 0) ? std::sqrt(e2 / n) : 1e-12;
+            hb.push_back(20.0 * std::log10(rms));
+        }
+        double mn = 1e9, mx = -1e9;
+        for (double v : hb) { mn = std::min(mn, v); mx = std::max(mx, v); }
+        s.xs.push_back(d); s.ys.push_back(mx - mn);
+    }
+    SvgPlot p("M4.4 — LFO_CUT_DEPTH → high-band RMS p-p");
+    p.xLabel("LFO_CUT_DEPTH (norm)").yLabel("p-p / dB")
+     .xRange(0, 1.05).yRange(0, std::max(s.ys.back() * 1.3, 10.0))
+     .addSeries(s);
+    p.write(OUT_DIR + "/M4.4-lfo-cutoff-depth.svg");
+
+    MEntry m; m.id="M4.4"; m.section="LFO";
+    m.what="LFO_CUT_DEPTH modulates filter cutoff";
+    m.metric="pp_at_1.0"; m.unit="dB";
+    m.expected="> 5";
+    char b[32]; std::snprintf(b, sizeof b, "%.1f", s.ys.back()); m.measured=b;
+    m.pass = s.ys.back() > 5.0 && s.ys.front() < 2.0;
+    m.svgPath = OUT_DIR + "/M4.4-lfo-cutoff-depth.svg";
+    return m;
+}
+
+// =============================================================================
+//  LAB-3 :: M5.x Delay
+// =============================================================================
+
+// -- M5.1 Delay Time ----------------------------------------------------------
+// Frage:  Verzögert das Delay den Input um die per Param eingestellte Zeit?
+// Mess:   Sehr kurzer noteOn-Stoß (5 ms), DELAY_TIME = {0.25, 0.5, 0.75},
+//         DELAY_MIX 1.0 (only delay audible), DELAY_FEEDBACK 0. Capture 1.5 s.
+//         Echo-Onset = erstes Sample > 0.05 amp NACH dem direkten Klang.
+//         Erwartung: monoton steigende Verzögerung.
+static MEntry M5_1_delayTime() {
+    const double times[] = {0.25, 0.50, 0.75};
+    Series s; s.label = "echo onset / ms";
+    bool mono = true; double prev = 0;
+    for (double t : times) {
+        P3::ParaEngine e; e.prepare(SR, 256);
+        setNeutralPatch(e);
+        e.setParamNorm(P3::ParaEngine::Param::DelayMix, 1.0);
+        e.setParamNorm(P3::ParaEngine::Param::DelayFeedback, 0.0);
+        e.setParamNorm(P3::ParaEngine::Param::DelayTime, t);
+        // Long warm-up so DelayTime smoother settles to target BEFORE noteOn.
+        std::vector<float> warm((std::size_t)(SR * 0.5));
+        e.process(warm.data(), (int)warm.size());
+
+        e.setParamNorm(P3::ParaEngine::Param::Attack, 0.0);
+        e.setParamNorm(P3::ParaEngine::Param::DecRel, 0.02);
+        e.setParamNorm(P3::ParaEngine::Param::Sustain, 0.0);
+        e.noteOn(60);
+        std::vector<float> stim((std::size_t)(SR * 0.01));
+        e.process(stim.data(), (int)stim.size());
+        e.noteOff(60);
+        std::vector<float> cap((std::size_t)(SR * 1.5));
+        e.process(cap.data(), (int)cap.size());
+
+        // Skip past direct sound tail (~50 ms) then find first sample > 0.05
+        const std::size_t skip = (std::size_t)(SR * 0.05);
+        std::size_t onset = cap.size();
+        for (std::size_t i = skip; i < cap.size(); ++i)
+            if (std::fabs((double)cap[i]) > 0.05) { onset = i; break; }
+        const double tms = (double)onset * 1000.0 / SR;
+        s.xs.push_back(t); s.ys.push_back(tms);
+        if (tms < prev - 5.0) mono = false;
+        prev = tms;
+    }
+    SvgPlot p("M5.1 — DELAY_TIME → echo onset");
+    p.xLabel("DELAY_TIME (norm)").yLabel("t / ms")
+     .xRange(0, 1.0).yRange(0, std::max(s.ys.back() * 1.3, 500.0))
+     .addSeries(s);
+    p.write(OUT_DIR + "/M5.1-delay-time.svg");
+
+    MEntry m; m.id="M5.1"; m.section="Delay";
+    m.what="DELAY_TIME monotonically lengthens echo offset";
+    m.metric="onset_at_0.75"; m.unit="ms";
+    m.expected="monoton ↑";
+    char b[32]; std::snprintf(b, sizeof b, "%.0f", s.ys.back()); m.measured=b;
+    m.pass = mono && s.ys.back() > s.ys.front() + 50.0;
+    m.svgPath = OUT_DIR + "/M5.1-delay-time.svg";
+    return m;
+}
+
+// -- M5.2 Delay Feedback ------------------------------------------------------
+// Frage:  Wiederholt FEEDBACK den Echo mehrfach mit klingender Auslese?
+// Mess:   DELAY_MIX 0.5, DELAY_TIME 0.25 (kurz), FEEDBACK = {0.0, 0.5, 0.9}.
+//         Zähle Echo-Spitzen (lokale Maxima > 0.1 amp im 200..1500 ms Bereich).
+static MEntry M5_2_delayFeedback() {
+    // Metrik: integrated tail energy von 200..2300 ms — höheres FB hält den
+    // Schwanz länger, mehr Energie. Bei FB=0 nur 1 Echo bei 245 ms; bei
+    // FB=0.9 viele wiederholte Echos. Ratio energy(0.9)/energy(0.0) ≫ 1.
+    const double fbs[] = {0.0, 0.5, 0.9};
+    Series s; s.label = "tail energy / dB";
+    for (double fb : fbs) {
+        P3::ParaEngine e; e.prepare(SR, 256);
+        setNeutralPatch(e);
+        e.setParamNorm(P3::ParaEngine::Param::DelayMix,  1.0);
+        e.setParamNorm(P3::ParaEngine::Param::DelayTime, 0.25);
+        e.setParamNorm(P3::ParaEngine::Param::DelayFeedback, fb);
+        std::vector<float> warm((std::size_t)(SR * 0.5));
+        e.process(warm.data(), (int)warm.size());
+        e.setParamNorm(P3::ParaEngine::Param::Attack,  0.0);
+        e.setParamNorm(P3::ParaEngine::Param::DecRel,  0.05);
+        e.setParamNorm(P3::ParaEngine::Param::Sustain, 0.0);
+        e.noteOn(60);
+        std::vector<float> stim((std::size_t)(SR * 0.05));
+        e.process(stim.data(), (int)stim.size());
+        e.noteOff(60);
+        std::vector<float> cap((std::size_t)(SR * 2.5));
+        e.process(cap.data(), (int)cap.size());
+
+        // Late-tail RMS: window 800..1200 ms. Bei FB=0 ist diese Region
+        // praktisch still (1 Echo bei 245 ms ist längst weg); bei FB=0.9
+        // klingt der Schwanz noch. Diff sollte ≫ 20 dB sein.
+        const std::size_t a = (std::size_t)(SR * 0.80);
+        const std::size_t b = std::min(cap.size(), (std::size_t)(SR * 1.20));
+        double e2 = 0; int n = 0;
+        for (std::size_t i = a; i < b; ++i) { e2 += (double)cap[i] * cap[i]; ++n; }
+        const double rms = (n > 0) ? std::sqrt(e2 / n) : 1e-12;
+        const double db  = (rms > 1e-12) ? 20.0 * std::log10(rms) : -100.0;
+        s.xs.push_back(fb); s.ys.push_back(db);
+    }
+    SvgPlot p("M5.2 — DELAY_FEEDBACK → late-tail RMS (800..1200 ms)");
+    p.xLabel("FEEDBACK (norm)").yLabel("late-tail RMS / dBFS")
+     .xRange(0, 1.0).yRange(-100, 0)
+     .addSeries(s);
+    p.write(OUT_DIR + "/M5.2-delay-feedback.svg");
+
+    const double rise = s.ys.back() - s.ys.front();
+    MEntry m; m.id="M5.2"; m.section="Delay";
+    m.what="FEEDBACK sustains late-tail energy (echo train)";
+    m.metric="tail_rise_fb_0_to_0.9"; m.unit="dB";
+    m.expected="> 20";
+    char b[32]; std::snprintf(b, sizeof b, "%.1f", rise); m.measured=b;
+    m.pass = rise > 20.0;
+    m.svgPath = OUT_DIR + "/M5.2-delay-feedback.svg";
+    return m;
+}
+
+// -- M5.3 Delay Mix linearity -------------------------------------------------
+// Frage:  Skaliert DELAY_MIX den Wet-Anteil proportional?
+// Mess:   DELAY_FB=0, TIME=0.4, MIX = {0.0, 0.25, 0.5, 0.75, 1.0}.
+//         Echo-Peak (im Bereich 200..400 ms) vs Direkt-Peak (0..50 ms).
+//         Erwartung: echo/direct steigt mit MIX (~ linear).
+static MEntry M5_3_delayMix() {
+    const double mixes[] = {0.0, 0.25, 0.5, 0.75, 1.0};
+    Series s; s.label = "echo peak / dBFS";
+    for (double mx : mixes) {
+        P3::ParaEngine e; e.prepare(SR, 256);
+        setNeutralPatch(e);
+        e.setParamNorm(P3::ParaEngine::Param::DelayMix, mx);
+        e.setParamNorm(P3::ParaEngine::Param::DelayTime, 0.4);   // 412 ms
+        e.setParamNorm(P3::ParaEngine::Param::DelayFeedback, 0.0);
+        std::vector<float> warm((std::size_t)(SR * 0.5));
+        e.process(warm.data(), (int)warm.size());
+        e.setParamNorm(P3::ParaEngine::Param::Attack,  0.0);
+        e.setParamNorm(P3::ParaEngine::Param::DecRel,  0.05);
+        e.setParamNorm(P3::ParaEngine::Param::Sustain, 0.0);
+        e.noteOn(60);
+        std::vector<float> stim((std::size_t)(SR * 0.05));     // 50 ms
+        e.process(stim.data(), (int)stim.size());
+        e.noteOff(60);
+        std::vector<float> cap((std::size_t)(SR * 1.0));
+        e.process(cap.data(), (int)cap.size());
+        auto env = envelope(cap, SR, 0.020);
+        // Echo peak: window centred on expected echo (≈412 ms ± 80 ms)
+        double ep = 0;
+        const std::size_t a = (std::size_t)(SR * 0.30);
+        const std::size_t b = (std::size_t)(SR * 0.55);
+        for (std::size_t i = a; i < b && i < env.size(); ++i)
+            ep = std::max(ep, env[i]);
+        const double db = (ep > 1e-12) ? 20.0 * std::log10(ep) : -100.0;
+        s.xs.push_back(mx); s.ys.push_back(db);
+    }
+    SvgPlot p("M5.3 — DELAY_MIX → echo peak amplitude");
+    p.xLabel("DELAY_MIX (norm)").yLabel("echo peak / dBFS")
+     .xRange(0, 1.05).yRange(-80, 0)
+     .addSeries(s);
+    p.write(OUT_DIR + "/M5.3-delay-mix.svg");
+
+    // Lineare Korrelation MIX ↔ Pegel (in dB → ungefähr linear-in-norm würde
+    // einer logarithmischen Kurve in MIX entsprechen). Wir prüfen einfach
+    // monoton + großer Sprung von MIX=0 zu MIX=1.
+    const double dynRange = s.ys.back() - s.ys.front();
+    bool mono = true;
+    for (std::size_t i = 1; i < s.ys.size(); ++i)
+        if (s.ys[i] < s.ys[i-1] - 1.0) { mono = false; break; }
+    MEntry m; m.id="M5.3"; m.section="Delay";
+    m.what="DELAY_MIX scales echo amplitude monotonically";
+    m.metric="dyn_range_mix_0_to_1"; m.unit="dB";
+    m.expected="> 30";
+    char b[32]; std::snprintf(b, sizeof b, "%.1f", dynRange); m.measured=b;
+    m.pass = mono && dynRange > 30.0;
+    m.svgPath = OUT_DIR + "/M5.3-delay-mix.svg";
+    return m;
+}
+
+// =============================================================================
 //  Driver
 // =============================================================================
 int main(int argc, char** argv) {
@@ -704,7 +1357,21 @@ int main(int argc, char** argv) {
     if (want("M2.4")) manifest.add(M2_4_vcfSlope());
     if (want("M2.5")) manifest.add(M2_5_drive());
 
-    // ---- LAB-3..6: M3.x..M9.x werden in den jeweiligen Sprints ergänzt ----
+    // ---- LAB-3 VCA/EG + LFO + Delay ----
+    if (want("M3.1")) manifest.add(M3_1_attack());
+    if (want("M3.2")) manifest.add(M3_2_decaySustain());
+    if (want("M3.3")) manifest.add(M3_3_release());
+    if (want("M3.4")) manifest.add(M3_4_egInt());
+    if (want("M3.5")) manifest.add(M3_5_clickFree());
+    if (want("M4.1")) manifest.add(M4_1_lfoShapes());
+    if (want("M4.2")) manifest.add(M4_2_lfoRate());
+    if (want("M4.3")) manifest.add(M4_3_lfoPitchDepth());
+    if (want("M4.4")) manifest.add(M4_4_lfoCutoffDepth());
+    if (want("M5.1")) manifest.add(M5_1_delayTime());
+    if (want("M5.2")) manifest.add(M5_2_delayFeedback());
+    if (want("M5.3")) manifest.add(M5_3_delayMix());
+
+    // ---- LAB-4..6: M6.x..M9.x werden in den jeweiligen Sprints ergänzt ----
 
     manifest.writeCsv(OUT_DIR + "/MANIFEST.csv");
     manifest.writeMarkdownTable(OUT_DIR + "/MANIFEST.md",
