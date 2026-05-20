@@ -19,10 +19,13 @@ ssh "$VPS" "
   # die tracked-files-state von origin/staging.
   git reset --hard origin/staging
   echo '---' && git log --oneline -3
-  # Wenn Engine-Header geändert wurden: WASM neu builden.
+  # Wenn Engine-Header/Source/Export-Liste geändert wurden: WASM neu builden.
   if [ -f wasm-bridge/build_wasm.sh ]; then
-    if git diff --name-only HEAD~1 HEAD 2>/dev/null | grep -q 'Para3Engine.hpp\\|wasm-bridge/para3_capi'; then
+    if git diff --name-only HEAD~1 HEAD 2>/dev/null | grep -q 'Para3Engine.hpp\\|wasm-bridge/para3_capi\\|wasm-bridge/build_wasm.sh'; then
       echo '--- engine changed → rebuilding wasm ---'
+      # emsdk liegt unter /opt/emsdk; emcc ist im non-interactive ssh
+      # nicht im PATH — env explizit sourcen, sonst "command not found".
+      source /opt/emsdk/emsdk_env.sh >/dev/null 2>&1 || true
       cd wasm-bridge && bash build_wasm.sh && cd ..
     fi
   fi
