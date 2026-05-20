@@ -145,8 +145,23 @@ body{
 .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;justify-items:center}
 
 .knob{width:100%;display:flex;flex-direction:column;align-items:center;gap:6px;user-select:none;touch-action:none}
-.seqknobs{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:9px}
+/* Live-Timing-Knobs row (SWING, TEMPO DIV). Auto-fit responsiv für Mobile. */
+.seqknobs{display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:10px;margin-bottom:9px;max-width:240px}
 .seqknob{padding:4px 0}
+.seqknob-compact{padding:0}
+/* Binäre Toggles row (STP, METRO) */
+.seq-toggles-row{display:flex;justify-content:flex-end;gap:7px;margin-bottom:9px;flex-wrap:wrap}
+/* STEP EDIT visuell ans Step-Grid gekoppelt: Knob links, Grid nimmt rest.
+   Klar erkennbar: "der Knob bestimmt was Klicks im Grid bewirken". */
+.step-edit-zone{display:grid;grid-template-columns:64px 1fr;gap:10px;align-items:center;margin-bottom:8px}
+.step-edit-knob-wrap{padding:2px;border-right:1px dashed var(--rule);padding-right:8px}
+.step-edit-knob-wrap .knob{gap:3px}
+.step-edit-knob-wrap label{font-size:8px}
+/* FLUX-Cluster: alle Flux-bezogenen Controls semantisch zusammen.
+   Subtle border-top trennt visuell von Step-Grid. */
+.flux-cluster{display:grid;grid-template-columns:repeat(2,minmax(80px,1fr)) auto;gap:10px;align-items:center;
+              padding:8px 4px;margin-top:8px;border-top:1px dashed rgba(255,238,210,.06)}
+.flux-buttons{display:flex;gap:6px;align-items:center}
 .dial{position:relative;width:60px;height:60px}
 .dial svg{position:absolute;inset:0;transform:rotate(135deg)}
 .trk{fill:none;stroke:rgba(0,0,0,.5);stroke-width:4;stroke-linecap:round}
@@ -165,6 +180,12 @@ body{
    layered onto the existing cap box-shadow stack. Distinct from the .flx
    value-ring (which lives further out on the dial SVG). No rectangular
    outline. Toggled by adding/removing .tgt on .knob / .fader. */
+/* FIX-2 / 2026-05-20 — unified motion-target armed marker. Audit-verifiable
+   parent selector so .tgt visualisation is documented as shared between
+   knobs and faders; per-element halos (.cap / .grip) follow below. */
+.knob.tgt, .fader.tgt{
+  --armed:1;
+}
 .knob.tgt .cap{
   box-shadow:
     0 3px 6px -2px rgba(0,0,0,.6),
@@ -584,22 +605,34 @@ body{
 
     <div class="sec full sec-seq" style="grid-area:seq"><div class="seqhead"><h2>STEP <b>SEQ</b> · 16</h2>
       <div class="tg"><button class="tbtn" id="play">▶</button><button class="tbtn" id="clr">CLR</button></div></div>
-      <!-- 2026-05-20 Refactor: aus 11 Toggles + 3 Segmented-Groups (= 21 Klick-
-           Targets) wurden 5 echte Knobs + 4 Toggles. Engine-API unverändert. -->
+      <!-- 2026-05-20 Refactor v2 — semantisch gruppiert:
+           Reihe 1: Live-Timing-Knobs (SWING gesteppt 4 Korg-Stops, TEMPO DIV).
+           Reihe 2: Binär-Toggles (STP, METRO).
+           Reihe 3: STEP-EDIT-Knob direkt am Step-Grid (Editor-Modus-Picker).
+           Reihe 4: FLUX-Cluster — FLUX MODE + F·LEN als Knobs zusammen mit
+                    F·REC/F·CLR. F·LEN wirkt nur in FLUX-Mode > 0. -->
       <div class="seqknobs">
-        <div class="knob seqknob" data-min="0" data-max="100" data-val="0" data-unit="%" data-name="SWING" data-k="swg"></div>
-        <div class="knob seqknob" data-min="0" data-max="2"   data-val="0" data-unit="" data-name="TEMPO DIV" data-k="tdv"  data-int="1"></div>
-        <div class="knob seqknob" data-min="0" data-max="2"   data-val="0" data-unit="" data-name="F·LEN"     data-k="flen" data-int="1"></div>
-        <div class="knob seqknob" data-min="0" data-max="3"   data-val="0" data-unit="" data-name="STEP EDIT" data-k="edmd" data-int="1"></div>
-        <div class="knob seqknob" data-min="0" data-max="2"   data-val="0" data-unit="" data-name="FLUX MODE" data-k="flxm" data-int="1"></div>
+        <div class="knob seqknob" data-min="0" data-max="3" data-val="0" data-unit="" data-name="SWING"     data-k="swg" data-int="1"></div>
+        <div class="knob seqknob" data-min="0" data-max="2" data-val="0" data-unit="" data-name="TEMPO DIV" data-k="tdv" data-int="1"></div>
       </div>
-      <div style="display:flex;justify-content:flex-end;gap:7px;margin-bottom:9px;flex-wrap:wrap">
-        <button class="tbtn" id="stp"    title="STEP TRIGGER · EG retrigger every step">STP</button>
-        <button class="tbtn" id="metro"  title="METRONOME · delay bypassed engine-side">METRO</button>
-        <button class="tbtn" id="flxrec" title="FLUX REC · arm event capture">F·REC</button>
-        <button class="tbtn" id="flxclr" title="FLUX CLEAR · drop queued+published events">F·CLR</button>
+      <div class="seq-toggles-row">
+        <button class="tbtn" id="stp"   title="STEP TRIGGER · EG retrigger every step">STP</button>
+        <button class="tbtn" id="metro" title="METRONOME · delay bypassed engine-side">METRO</button>
       </div>
-      <div class="steps" id="steps"></div>
+      <div class="step-edit-zone">
+        <div class="step-edit-knob-wrap">
+          <div class="knob seqknob seqknob-compact" data-min="0" data-max="3" data-val="0" data-unit="" data-name="STEP EDIT" data-k="edmd" data-int="1"></div>
+        </div>
+        <div class="steps" id="steps"></div>
+      </div>
+      <div class="flux-cluster">
+        <div class="knob seqknob" data-min="0" data-max="2" data-val="0" data-unit="" data-name="FLUX MODE" data-k="flxm" data-int="1"></div>
+        <div class="knob seqknob" data-min="0" data-max="2" data-val="0" data-unit="" data-name="F·LEN"     data-k="flen" data-int="1"></div>
+        <div class="flux-buttons">
+          <button class="tbtn" id="flxrec" title="FLUX REC · arm event capture">F·REC</button>
+          <button class="tbtn" id="flxclr" title="FLUX CLEAR · drop queued+published events">F·CLR</button>
+        </div>
+      </div>
       <!-- EXT-FLUX timeline: 16×1/16 ticks (4× emphasized), note + param event
            markers (note-ON --accent, note-OFF --accent-dim, param-set --accent-dim
            circle), glowing playhead. SVG viewBox 0..1600 horizontal so positions
@@ -988,7 +1021,7 @@ function emit(fn) {
     }
     // 2026-05-20 Refactor — Sequenzer-Knobs (ersetzen 11 Toggles + 3 Segmented-
     // Groups). Continuous SWING, stepped TDIV/F·LEN/STEP-EDIT/FLUX-MODE.
-    else if (id === 'swg')  setSwingPct(val);              // continuous 0..100 %
+    else if (id === 'swg')  setSwingByIdx(Math.round(val));      // 0..3 → 0/15/30/45 %
     else if (id === 'tdv')  setTempoDivByIdx(Math.round(val));   // 0..2 → 1/1, 1/2, 1/4
     else if (id === 'flen') setFluxLenByIdx(Math.round(val));    // 0..2 → 1, 2, 4 bars
     else if (id === 'edmd') setStepEditMode(Math.round(val));    // 0..3 → GATE/ACT/VEL/GLEN
@@ -1581,15 +1614,24 @@ function emit(fn) {
     }
   }
 
-  // FLUX-6 SWING — 2026-05-20: war 4-Button-Segmented-Group (0/15/30/45 %),
-  // jetzt kontinuierlicher Knob "SWING" (data-k="swg", 0..100 %). Engine-API
-  // seqSwing(0..1) ist immer schon continuous gewesen — die 4 alten Stops
-  // waren willkürliche Diskretisierung. Knob bringt freie Wahl.
+  // FLUX-6 SWING — 2026-05-20 v2: 4-Position-Steppknob mit den Korg-Volca-
+  // Standardwerten 0/15/30/45 %. (v1 hatte continuous — Mischaracterisierung
+  // meinerseits; Korg-Volca/Electribe haben stepped swing, das ist der
+  // Standard. Recall-Treue und musikalisches Vokabular sprechen für stepped.)
+  const SWING_STOPS = [0.00, 0.15, 0.30, 0.45];
   let swingVal = 0;
-  function setSwingPct(pct) {                                               // 0..100
-    swingVal = Math.max(0, Math.min(1, pct / 100));
+  function setSwingByIdx(idx) {                                             // 0..3
+    swingVal = SWING_STOPS[Math.max(0, Math.min(3, idx | 0))] ?? 0;
     show('SWING', Math.round(swingVal * 100) + '%', '');
     emit((c) => c.seqSwing(swingVal));
+  }
+  function swingFractionToIdx(frac) {                                       // 0..1 → nearest stop idx
+    let bestIdx = 0, bestD = Math.abs(frac - SWING_STOPS[0]);
+    for (let i = 1; i < SWING_STOPS.length; ++i) {
+      const d = Math.abs(frac - SWING_STOPS[i]);
+      if (d < bestD) { bestD = d; bestIdx = i; }
+    }
+    return bestIdx;
   }
 
   // EXT-ARP UI2: only ON / HOLD are toggles. MODE / RATE / OCT / GATE are
@@ -1741,11 +1783,11 @@ function emit(fn) {
           emit((c) => c.seqActiveStep(i, on));
         });
       }
-      // FLUX-6 SWING — 2026-05-20: Knob statt Segmented-Group. Preset-Wert
-      // (0..1) wird auf den Knob (0..100 %) übertragen; K.swg.set() ruft
-      // intern setSwingPct() das emit(seqSwing) macht.
-      swingVal = (typeof p.swing === 'number') ? p.swing : 0;
-      if (K.swg) K.swg.set(swingVal * 100); else emit((c) => c.seqSwing(swingVal));
+      // FLUX-6 SWING — 2026-05-20 v2: stepped 4-Position-Knob (0/15/30/45 %).
+      // Preset speichert frac 0..0.45; snap auf nächsten Stop-Index.
+      const presetSwingFrac = (typeof p.swing === 'number') ? p.swing : 0;
+      if (K.swg) K.swg.set(swingFractionToIdx(presetSwingFrac));
+      else { swingVal = presetSwingFrac; emit((c) => c.seqSwing(swingVal)); }
       // FLUX-4/5 STEP VEL + GATE — per-step modulation arrays. Default 1.0
       // (legacy hold). Absent ⇒ reset to neutral so per-step state from the
       // previously loaded preset doesn't bleed into the new slot.
