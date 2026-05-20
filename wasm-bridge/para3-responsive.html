@@ -145,23 +145,24 @@ body{
 .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;justify-items:center}
 
 .knob{width:100%;display:flex;flex-direction:column;align-items:center;gap:6px;user-select:none;touch-action:none}
-/* Live-Timing-Knobs row (SWING, TEMPO DIV). Auto-fit responsiv für Mobile. */
-.seqknobs{display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:10px;margin-bottom:9px;max-width:240px}
-.seqknob{padding:4px 0}
+/* 2026-05-20 Refactor v3 — kompakt, Klaviatur darf nicht verdrängt werden.
+   Live-Knobs (SWING+TempoDiv) UND binäre Toggles (STP+METRO) in EINER Reihe:
+   Knobs links (grid 2 spalten), Toggles rechts (margin-left:auto). */
+.seq-controls-row{display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap}
+.seqknobs{display:grid;grid-template-columns:repeat(2,minmax(72px,90px));gap:6px}
+.seqknob{padding:1px 0}
+.seqknob .knob label{font-size:8px;margin-top:-2px}
 .seqknob-compact{padding:0}
-/* Binäre Toggles row (STP, METRO) */
-.seq-toggles-row{display:flex;justify-content:flex-end;gap:7px;margin-bottom:9px;flex-wrap:wrap}
-/* STEP EDIT visuell ans Step-Grid gekoppelt: Knob links, Grid nimmt rest.
-   Klar erkennbar: "der Knob bestimmt was Klicks im Grid bewirken". */
-.step-edit-zone{display:grid;grid-template-columns:64px 1fr;gap:10px;align-items:center;margin-bottom:8px}
-.step-edit-knob-wrap{padding:2px;border-right:1px dashed var(--rule);padding-right:8px}
-.step-edit-knob-wrap .knob{gap:3px}
-.step-edit-knob-wrap label{font-size:8px}
-/* FLUX-Cluster: alle Flux-bezogenen Controls semantisch zusammen.
-   Subtle border-top trennt visuell von Step-Grid. */
-.flux-cluster{display:grid;grid-template-columns:repeat(2,minmax(80px,1fr)) auto;gap:10px;align-items:center;
-              padding:8px 4px;margin-top:8px;border-top:1px dashed rgba(255,238,210,.06)}
-.flux-buttons{display:flex;gap:6px;align-items:center}
+.seqknob-compact .knob label{font-size:7px;margin-top:-2px}
+.seq-toggles-inline{display:flex;gap:6px;margin-left:auto;flex-wrap:wrap}
+/* STEP EDIT visuell ans Step-Grid gekoppelt: kompakte 56px-Spalte links. */
+.step-edit-zone{display:grid;grid-template-columns:56px 1fr;gap:8px;align-items:center;margin-bottom:6px}
+.step-edit-knob-wrap{padding:0 6px 0 0;border-right:1px dashed rgba(255,238,210,.08)}
+.step-edit-knob-wrap .knob{gap:2px}
+/* FLUX-Cluster: ohne border-top, flacher. */
+.flux-cluster{display:flex;align-items:center;gap:8px;padding:4px 0 2px;margin-top:4px;flex-wrap:wrap}
+.flux-cluster .seqknob{min-width:72px;max-width:90px}
+.flux-buttons{display:flex;gap:6px;align-items:center;margin-left:auto}
 .dial{position:relative;width:60px;height:60px}
 .dial svg{position:absolute;inset:0;transform:rotate(135deg)}
 .trk{fill:none;stroke:rgba(0,0,0,.5);stroke-width:4;stroke-linecap:round}
@@ -326,7 +327,7 @@ body{
 .mb.cur{background:var(--accent);box-shadow:0 0 8px color-mix(in srgb,var(--accent) 80%,transparent)}
 
 /* ===== KEYBOARD (always visible at the bottom of the flex column) ======== */
-.kbd{position:relative;width:100%;height:116px;display:flex;
+.kbd{position:relative;width:100%;height:116px;flex-shrink:0;display:flex;
   z-index:60;background:#000;box-shadow:0 -8px 22px -10px #000;
   padding-bottom: env(safe-area-inset-bottom);
   /* Touch-Glide: without touch-action:none, mobile/tablet browsers cancel
@@ -605,19 +606,20 @@ body{
 
     <div class="sec full sec-seq" style="grid-area:seq"><div class="seqhead"><h2>STEP <b>SEQ</b> · 16</h2>
       <div class="tg"><button class="tbtn" id="play">▶</button><button class="tbtn" id="clr">CLR</button></div></div>
-      <!-- 2026-05-20 Refactor v2 — semantisch gruppiert:
-           Reihe 1: Live-Timing-Knobs (SWING gesteppt 4 Korg-Stops, TEMPO DIV).
-           Reihe 2: Binär-Toggles (STP, METRO).
-           Reihe 3: STEP-EDIT-Knob direkt am Step-Grid (Editor-Modus-Picker).
-           Reihe 4: FLUX-Cluster — FLUX MODE + F·LEN als Knobs zusammen mit
-                    F·REC/F·CLR. F·LEN wirkt nur in FLUX-Mode > 0. -->
-      <div class="seqknobs">
-        <div class="knob seqknob" data-min="0" data-max="3" data-val="0" data-unit="" data-name="SWING"     data-k="swg" data-int="1"></div>
-        <div class="knob seqknob" data-min="0" data-max="2" data-val="0" data-unit="" data-name="TEMPO DIV" data-k="tdv" data-int="1"></div>
-      </div>
-      <div class="seq-toggles-row">
-        <button class="tbtn" id="stp"   title="STEP TRIGGER · EG retrigger every step">STP</button>
-        <button class="tbtn" id="metro" title="METRONOME · delay bypassed engine-side">METRO</button>
+      <!-- 2026-05-20 Refactor v3 — kompakt damit die Klaviatur nicht
+           verdrängt wird. SEMANTISCH gruppiert ohne unnötige vertikale Höhe:
+           Reihe 1: Live-Knobs LINKS (SWING, TEMPO DIV) + Toggles RECHTS (STP, METRO).
+           Reihe 2: STEP-EDIT-Knob direkt am Step-Grid (Editor-Modus).
+           Reihe 3: FLUX-Cluster (FLUX MODE + F·LEN + F·REC + F·CLR). -->
+      <div class="seq-controls-row">
+        <div class="seqknobs">
+          <div class="knob seqknob" data-min="0" data-max="3" data-val="0" data-unit="" data-name="SWING"     data-k="swg" data-int="1"></div>
+          <div class="knob seqknob" data-min="0" data-max="2" data-val="0" data-unit="" data-name="TEMPO DIV" data-k="tdv" data-int="1"></div>
+        </div>
+        <div class="seq-toggles-inline">
+          <button class="tbtn" id="stp"   title="STEP TRIGGER · EG retrigger every step">STP</button>
+          <button class="tbtn" id="metro" title="METRONOME · delay bypassed engine-side">METRO</button>
+        </div>
       </div>
       <div class="step-edit-zone">
         <div class="step-edit-knob-wrap">
