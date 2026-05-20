@@ -101,11 +101,10 @@ const html = readFileSync(join(REPO, 'wasm-bridge/para3-responsive.html'), 'utf8
     { re: /data-k="swg"[^>]*data-int="1"/,              label: 'SWING knob stepped (data-k="swg" with data-int="1")' },
     { re: /data-k="tdv"[^>]*data-int="1"/,              label: 'TEMPO DIV knob stepped (data-k="tdv")' },
     { re: /data-k="flen"[^>]*data-int="1"/,             label: 'F·LEN knob stepped (data-k="flen")' },
-    { re: /data-k="edmd"[^>]*data-int="1"/,             label: 'STEP EDIT knob (data-k="edmd")' },
     { re: /data-k="flxm"[^>]*data-int="1"/,             label: 'FLUX MODE knob (data-k="flxm")' },
-    // Semantische Gruppierung: STEP EDIT direkt am Step-Grid, FLUX-Knobs im
-    // FLUX-Cluster zusammen mit F·REC/F·CLR.
-    { re: /class="step-edit-zone"/,                     label: 'step-edit-zone container (STEP EDIT knob + step grid)' },
+    // 2026-05-20 v4: STEP EDIT ist jetzt segmentierter Picker, kein Knob.
+    { re: /id="stepEditPicker"/,                        label: 'STEP EDIT segmented picker (id="stepEditPicker")' },
+    { re: /class="grid-or-timeline"/,                   label: 'grid-or-timeline shared slot (steps + fluxtl)' },
     { re: /class="flux-cluster"/,                       label: 'flux-cluster container (FLUX MODE + F·LEN + F·REC + F·CLR)' },
   ];
   // Negative check: the bare 0.72 literal must NOT appear in the white/black

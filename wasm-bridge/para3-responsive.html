@@ -145,24 +145,42 @@ body{
 .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;justify-items:center}
 
 .knob{width:100%;display:flex;flex-direction:column;align-items:center;gap:6px;user-select:none;touch-action:none}
-/* 2026-05-20 Refactor v3 — kompakt, Klaviatur darf nicht verdrängt werden.
-   Live-Knobs (SWING+TempoDiv) UND binäre Toggles (STP+METRO) in EINER Reihe:
-   Knobs links (grid 2 spalten), Toggles rechts (margin-left:auto). */
+/* 2026-05-20 Refactor v4 — Volca/Electribe-Industriestandard.
+   Reihe 1: Live-Knobs (SWING, TempoDiv) + Toggles (STP, METRO) inline.
+   Reihe 2: STEP-EDIT segmentierter Picker über dem Grid.
+   Reihe 3: Step-Grid ODER FLUX-Timeline (gleicher Slot, CSS-Toggle).
+   Reihe 4: FLUX-Cluster (FLUX MODE, F·LEN, F·REC, F·CLR).
+   Reihe 5: Motion-Header + Lane (Buttons im FLUX-Mode ausgeblendet,
+   weil F·REC dann das aktive Recording ist). */
 .seq-controls-row{display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap}
 .seqknobs{display:grid;grid-template-columns:repeat(2,minmax(72px,90px));gap:6px}
 .seqknob{padding:1px 0}
 .seqknob .knob label{font-size:8px;margin-top:-2px}
-.seqknob-compact{padding:0}
-.seqknob-compact .knob label{font-size:7px;margin-top:-2px}
 .seq-toggles-inline{display:flex;gap:6px;margin-left:auto;flex-wrap:wrap}
-/* STEP EDIT visuell ans Step-Grid gekoppelt: kompakte 56px-Spalte links. */
-.step-edit-zone{display:grid;grid-template-columns:56px 1fr;gap:8px;align-items:center;margin-bottom:6px}
-.step-edit-knob-wrap{padding:0 6px 0 0;border-right:1px dashed rgba(255,238,210,.08)}
-.step-edit-knob-wrap .knob{gap:2px}
-/* FLUX-Cluster: ohne border-top, flacher. */
+/* STEP-EDIT segmentierter Picker (Volca-Style): 4 benannte Buttons, genau
+   einer aktiv (.tbtn.on). Bestimmt was Klicks im Grid bewirken. */
+.step-edit-row{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+.step-edit-label{font-size:9px;letter-spacing:1.5px;color:var(--ink-dim);
+  text-transform:uppercase;font-weight:600;min-width:32px}
+.step-edit-picker{flex:1;display:flex}
+.step-edit-picker .tbtn{flex:1;padding:5px 4px;font-size:9px;letter-spacing:1px}
+/* Step-Grid + FLUX-Timeline teilen denselben Slot — nur eines visible.
+   Bei .app[data-flux="on"]: #steps hidden, .fluxtl shown.
+   Plus: STEP-EDIT-Picker + Motion-Buttons ausgeblendet (irrelevant in FLUX). */
+.grid-or-timeline{position:relative}
+.app:not([data-flux="on"]) .fluxtl{display:none}
+.app[data-flux="on"] .step-edit-row{display:none}
+.app[data-flux="on"] .mhead .mbtn{display:none}
+/* FLUX-Cluster: kompakt, flex-wrap geblockt (nowrap auf Desktop), zwei
+   Knobs links + zwei Buttons rechts. */
 .flux-cluster{display:flex;align-items:center;gap:8px;padding:4px 0 2px;margin-top:4px;flex-wrap:wrap}
 .flux-cluster .seqknob{min-width:72px;max-width:90px}
 .flux-buttons{display:flex;gap:6px;align-items:center;margin-left:auto}
+/* Motion-Header darf nicht umbrechen: Status-Text mit ellipsis. */
+.sec-seq .mhead{flex-wrap:nowrap;align-items:center;gap:6px}
+.sec-seq .mhead .mt,.sec-seq .mhead .fmt{flex:1;min-width:0;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.sec-seq .mhead .mbtn{flex-shrink:0}
 .dial{position:relative;width:60px;height:60px}
 .dial svg{position:absolute;inset:0;transform:rotate(135deg)}
 .trk{fill:none;stroke:rgba(0,0,0,.5);stroke-width:4;stroke-linecap:round}
@@ -297,6 +315,8 @@ body{
 .app[data-flux="on"] .sec-seq .lane{display:none}
 .app[data-flux="on"] .sec-seq .mhead .mt{display:none}
 .app[data-flux="on"] .sec-seq .mhead .fmt{display:inline}
+/* (FLUX-Mode-Toggles für STEP-EDIT-Row + Motion-Buttons stehen oben in den
+    Refactor-v4-Regeln.) */
 /* EXT-FLUX timeline visualizer — Korg-style event view: 1/16 ticks with bolder
    1/4 emphasis, note-ON/OFF + param markers, glowing playhead. */
 .fluxtl{display:none;width:100%;height:88px;border-radius:7px;box-sizing:border-box;
@@ -606,11 +626,12 @@ body{
 
     <div class="sec full sec-seq" style="grid-area:seq"><div class="seqhead"><h2>STEP <b>SEQ</b> · 16</h2>
       <div class="tg"><button class="tbtn" id="play">▶</button><button class="tbtn" id="clr">CLR</button></div></div>
-      <!-- 2026-05-20 Refactor v3 — kompakt damit die Klaviatur nicht
-           verdrängt wird. SEMANTISCH gruppiert ohne unnötige vertikale Höhe:
-           Reihe 1: Live-Knobs LINKS (SWING, TEMPO DIV) + Toggles RECHTS (STP, METRO).
-           Reihe 2: STEP-EDIT-Knob direkt am Step-Grid (Editor-Modus).
-           Reihe 3: FLUX-Cluster (FLUX MODE + F·LEN + F·REC + F·CLR). -->
+      <!-- 2026-05-20 Refactor v4 — Industriestandard-Layout (Volca/Electribe/
+           Minilogue). STEP-EDIT als segmentierter Picker über dem Grid;
+           Step-Grid und FLUX-Timeline teilen denselben vertikalen Slot
+           (Switching via [data-flux="on"]); Motion-Controls (SMOOTH +
+           MOTION REC) im FLUX-Mode ausgeblendet (irrelevant — F·REC ist
+           dann das aktive Recording). -->
       <div class="seq-controls-row">
         <div class="seqknobs">
           <div class="knob seqknob" data-min="0" data-max="3" data-val="0" data-unit="" data-name="SWING"     data-k="swg" data-int="1"></div>
@@ -621,11 +642,34 @@ body{
           <button class="tbtn" id="metro" title="METRONOME · delay bypassed engine-side">METRO</button>
         </div>
       </div>
-      <div class="step-edit-zone">
-        <div class="step-edit-knob-wrap">
-          <div class="knob seqknob seqknob-compact" data-min="0" data-max="3" data-val="0" data-unit="" data-name="STEP EDIT" data-k="edmd" data-int="1"></div>
-        </div>
+      <!-- STEP-EDIT segmentierter Modus-Picker. Korg-Style: 4 benannte Buttons,
+           genau einer aktiv. Bestimmt was Klicks im Grid bewirken. -->
+      <div class="step-edit-row">
+        <span class="step-edit-label">EDIT</span>
+        <span class="seg step-edit-picker" id="stepEditPicker">
+          <button class="tbtn on" data-em="0" title="GATE · click toggles step gate on/off">GATE</button>
+          <button class="tbtn"    data-em="1" title="ACTIVE-STEP · click toggles skip">ACT</button>
+          <button class="tbtn"    data-em="2" title="VELOCITY · drag vertical to set per-step velocity">VEL</button>
+          <button class="tbtn"    data-em="3" title="GATE LENGTH · drag horizontal to set per-step gate length">G·LEN</button>
+        </span>
+      </div>
+      <!-- Step-Grid + FLUX-Timeline teilen den GLEICHEN vertikalen Slot.
+           Bei FLUX-Mode wird der Grid ausgeblendet, die Timeline an seiner
+           Stelle gerendert (Volca/Electribe-Style — Mode-Wechsel ersetzt
+           die Edit-Surface). -->
+      <div class="grid-or-timeline">
         <div class="steps" id="steps"></div>
+        <!-- EXT-FLUX timeline: 16×1/16 ticks, note + param event markers,
+             glowing playhead. SVG viewBox 0..1600 horizontal so positions =
+             (event.off / loopLen) * 1600. Shown nur wenn fluxOn (CSS toggle
+             auf .app[data-flux="on"]). -->
+        <div class="fluxtl" id="fluxtl">
+          <svg viewBox="0 0 1600 200" preserveAspectRatio="none">
+            <g id="fluxgrid"></g>
+            <g id="fluxevs"></g>
+            <line id="fluxph" class="ph" x1="0" y1="6" x2="0" y2="194"/>
+          </svg>
+        </div>
       </div>
       <div class="flux-cluster">
         <div class="knob seqknob" data-min="0" data-max="2" data-val="0" data-unit="" data-name="FLUX MODE" data-k="flxm" data-int="1"></div>
@@ -634,17 +678,6 @@ body{
           <button class="tbtn" id="flxrec" title="FLUX REC · arm event capture">F·REC</button>
           <button class="tbtn" id="flxclr" title="FLUX CLEAR · drop queued+published events">F·CLR</button>
         </div>
-      </div>
-      <!-- EXT-FLUX timeline: 16×1/16 ticks (4× emphasized), note + param event
-           markers (note-ON --accent, note-OFF --accent-dim, param-set --accent-dim
-           circle), glowing playhead. SVG viewBox 0..1600 horizontal so positions
-           = (event.off / loopLen) * 1600. Shown only when fluxOn. -->
-      <div class="fluxtl" id="fluxtl">
-        <svg viewBox="0 0 1600 200" preserveAspectRatio="none">
-          <g id="fluxgrid"></g>
-          <g id="fluxevs"></g>
-          <line id="fluxph" class="ph" x1="0" y1="6" x2="0" y2="194"/>
-        </svg>
       </div>
       <div class="mhead">
         <span class="mt">MOTION → <b id="mTgt">CUTOFF</b></span>
@@ -1026,7 +1059,8 @@ function emit(fn) {
     else if (id === 'swg')  setSwingByIdx(Math.round(val));      // 0..3 → 0/15/30/45 %
     else if (id === 'tdv')  setTempoDivByIdx(Math.round(val));   // 0..2 → 1/1, 1/2, 1/4
     else if (id === 'flen') setFluxLenByIdx(Math.round(val));    // 0..2 → 1, 2, 4 bars
-    else if (id === 'edmd') setStepEditMode(Math.round(val));    // 0..3 → GATE/ACT/VEL/GLEN
+    // (STEP EDIT war v1-v3 ein Knob 'edmd' — jetzt segmentierter Picker mit
+    //  Click-Handler unten. emitKnob-Case entfällt.)
     else if (id === 'flxm') setFluxModeByIdx(Math.round(val));   // 0..2 → OFF/Q/FINE
   }
 
@@ -1405,31 +1439,47 @@ function emit(fn) {
     show('STEP TRIGGER',stepTrig?'ON':'OFF','');
     emit((c) => c.seqStepTrigger(stepTrig));};
 
-  // 2026-05-20 Refactor: STEP-EDIT-Modus war 3 mutually-exclusive Toggles
-  // (ACT/VEL/GATE) — jetzt 1 Knob "STEP EDIT" (data-k="edmd") mit 4 Positionen:
-  //   0=GATE-Default (Click toggelt Step-Gate; bisheriger Default-State)
+  // 2026-05-20 Refactor v4 — STEP-EDIT segmentierter Picker (Volca-Style)
+  // statt Knob. Vier benannte Buttons GATE/ACT/VEL/GLEN, genau einer aktiv.
+  //   0=GATE (Click toggelt Step-Gate; Default)
   //   1=ACT  (Click = Skip-Edit, .skip-Klasse)
   //   2=VEL  (vertikaler Drag setzt Step-Velocity, .velMode-Klasse)
   //   3=GLEN (horizontaler Drag setzt Step-Gate-Länge, .gateMode-Klasse)
-  // Engine-Schnittstelle unverändert — die Modi sind UI-Editor-States, die
-  // pro Step-Click in seqActiveStep / seqStepVel / seqStepGate übersetzt werden.
+  // Engine-Schnittstelle unverändert — Modi sind UI-Editor-States.
+  let stepEditMode = 0;
   function setStepEditMode(modeIdx) {                                    // 0..3
-    astepMode = (modeIdx === 1);
-    velMode   = (modeIdx === 2);
-    gateMode  = (modeIdx === 3);
+    stepEditMode = Math.max(0, Math.min(3, modeIdx | 0));
+    astepMode = (stepEditMode === 1);
+    velMode   = (stepEditMode === 2);
+    gateMode  = (stepEditMode === 3);
     sN.forEach((b,i) => {
       b.classList.toggle('on',     !astepMode && onSteps[i]);
       b.classList.toggle('skip',    astepMode && !actStep[i]);
       b.classList.toggle('velMode', velMode);
       b.classList.toggle('gateMode',gateMode);
     });
+    // Picker-Visual: nur der aktive Button bekommt .on
+    const picker = document.getElementById('stepEditPicker');
+    if (picker) {
+      picker.querySelectorAll('button').forEach((b) => {
+        b.classList.toggle('on', +b.dataset.em === stepEditMode);
+      });
+    }
     const labels = ['GATE (toggle)', 'ACTIVE-STEP (skip edit)', 'VELOCITY (drag ↕)', 'GATE LEN (drag ↔)'];
-    show('STEP EDIT', labels[modeIdx] || 'GATE', '');
+    show('STEP EDIT', labels[stepEditMode] || 'GATE', '');
   }
-  // clearModeFlags ⇒ zurück auf Default-Edit-Modus 0 (alle Modus-Flags off,
-  // Step-Grid-CSS auf Gate-Default). Wird von FLUX-Wechsel + Preset-Load
-  // gerufen; setzt zusätzlich K.edmd damit der Knob-Visual mitläuft.
-  function clearModeFlags() { setStepEditMode(0); if (K.edmd) K.edmd.set(0); }
+  function clearModeFlags() { setStepEditMode(0); }
+  // Picker-Click-Handler — verzögert binden (sN-Steps existieren noch nicht
+  // beim ersten Skript-Lauf; setStepEditMode tolerant gegenüber leeren sN).
+  (function bindStepEditPicker(){
+    const picker = document.getElementById('stepEditPicker');
+    if (!picker) return;
+    picker.addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-em]');
+      if (!b) return;
+      setStepEditMode(+b.dataset.em);
+    });
+  })();
 
   const metroB=document.getElementById('metro');let metroOn=false;
   metroB.onclick=()=>{metroOn=!metroOn;metroB.classList.toggle('on',metroOn);
