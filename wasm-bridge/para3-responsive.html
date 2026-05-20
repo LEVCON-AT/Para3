@@ -145,6 +145,8 @@ body{
 .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;justify-items:center}
 
 .knob{width:100%;display:flex;flex-direction:column;align-items:center;gap:6px;user-select:none;touch-action:none}
+.seqknobs{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:9px}
+.seqknob{padding:4px 0}
 .dial{position:relative;width:60px;height:60px}
 .dial svg{position:absolute;inset:0;transform:rotate(135deg)}
 .trk{fill:none;stroke:rgba(0,0,0,.5);stroke-width:4;stroke-linecap:round}
@@ -582,34 +584,20 @@ body{
 
     <div class="sec full sec-seq" style="grid-area:seq"><div class="seqhead"><h2>STEP <b>SEQ</b> · 16</h2>
       <div class="tg"><button class="tbtn" id="play">▶</button><button class="tbtn" id="clr">CLR</button></div></div>
-      <!-- E4 KORG-parity sequencer behaviours; engine T19–T22.
-           E5 FLUX-Modus: separate mode (no step grid, event-based). -->
+      <!-- 2026-05-20 Refactor: aus 11 Toggles + 3 Segmented-Groups (= 21 Klick-
+           Targets) wurden 5 echte Knobs + 4 Toggles. Engine-API unverändert. -->
+      <div class="seqknobs">
+        <div class="knob seqknob" data-min="0" data-max="100" data-val="0" data-unit="%" data-name="SWING" data-k="swg"></div>
+        <div class="knob seqknob" data-min="0" data-max="2"   data-val="0" data-unit="" data-name="TEMPO DIV" data-k="tdv"  data-int="1"></div>
+        <div class="knob seqknob" data-min="0" data-max="2"   data-val="0" data-unit="" data-name="F·LEN"     data-k="flen" data-int="1"></div>
+        <div class="knob seqknob" data-min="0" data-max="3"   data-val="0" data-unit="" data-name="STEP EDIT" data-k="edmd" data-int="1"></div>
+        <div class="knob seqknob" data-min="0" data-max="2"   data-val="0" data-unit="" data-name="FLUX MODE" data-k="flxm" data-int="1"></div>
+      </div>
       <div style="display:flex;justify-content:flex-end;gap:7px;margin-bottom:9px;flex-wrap:wrap">
-        <button class="tbtn" id="stp"   title="STEP TRIGGER · EG retrigger every step">STP</button>
-        <button class="tbtn" id="astep" title="ACTIVE-STEP MODE · click steps to skip">ACT</button>
-        <button class="tbtn" id="vmode" title="VEL MODE · drag vertically on a step to set its velocity (Korg-Volca-Bass / Minilogue per-step accent)">VEL</button>
-        <button class="tbtn" id="gmode" title="GATE MODE · drag horizontally on a step to set its gate length (Electribe / Minilogue per-step gate)">GATE</button>
-        <button class="tbtn" id="metro" title="METRONOME · delay bypassed engine-side">METRO</button>
-        <span class="seg" id="tdiv">
-          <button class="tbtn on" data-d="1">1/1</button>
-          <button class="tbtn"    data-d="2">1/2</button>
-          <button class="tbtn"    data-d="4">1/4</button>
-        </span>
-        <span class="seg" id="swing" title="SWING · off-beat delay (Korg-Volca/Electribe shuffle, odd 1/16 steps delayed)">
-          <button class="tbtn on" data-sw="0">0%</button>
-          <button class="tbtn"    data-sw="0.15">15%</button>
-          <button class="tbtn"    data-sw="0.30">30%</button>
-          <button class="tbtn"    data-sw="0.45">45%</button>
-        </span>
-        <button class="tbtn" id="flux"   title="FLUX MODE · sample-accurate event sequence">FLUX</button>
-        <button class="tbtn" id="flxrec" title="FLUX REC · arm event capture (engine T23/T42)">F·REC</button>
+        <button class="tbtn" id="stp"    title="STEP TRIGGER · EG retrigger every step">STP</button>
+        <button class="tbtn" id="metro"  title="METRONOME · delay bypassed engine-side">METRO</button>
+        <button class="tbtn" id="flxrec" title="FLUX REC · arm event capture">F·REC</button>
         <button class="tbtn" id="flxclr" title="FLUX CLEAR · drop queued+published events">F·CLR</button>
-        <button class="tbtn"    id="flxfine" title="FLUX FINE · sample-accurate free-run (off=1/16 Korg snap)">F·FINE</button>
-        <span class="seg" id="flen" title="FLUX LOOP LENGTH · bars per loop">
-          <button class="tbtn on" data-fl="1">1B</button>
-          <button class="tbtn"    data-fl="2">2B</button>
-          <button class="tbtn"    data-fl="4">4B</button>
-        </span>
       </div>
       <div class="steps" id="steps"></div>
       <!-- EXT-FLUX timeline: 16×1/16 ticks (4× emphasized), note + param event
@@ -998,6 +986,13 @@ function emit(fn) {
       show('ARP GATE', Math.round(val), '%');
       emit((c) => c.arpGate(val / 100));
     }
+    // 2026-05-20 Refactor — Sequenzer-Knobs (ersetzen 11 Toggles + 3 Segmented-
+    // Groups). Continuous SWING, stepped TDIV/F·LEN/STEP-EDIT/FLUX-MODE.
+    else if (id === 'swg')  setSwingPct(val);              // continuous 0..100 %
+    else if (id === 'tdv')  setTempoDivByIdx(Math.round(val));   // 0..2 → 1/1, 1/2, 1/4
+    else if (id === 'flen') setFluxLenByIdx(Math.round(val));    // 0..2 → 1, 2, 4 bars
+    else if (id === 'edmd') setStepEditMode(Math.round(val));    // 0..3 → GATE/ACT/VEL/GLEN
+    else if (id === 'flxm') setFluxModeByIdx(Math.round(val));   // 0..2 → OFF/Q/FINE
   }
 
   // U3 — small visual indicator in the keyboard corner when oct knob != 0.
@@ -1375,76 +1370,48 @@ function emit(fn) {
     show('STEP TRIGGER',stepTrig?'ON':'OFF','');
     emit((c) => c.seqStepTrigger(stepTrig));};
 
-  // E4.3 — active-step *mode* is a UI mode (which state the grid edits).
-  // The engine just receives per-step seqActiveStep events on grid clicks.
-  const astepB=document.getElementById('astep');
-  astepB.onclick=()=>{
-    const want = !astepMode;
-    // ACT mode is mutually exclusive with VEL/GATE — clear those first so
-    // their visual state doesn't bleed into the active-step rendering.
-    if (vModeB && gModeB) {
-      if (velMode)  { velMode = false; vModeB.classList.remove('on');
-        sN.forEach(b => b.classList.remove('velMode')); }
-      if (gateMode) { gateMode = false; gModeB.classList.remove('on');
-        sN.forEach(b => b.classList.remove('gateMode')); }
-    }
-    astepMode = want;
-    astepB.classList.toggle('on', astepMode);
-    sN.forEach((b,i)=>{
-      b.classList.toggle('on',  !astepMode && onSteps[i]);
-      b.classList.toggle('skip', astepMode && !actStep[i]);
+  // 2026-05-20 Refactor: STEP-EDIT-Modus war 3 mutually-exclusive Toggles
+  // (ACT/VEL/GATE) — jetzt 1 Knob "STEP EDIT" (data-k="edmd") mit 4 Positionen:
+  //   0=GATE-Default (Click toggelt Step-Gate; bisheriger Default-State)
+  //   1=ACT  (Click = Skip-Edit, .skip-Klasse)
+  //   2=VEL  (vertikaler Drag setzt Step-Velocity, .velMode-Klasse)
+  //   3=GLEN (horizontaler Drag setzt Step-Gate-Länge, .gateMode-Klasse)
+  // Engine-Schnittstelle unverändert — die Modi sind UI-Editor-States, die
+  // pro Step-Click in seqActiveStep / seqStepVel / seqStepGate übersetzt werden.
+  function setStepEditMode(modeIdx) {                                    // 0..3
+    astepMode = (modeIdx === 1);
+    velMode   = (modeIdx === 2);
+    gateMode  = (modeIdx === 3);
+    sN.forEach((b,i) => {
+      b.classList.toggle('on',     !astepMode && onSteps[i]);
+      b.classList.toggle('skip',    astepMode && !actStep[i]);
+      b.classList.toggle('velMode', velMode);
+      b.classList.toggle('gateMode',gateMode);
     });
-    show('STEP MODE', astepMode ? 'ACTIVE-STEP (skip edit)' : 'GATE', '');
-  };
-  // EXT-FLUX-VEL — VEL mode toggle. Activates per-step vertical drag on the
-  // step grid (no gate-toggle / no skip-edit while engaged). Step buttons
-  // gain .velMode class so the cursor shows ns-resize and the ::after dot
-  // is hidden in favour of the velocity strip readout.
-  const vModeB = document.getElementById('vmode');
-  const gModeB = document.getElementById('gmode');
-  function clearModeFlags() {
-    if (astepMode) { astepMode = false; astepB.classList.remove('on');
-      sN.forEach((b,i) => { b.classList.toggle('on', onSteps[i]); b.classList.remove('skip'); }); }
-    if (velMode)  { velMode = false; vModeB.classList.remove('on');
-      sN.forEach(b => b.classList.remove('velMode')); }
-    if (gateMode) { gateMode = false; gModeB.classList.remove('on');
-      sN.forEach(b => b.classList.remove('gateMode')); }
+    const labels = ['GATE (toggle)', 'ACTIVE-STEP (skip edit)', 'VELOCITY (drag ↕)', 'GATE LEN (drag ↔)'];
+    show('STEP EDIT', labels[modeIdx] || 'GATE', '');
   }
-  vModeB.onclick = () => {
-    const want = !velMode;
-    clearModeFlags();
-    velMode = want;
-    vModeB.classList.toggle('on', velMode);
-    sN.forEach(b => b.classList.toggle('velMode', velMode));
-    show('VEL MODE', velMode ? 'ON (drag steps)' : 'OFF', '');
-  };
-  // EXT-FLUX-GATE — GATE mode toggle. Horizontal drag in a step sets its
-  // gate-length 0..1. Mutually exclusive with VEL and ACT.
-  gModeB.onclick = () => {
-    const want = !gateMode;
-    clearModeFlags();
-    gateMode = want;
-    gModeB.classList.toggle('on', gateMode);
-    sN.forEach(b => b.classList.toggle('gateMode', gateMode));
-    show('GATE MODE', gateMode ? 'ON (drag steps)' : 'OFF', '');
-  };
+  // clearModeFlags ⇒ zurück auf Default-Edit-Modus 0 (alle Modus-Flags off,
+  // Step-Grid-CSS auf Gate-Default). Wird von FLUX-Wechsel + Preset-Load
+  // gerufen; setzt zusätzlich K.edmd damit der Knob-Visual mitläuft.
+  function clearModeFlags() { setStepEditMode(0); if (K.edmd) K.edmd.set(0); }
 
   const metroB=document.getElementById('metro');let metroOn=false;
   metroB.onclick=()=>{metroOn=!metroOn;metroB.classList.toggle('on',metroOn);
     show('METRONOME',metroOn?'ON (delay bypassed)':'OFF','');
     emit((c) => c.seqMetronome(metroOn));};
 
-  // E4.2 — tempo division as a 3-way radio group (1/1, 1/2, 1/4 — engine T20).
-  const tdiv=document.getElementById('tdiv');let tdivVal=1;
-  tdiv.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
-    const d=+b.dataset.d; if (d!==1 && d!==2 && d!==4) return;   // engine clamps
+  // E4.2 — tempo division. 2026-05-20 Refactor: war 3-Button-Segmented-Group
+  // (1/1, 1/2, 1/4), jetzt 3-Position-Steppknob "TEMPO DIV" (data-k="tdv").
+  // Knob-Indizes 0/1/2 → Divisor 1/2/4. Cursor-Re-Anchoring identisch zur
+  // alten EXT-ARP-FIX3-Logik (siehe setTempoDivByIdx unten).
+  let tdivVal = 1;
+  function setTempoDivByIdx(idx) {                                          // 0..2
+    const d = [1, 2, 4][idx | 0] || 1;
     // EXT-ARP-FIX3: re-anchor the cursor BEFORE switching tdivVal. Mirror
     // exactly what the engine does — keep the fractional acc, recompute
-    // step index. Mathematically: total seconds in old regime = elapsed +
-    // previous acc; steps fired = floor(total/smOld); leftover = total
-    // mod smOld; that leftover carries into the new regime as the new
-    // cursorAccSec. Without this fold, the cursor lost the fractional
-    // position and trailed the engine by exactly that fraction.
+    // step index. Without this fold, the cursor would lose the fractional
+    // position when changing tempo-div mid-play.
     if (playing && audio.ctx) {
       const bpm = K.tmp.get();
       const smOld = (60 / (bpm * 4)) * tdivVal;
@@ -1452,13 +1419,13 @@ function emit(fn) {
       const total = cursorAccSec + (tNow - cursorRegimeTs);
       const stepsFired = Math.floor(total / smOld);
       cursorStep      = (cursorStep + stepsFired) | 0;
-      cursorAccSec    = total - stepsFired * smOld;     // fractional carry
+      cursorAccSec    = total - stepsFired * smOld;
       cursorRegimeTs  = tNow;
     }
-    tdivVal=d;[...tdiv.querySelectorAll('button')].forEach(x=>x.classList.remove('on'));
-    b.classList.add('on');
-    show('TEMPO DIV','1/'+d,'');
-    emit((c) => c.seqTempoDiv(d));});
+    tdivVal = d;
+    show('TEMPO DIV', '1/' + d, '');
+    emit((c) => c.seqTempoDiv(d));
+  }
 
   // ---- E5 FLUX mode + EXT-FLUX Timeline-Visualizer ------------------------
   // Switching the mode is click-free engine-side (running notes continue via
@@ -1468,7 +1435,9 @@ function emit(fn) {
   // authoritative replay source. Event marker positions are computed from
   // audio.ctx.currentTime relative to fluxStartTime; drift vs engine cursor
   // is sub-millisecond and only affects visualization.
-  const fluxB    = document.getElementById('flux');     let fluxOn    = false;
+  // 2026-05-20: #flux-Button durch Steppknob "FLUX MODE" ersetzt — fluxOn-State
+  // bleibt als JS-Variable, wird über setFluxOn(bool) gesetzt.
+  let fluxOn    = false;
   const flxRecB  = document.getElementById('flxrec');   let fluxRecOn = false;
   const flxClrB  = document.getElementById('flxclr');
   const fluxGrid = document.getElementById('fluxgrid');
@@ -1536,13 +1505,14 @@ function emit(fn) {
     fluxAnimRaf = requestAnimationFrame(fluxAnimTick);
   }
 
-  fluxB.onclick = () => {
-    fluxOn = !fluxOn;
-    fluxB.classList.toggle('on', fluxOn);
+  // 2026-05-20 Refactor: FLUX + F·FINE waren 2 abhängige Toggles (FLUX-off +
+  // F·FINE-on = unsinniger Zustand). Jetzt 1 Steppknob "FLUX MODE" mit 3
+  // Positionen: 0=OFF, 1=1/16-Q (FLUX an + Quantize an = Korg-Standard),
+  // 2=FINE (FLUX an + Quantize aus = sample-acc free-run). Engine-API
+  // unverändert (seqFluxMode + seqFluxQuantize).
+  function setFluxOn(on) {
+    fluxOn = !!on;
     app.dataset.flux = fluxOn ? 'on' : 'off';
-    show('FLUX', fluxOn ? 'ON (event sequence)' : 'OFF (step grid)', '');
-    // Legacy .fluxoff dim still applied for sanity (CSS now hides via [data-flux]
-    // selector — the class is harmless when display:none takes over).
     stepsEl.classList.toggle('fluxoff', fluxOn);
     laneEl.classList.toggle('fluxoff', fluxOn);
     if (fluxOn) {
@@ -1556,7 +1526,18 @@ function emit(fn) {
       emit((c) => c.seqFluxMode(false));
       if (fluxAnimRaf) { cancelAnimationFrame(fluxAnimRaf); fluxAnimRaf = 0; }
     }
-  };
+  }
+  let fluxFineOn = false;                                                  // EXT-FLUX-QUANTIZE state (inverse of engine quantize flag)
+  function setFluxFine(fine) {
+    fluxFineOn = !!fine;
+    emit((c) => c.seqFluxQuantize(!fluxFineOn));   // quantize is the inverse of fine
+  }
+  function setFluxModeByIdx(idx) {                                          // 0=OFF 1=Q 2=FINE
+    const labels = ['OFF (step grid)', '1/16-Q (Korg snap)', 'FINE (free-run)'];
+    setFluxOn(idx !== 0);
+    setFluxFine(idx === 2);
+    show('FLUX MODE', labels[idx | 0] || labels[0], '');
+  }
   flxRecB.onclick = () => {
     fluxRecOn = !fluxRecOn;
     flxRecB.classList.toggle('on', fluxRecOn);
@@ -1582,55 +1563,34 @@ function emit(fn) {
     emit((c) => c.seqFluxClear());
     show('FLUX', 'cleared', '');
   };
-  // EXT-FLUX-QUANTIZE — F·FINE toggle. Default OFF = engine snaps to 1/16
-  // step grid (Korg-Volca/Electribe/Minilogue standard). On = sample-accurate
-  // free-running (jenseits Korg, technisch verfügbar).
-  const flxFineB = document.getElementById('flxfine');
-  let fluxFineOn = false;
-  flxFineB.onclick = () => {
-    fluxFineOn = !fluxFineOn;
-    flxFineB.classList.toggle('on', fluxFineOn);
-    show('FLUX FINE', fluxFineOn ? 'ON (free)' : 'OFF (1/16 snap)', '');
-    // Engine flag: quantize is the inverse of fine.
-    emit((c) => c.seqFluxQuantize(!fluxFineOn));
-  };
-  // EXT-FLUX F·LEN — segmented 1/2/4-bar loop length selector. Mirrors the
-  // #tdiv styling. Changing during fluxOn re-sends seqFluxLoopLen so the
-  // engine wraps at the new length on the next sample.
-  const flenSeg = document.getElementById('flen');
-  flenSeg.addEventListener('click', (e) => {
-    const b = e.target.closest('button.tbtn[data-fl]');
-    if (!b) return;
-    [...flenSeg.children].forEach(x => x.classList.remove('on'));
-    b.classList.add('on');
-    fluxLoopBars = +b.dataset.fl;
+  // EXT-FLUX F·LEN — 2026-05-20: war 3-Button-Segmented-Group (1B/2B/4B),
+  // jetzt 3-Position-Steppknob "F·LEN" (data-k="flen"). Knob-Indizes
+  // 0/1/2 → Bars 1/2/4. Changing during fluxOn re-sends seqFluxLoopLen +
+  // seqFluxClear (alte Events haben fremde Offsets).
+  function setFluxLenByIdx(idx) {                                           // 0..2
+    const bars = [1, 2, 4][idx | 0] || 1;
+    fluxLoopBars = bars;
     fluxLoopEl.textContent = String(fluxLoopBars);
-    show('FLUX LEN', fluxLoopBars + ' bar' + (fluxLoopBars===1?'':'s'), '');
+    show('FLUX LEN', bars + ' bar' + (bars === 1 ? '' : 's'), '');
     if (fluxOn) {
       fluxLoopLen = fluxLoopLenSamples();
       fluxStartTime = (audio && audio.ctx) ? audio.ctx.currentTime : 0;
-      // Clear mirror — old events have offsets that won't match the new loop.
       fluxEvents.length = 0;
       drawFluxEvents();
       emit((c) => { c.seqFluxLoopLen(fluxLoopLen); c.seqFluxClear(); });
     }
-  });
+  }
 
-  // FLUX-6 SWING — segmented off-beat delay selector (Korg-Volca/Electribe).
-  // Engine swing_ defaults to 0 (anti-blender: 0% bit-identical to legacy).
-  // 15/30/45% map to clock.setSwing(0.15/0.30/0.45). Odd-indexed 1/16 steps
-  // are delayed by swing × stepSamples — classic shuffle.
-  const swingSeg = document.getElementById('swing');
+  // FLUX-6 SWING — 2026-05-20: war 4-Button-Segmented-Group (0/15/30/45 %),
+  // jetzt kontinuierlicher Knob "SWING" (data-k="swg", 0..100 %). Engine-API
+  // seqSwing(0..1) ist immer schon continuous gewesen — die 4 alten Stops
+  // waren willkürliche Diskretisierung. Knob bringt freie Wahl.
   let swingVal = 0;
-  swingSeg.addEventListener('click', (e) => {
-    const b = e.target.closest('button.tbtn[data-sw]');
-    if (!b) return;
-    [...swingSeg.children].forEach(x => x.classList.remove('on'));
-    b.classList.add('on');
-    swingVal = +b.dataset.sw;
-    show('SWING', Math.round(swingVal*100) + '%', '');
+  function setSwingPct(pct) {                                               // 0..100
+    swingVal = Math.max(0, Math.min(1, pct / 100));
+    show('SWING', Math.round(swingVal * 100) + '%', '');
     emit((c) => c.seqSwing(swingVal));
-  });
+  }
 
   // EXT-ARP UI2: only ON / HOLD are toggles. MODE / RATE / OCT / GATE are
   // knobs (data-int="1" for the discrete ones). Industry-standard layout:
@@ -1762,9 +1722,11 @@ function emit(fn) {
         emit((c) => c.seqMetronome(metroOn));
       }
       if (typeof p.tempoDiv === 'number') {
-        tdivVal = p.tempoDiv;
-        [...tdiv.querySelectorAll('button')].forEach(b => b.classList.toggle('on', +b.dataset.d === tdivVal));
-        emit((c) => c.seqTempoDiv(tdivVal));
+        // 2026-05-20: Knob-Indizes (0/1/2) → div (1/2/4). Preset speichert
+        // direkt den div-Wert; in Knob-Idx umrechnen.
+        const idx = ({1:0, 2:1, 4:2})[p.tempoDiv] ?? 0;
+        if (K.tdv) K.tdv.set(idx);
+        else { tdivVal = p.tempoDiv; emit((c) => c.seqTempoDiv(tdivVal)); }
       }
       if (typeof p.motionSmooth === 'boolean') {
         motionSmooth = p.motionSmooth;
@@ -1779,13 +1741,11 @@ function emit(fn) {
           emit((c) => c.seqActiveStep(i, on));
         });
       }
-      // FLUX-6 SWING — preset swing 0..0.7 (Korg-Volca/Electribe shuffle).
-      // Absent ⇒ neutral 0 (preset switches reset cleanly; no swing leak from
-      // the previously loaded slot). The #swing segmented `on` class is set
-      // only if the value matches one of the four exposed buckets.
+      // FLUX-6 SWING — 2026-05-20: Knob statt Segmented-Group. Preset-Wert
+      // (0..1) wird auf den Knob (0..100 %) übertragen; K.swg.set() ruft
+      // intern setSwingPct() das emit(seqSwing) macht.
       swingVal = (typeof p.swing === 'number') ? p.swing : 0;
-      [...swingSeg.children].forEach(b => b.classList.toggle('on', +b.dataset.sw === swingVal));
-      emit((c) => c.seqSwing(swingVal));
+      if (K.swg) K.swg.set(swingVal * 100); else emit((c) => c.seqSwing(swingVal));
       // FLUX-4/5 STEP VEL + GATE — per-step modulation arrays. Default 1.0
       // (legacy hold). Absent ⇒ reset to neutral so per-step state from the
       // previously loaded preset doesn't bleed into the new slot.
