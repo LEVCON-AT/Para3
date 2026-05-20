@@ -1,14 +1,7 @@
-> ⚠ **HISTORISCHES DOKUMENT — nur E1–E7-Meilenstein.** Das Repo ist
-> inzwischen deutlich weiter (EXT-ARP, EXT-FLUX u. a., ~30 Commits über
-> E1–E7). Dies ist **nicht** der aktuelle Stand und die `engine-delivery/`-
-> Dateien dürfen **NICHT** über das evolvierte Repo gelegt werden — das
-> wäre ein Rückschritt. Source of Truth ist der aktuelle Repo-Stand.
-
 # PARA·3 — Engine-Agent: KORG-Parity-Sprints E1–E7 — Übergabe
 
-**Status (historisch): Meilenstein E1–E7 war fertig, gemessen, grün.**
-Native Endregression *zum E1–E7-Zeitpunkt*: `offline_test` T1–T26,
-`capi_test` WA1–WA6 (heute deutlich mehr — die aktuelle Repo-Suite zählt),
+**Status: alle Sprints E1–E7 fertig, in-place implementiert, gemessen, grün.**
+Native Endregression: `offline_test` T1–T26, `capi_test` WA1–WA6,
 `scope_source_test`, `ring_test`, `audio_test`, `port_test` → **alle PASS,
 0 Fehler, 0 Compilerwarnungen, kein `-ffast-math`.**
 
@@ -39,9 +32,7 @@ header-only — exakt nach Anhang A der DSP-Spec.
 
 ## 2. Wie anwenden
 
-HISTORISCH (galt nur beim ursprünglichen E1–E7-Handover; HEUTE NICHT
-MEHR ANWENDEN — das Repo ist weiter): Die 6 Dateien waren gezielt zu
-übernehmen (das waren genau die
+Die 6 Dateien gezielt in den Repo-Stand übernehmen (das sind genau die
 Dateien, die der Engine-Agent ändern darf). **Nicht** den ganzen Repo
 überschreiben — Claude Codes Transport/Scope/PWA-Arbeit bleibt unberührt
 (o.g. Dateien sind bitidentisch geblieben). Danach bauen wie gehabt:

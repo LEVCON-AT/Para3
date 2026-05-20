@@ -41,14 +41,7 @@ enum {
     PARA3_P_EG_CUT_DEPTH = 12,      // E1.1 bipolar: norm 0.5 == 0 (centre)
     PARA3_P_DETUNE = 13,            // E2.1 unipolar
     PARA3_P_PORTAMENTO = 14,        // E2.2 unipolar, 0 = instant
-    PARA3_P_VOLUME = 15,            // E6.1 unipolar, 1.0 = unity
-    // 16 reserved for kArpModePid (motion-only discrete; NOT a setParamNorm target)
-    PARA3_P_BASS_PULSE_WIDTH = 17,  // EXT-BASS B2 unipolar, 0.5 norm = PW 0.5 (default, bit-identical to B1)
-    PARA3_P_BASS_PWM_DEPTH   = 18,  // EXT-BASS B2 unipolar, 0 = static PW (default, bit-identical to B1)
-    PARA3_P_BASS_SPREAD      = 19,  // EXT-BASS B3 unipolar 0..2 semitones half-spread (additive auf E2.1)
-    PARA3_P_BASS_DRIFT_RATE  = 20,  // EXT-BASS B3 unipolar 0.05..5 Hz LP cutoff
-    PARA3_P_BASS_DRIFT_DEPTH = 21,  // EXT-BASS B3 unipolar 0..0.15 semitones pitch wander
-    PARA3_P_BASS_SUB_LEVEL   = 22   // EXT-BASS B5 unipolar 0..0.5 sub-osc amplitude (pre-VCF, -1 octave)
+    PARA3_P_VOLUME = 15             // E6.1 unipolar, 1.0 = unity
 };
 // voice modes mirror ParaAllocator::Mode
 enum {
@@ -123,24 +116,6 @@ void para3_arp_octaves(Para3* p, int oct);                    // EXT-ARP Block B
 void para3_arp_hold   (Para3* p, int on);                     // EXT-ARP Block C Latch
 void para3_arp_seed   (Para3* p, unsigned int seed);          // EXT-ARP Block C Random reproducibility
 long para3_arp_dropped(Para3* p);                             // EXT-ARP Block C pool-overflow observability
-
-// EXT-BASS B1 — per-oscillator waveform: 0=Saw (default, bit-identical),
-// 1=Pulse (band-limited via two PolyBLEP corrections, PW=0.5 fixed at B1).
-// Discrete control (NOT a setParamNorm target). osc ∈ {0,1,2}; out-of-range
-// silently ignored. Default for all 3 oscillators = 0 ⇒ pre-B1 audio path
-// preserved (T49 max|d|=0).
-void para3_osc_wave(Para3* p, int osc, int wave);             // EXT-BASS B1
-
-// EXT-BASS B3 — Drift seed (reproducible per-OSC pitch-wander). Discrete
-// control. Default seed is set in engine prepare(); call only when you need
-// determinism for tests or stable analog-imperfection feel across sessions.
-// seed=0 is treated as 1 internally (xorshift32 needs non-zero state).
-void para3_bass_drift_seed(Para3* p, unsigned int seed);      // EXT-BASS B3
-
-// EXT-BASS B4 — Stack/Mono allocator override. When on, all 3 oscillators
-// play the newest held note (monophonic stack), regardless of voice mode.
-// Off (default) ⇒ engine bit-identical to pre-B4 (T65).
-void para3_bass_stack(Para3* p, int on);                      // EXT-BASS B4
 
 // render n frames into out (mono). out is a pointer into the WASM heap.
 // real-time safe: no allocation, no locks, no syscalls.

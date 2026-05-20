@@ -26,5 +26,5 @@ Harte Punkte:
 - Step-Sequencer (E3/E4) und Flux (E5) bleiben **wörtlich unverändert**;
   der Arp transformiert nur die Tasten/MIDI-Notenquelle.
 - Blöcke A/B/C je mit eigenem Test (T27…) + Commit; volle Regression
-  (volle vorhandene Repo-Suite) bleibt unverändert PASS; neue Exporte in
+  (T1–T26, WA1–WA6) bleibt unverändert PASS; neue Exporte in
   `build_wasm.sh`; E2E-Neutralität bei „Arp aus".

@@ -40,14 +40,8 @@ static para3::ParaEngine::Param mapParam(int id) {
         case PARA3_P_SUSTAIN:          return P::Sustain;
         case PARA3_P_EG_CUT_DEPTH:     return P::EgCutDepth;   // E1.1
         case PARA3_P_DETUNE:           return P::Detune;       // E2.1
-        case PARA3_P_PORTAMENTO:       return P::Portamento;       // E2.2
-        case PARA3_P_VOLUME:           return P::Volume;           // E6.1
-        case PARA3_P_BASS_PULSE_WIDTH: return P::BassPulseWidth;   // EXT-BASS B2
-        case PARA3_P_BASS_PWM_DEPTH:   return P::BassPwmDepth;     // EXT-BASS B2
-        case PARA3_P_BASS_SPREAD:      return P::BassSpread;       // EXT-BASS B3
-        case PARA3_P_BASS_DRIFT_RATE:  return P::BassDriftRate;    // EXT-BASS B3
-        case PARA3_P_BASS_DRIFT_DEPTH: return P::BassDriftDepth;   // EXT-BASS B3
-        case PARA3_P_BASS_SUB_LEVEL:   return P::BassSubLevel;     // EXT-BASS B5
+        case PARA3_P_PORTAMENTO:       return P::Portamento;   // E2.2
+        case PARA3_P_VOLUME:           return P::Volume;       // E6.1
         default:                       return P::Cutoff;
     }
 }
@@ -176,25 +170,6 @@ void para3_arp_octaves(Para3* p, int oct)      { if (p) p->ctrl.setArpOctaves(oc
 void para3_arp_hold   (Para3* p, int on)       { if (p) p->ctrl.setArpHold(on != 0); } // EXT-ARP Block C
 void para3_arp_seed   (Para3* p, unsigned int s){ if (p) p->ctrl.setArpSeed(s); }      // EXT-ARP Block C
 long para3_arp_dropped(Para3* p)               { return p ? p->ctrl.arpDropped() : 0; } // EXT-ARP Block C
-
-// EXT-BASS B1 — per-oscillator waveform (discrete, no funnel). Default
-// wave=0 (Saw) ⇒ engine bit-identical to pre-B1 build (T49 max|d|=0).
-void para3_osc_wave(Para3* p, int osc, int wave) {                                       // EXT-BASS B1
-    if (p) p->engine.setOscWave(osc, wave);
-}
-
-// EXT-BASS B3 — Drift seed (discrete, reproducibility). Engine sets a
-// default seed in prepare(); this just re-seeds the per-OSC xorshift32 +
-// resets the LP state. Bit-identical default unless depth ≠ 0 (T63).
-void para3_bass_drift_seed(Para3* p, unsigned int seed) {                                // EXT-BASS B3
-    if (p) p->engine.setBassDriftSeed(seed);
-}
-
-// EXT-BASS B4 — Stack/Mono allocator override (discrete, no funnel).
-// Default off ⇒ engine bit-identical (T65 max|d|=0).
-void para3_bass_stack(Para3* p, int on) {                                                // EXT-BASS B4
-    if (p) p->engine.setBassStack(on != 0);
-}
 
 void para3_render(Para3* p, float* out, int n) {
     if (!p) return;

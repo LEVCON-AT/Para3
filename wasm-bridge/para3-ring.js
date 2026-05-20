@@ -68,11 +68,6 @@ export const OP = Object.freeze({
   SEQ_FLUX_QUANTIZE: 39, // i0 = on (0|1)  -- 1/16-step snap (default 1 Korg)
   SEQ_STEP_VEL:      40, // EXT-FLUX-VEL  i0 = idx (0..15), d = norm 0..1
   SEQ_STEP_GATE:     41, // EXT-FLUX-GATE i0 = idx (0..15), d = norm 0..1
-  // EXT-BASS B1/B4/B3 — discrete bass-character controls (continuous params
-  // PW/PWM/Spread/Drift/Sub go through SET_PARAM with their P-IDs 17..22).
-  BASS_OSC_WAVE:     42, // EXT-BASS B1 i0 = osc (0..2), i1 = wave (0=Saw 1=Pulse)
-  BASS_STACK:        43, // EXT-BASS B4 i0 = on (0|1) — Mono/Stack allocator override
-  BASS_DRIFT_SEED:   44, // EXT-BASS B3 i0 = seed (uint32, reseed per-OSC xorshift)
 });
 
 const HDR = 2;                       // header int32 count
@@ -163,12 +158,6 @@ export class Para3Ring {
   arpOctaves(o)        { return this._push(OP.ARP_OCTAVES, o | 0, 0, 0); }
   arpHold(on)          { return this._push(OP.ARP_HOLD,    on ? 1 : 0, 0, 0); }
   arpSeed(seed)        { return this._push(OP.ARP_SEED,    seed | 0, 0, 0); }
-  // EXT-BASS producers — discrete (no funnel). Continuous params (PW, PWM,
-  // Spread, DriftRate, DriftDepth, SubLevel) gehen über setParam mit den
-  // entsprechenden P-IDs (17..22) — kein neuer OP nötig.
-  bassOscWave(osc, w)  { return this._push(OP.BASS_OSC_WAVE,  osc | 0, w | 0, 0); }  // EXT-BASS B1
-  bassStack(on)        { return this._push(OP.BASS_STACK,     on ? 1 : 0, 0, 0); }    // EXT-BASS B4
-  bassDriftSeed(seed)  { return this._push(OP.BASS_DRIFT_SEED, seed | 0, 0, 0); }     // EXT-BASS B3
 
   // ---- consumer side (AudioWorklet thread). Wait-free drain. ----
   // cb(op, i0, i1, dval) is invoked for each pending message, in order.

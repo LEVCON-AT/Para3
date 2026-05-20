@@ -21,11 +21,8 @@ ssh "$VPS" "
   echo '---' && git log --oneline -3
   # Wenn Engine-Header geändert wurden: WASM neu builden.
   if [ -f wasm-bridge/build_wasm.sh ]; then
-    if git diff --name-only HEAD~1 HEAD 2>/dev/null | grep -q 'Para3Engine.hpp\\|wasm-bridge/para3_capi\\|wasm-bridge/build_wasm.sh'; then
+    if git diff --name-only HEAD~1 HEAD 2>/dev/null | grep -q 'Para3Engine.hpp\\|wasm-bridge/para3_capi'; then
       echo '--- engine changed → rebuilding wasm ---'
-      # emsdk is installed at /opt/emsdk but emcc is not on the default PATH
-      # in non-interactive ssh sessions — source the env explicitly.
-      source /opt/emsdk/emsdk_env.sh >/dev/null 2>&1 || true
       cd wasm-bridge && bash build_wasm.sh && cd ..
     fi
   fi

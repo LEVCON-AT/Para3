@@ -30,38 +30,39 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO = join(__dirname, '..');
 
-// --- baseline of untouched files (md5; current state after E1–E7 + EXT-ARP +
-// EXT-FLUX + RELEASE-FIX + LAB-1..10 + staging-prod-merge) ----------------
-// PURPOSE: catch UI-only sprints that ACCIDENTALLY touch an engine/bridge
-// file. Legitimate engine evolution is the new standard — when an engine/
-// bridge file is intentionally changed (with its own T<n>/WA<n> test +
-// commit gate), the corresponding hash here is rebaselined as part of that
-// commit. This is NOT a frozen "never change" gate, it is a "no-stealth-
-// change" gate.
+// --- baseline of untouched files (md5; captured immediately after the worklet
+// memory fix landed, i.e. just before the U-sprints begin) ---------------
 const md5_baseline = {
-  // EXT-BASS B5 rebaseline: Sub-Oszillator (Oscillator-Instanz mit wave=Pulse,
-  // Square @ PW=0.5) als ParaEngine-Member. subPitch_-RampParam folgt der
-  // newest Note minus 12 ST (-1 Oktave). Sub vor VCF gemischt → durchläuft
-  // Filter+Envelope wie reguläre Stimmen. Param BassSubLevel=22 mit Default 0
-  // ⇒ subSamp * 0 = 0 exakt ⇒ bit-identisch (T70). Tests: T70-T74 + WA13.
-  // Keine neuen C-API-Funktionen (Level läuft über para3_set_param).
-  'Para3Engine.hpp':                            'ae49a0187047c4b774ea0e148d32ccdd',
-  'offline_test.cpp':                           '498b7e6cf287b39f2ffcb54d8e1a7ce5',
-  'wasm-bridge/para3_capi.h':                   '7baab254d08164e9f87a0fa860483a2c',
-  'wasm-bridge/para3_capi.cpp':                 'c5c29b61a1bca8025e4feb56b402c802',
-  'wasm-bridge/capi_test.cpp':                  '5b3bcf9957a72750b3e2ee91ad89c8cf',
-  'wasm-bridge/scope_source_test.cpp':          '646828487b3a002a565b9ec87a7abe55',
-  'wasm-bridge/parity_native.cpp':              'ffdb9666262ae54961d58dc7ec19d4b0',
-  'wasm-bridge/parity_seq.h':                   '9043aba77b26cecb2aa1324ba805e07a',
-  'wasm-bridge/build_wasm.sh':                  'cbc877405b3a4a1d53579cac2671e399',
-  'wasm-bridge/wasm_parity.mjs':                '9a396e68954d830a3aac0bde40b887cb',
-  'wasm-bridge/para3-audio.js':                 '720ac2319bc49df338795641d58b19b8',
-  'wasm-bridge/para3-ring.js':                  'e11936ecb1857130ffe9ee03d4e2ddbc',
-  'wasm-bridge/para3-port.js':                  'b32b05892fc3afe81e8ab6ad750aa898',
-  'wasm-bridge/para3-worklet.js':               'd3016e62d43588394ed06124a512aeb0',
-  'wasm-bridge/audio_test.mjs':                 '037acf634432569aa0edbe4a8458a595',
-  'wasm-bridge/ring_test.mjs':                  '76ad067b33f87f310810257a1c65ff24',
-  'wasm-bridge/port_test.mjs':                  '75e950283a90d7a3cefe9037fb73c408',
+  // EXT-ARP update: design extension over Volca-Keys parity (Keys hardware
+  // has no arp). Blocks A+B+C add arp pool + scheduler + modes + octave +
+  // Random/Hold/Seed; C-API adds 8 entry points (enable/mode/rate/gate/
+  // octaves/hold/seed/dropped). Bridge JS gains 7 OPs (ARP_ENABLE..ARP_SEED).
+  // The audio path is bit-identical when arpEnabled_=false — proven by T31a
+  // (max|d|=0 over a full render) AND WA7's off-state parity check at the
+  // C-API surface. Files touched by EXT-ARP:
+  //   * engine + C-API: Para3Engine.hpp, para3_capi.{h,cpp}, build_wasm.sh
+  //   * tests:          offline_test.cpp (T31..T35), capi_test.cpp (WA7)
+  //   * bridge JS:      para3-audio.js, para3-ring.js, para3-port.js,
+  //                     para3-worklet.js  (new OPs + Controls methods)
+  // The remaining 7 files (scope/parity/audio/ring/port_test, wasm_parity,
+  // parity_seq, parity_native) stay byte-frozen.
+  'Para3Engine.hpp':                          '69c11de4035eefd2790df06c1e4eaa73',
+  'offline_test.cpp':                         '5a89c35214dfceb7fd7ee81abd3cf3e3',
+  'wasm-bridge/para3_capi.h':                 '3f22daba53093885e12733aa3c54e1a4',
+  'wasm-bridge/para3_capi.cpp':               '256340fc4dba8eade3488e134bc6e5fa',
+  'wasm-bridge/capi_test.cpp':                'aa8182e52327f513fe0d23df6ad0c1a8',
+  'wasm-bridge/scope_source_test.cpp':        '646828487b3a002a565b9ec87a7abe55',
+  'wasm-bridge/parity_native.cpp':            'ffdb9666262ae54961d58dc7ec19d4b0',
+  'wasm-bridge/parity_seq.h':                 '9043aba77b26cecb2aa1324ba805e07a',
+  'wasm-bridge/build_wasm.sh':                '8b49ff2273d773fd9f5c1d737aac35cf',
+  'wasm-bridge/wasm_parity.mjs':              '9a396e68954d830a3aac0bde40b887cb',
+  'wasm-bridge/para3-audio.js':               '979ba0703f2cb8c84abdf98f46668666',
+  'wasm-bridge/para3-ring.js':                'be036c6f917c45942f045293a4b60c57',
+  'wasm-bridge/para3-port.js':                'b32b05892fc3afe81e8ab6ad750aa898',
+  'wasm-bridge/para3-worklet.js':             'b9951f20545589c6b76f8d9b04abd937',
+  'wasm-bridge/audio_test.mjs':               '037acf634432569aa0edbe4a8458a595',
+  'wasm-bridge/ring_test.mjs':                '76ad067b33f87f310810257a1c65ff24',
+  'wasm-bridge/port_test.mjs':                '75e950283a90d7a3cefe9037fb73c408',
 };
 
 let fails = 0;
@@ -71,10 +72,7 @@ let fails = 0;
   const drift = [];
   for (const [rel, want] of Object.entries(md5_baseline)) {
     const buf = readFileSync(join(REPO, rel));
-    // Normalize CRLF → LF so the test is reproducible on Windows checkouts
-    // (autocrlf=true) AND on the Linux VPS — the canonical repo format is LF.
-    const norm = Buffer.from(buf.toString('binary').replace(/\r\n/g, '\n'), 'binary');
-    const got = createHash('md5').update(norm).digest('hex');
+    const got = createHash('md5').update(buf).digest('hex');
     if (got !== want) drift.push(`${rel}: want ${want}, got ${got}`);
   }
   const pass = drift.length === 0;

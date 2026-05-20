@@ -21,15 +21,6 @@ export const PARAM = Object.freeze({
   // EXT-ARP-MOTION: Controller-level discrete param (0..4). Lane 0..1 maps
   // to mode 0..4 via floor(v*5) in Controller::applyMotionParam_().
   ARP_MODE: 16,
-  // EXT-BASS — continuous params (kontinuierlich = Trichter). Discrete
-  // controls (Waveform, Stack, Drift-Seed) gehen über Bridge-Hooks
-  // bassOscWave/bassStack/bassDriftSeed, nicht über setParam.
-  BASS_PULSE_WIDTH: 17,                                          // EXT-BASS B2
-  BASS_PWM_DEPTH:   18,                                          // EXT-BASS B2
-  BASS_SPREAD:      19,                                          // EXT-BASS B3
-  BASS_DRIFT_RATE:  20,                                          // EXT-BASS B3
-  BASS_DRIFT_DEPTH: 21,                                          // EXT-BASS B3
-  BASS_SUB_LEVEL:   22,                                          // EXT-BASS B5
 });
 export const LFO_SHAPE = Object.freeze({ SINE:0, TRIANGLE:1, SAW:2, SQUARE:3 });
 export const MODE = Object.freeze({
@@ -95,12 +86,6 @@ export class Para3Controls {
   arpOctaves(o)             { return this._do(() => this.ring.arpOctaves(o)); }
   arpHold(on)               { return this._do(() => this.ring.arpHold(on)); }
   arpSeed(seed)             { return this._do(() => this.ring.arpSeed(seed)); }
-  // EXT-BASS — discrete bass-character controls. Continuous params (PW, PWM,
-  // Spread, DriftRate, DriftDepth, SubLevel) gehen über setParam(id, v) mit
-  // P-IDs 17..22 — kein neuer Aufruf nötig.
-  bassOscWave(osc, w)       { return this._do(() => this.ring.bassOscWave(osc, w)); }   // EXT-BASS B1
-  bassStack(on)             { return this._do(() => this.ring.bassStack(on)); }          // EXT-BASS B4
-  bassDriftSeed(seed)       { return this._do(() => this.ring.bassDriftSeed(seed)); }    // EXT-BASS B3
   seqTempo(bpm)             { return this._do(() => this.ring.seqTempo(bpm)); }
   seqSwing(s01)             { return this._do(() => this.ring.seqSwing(s01)); }
   seqStart()                { return this._do(() => this.ring.seqStart()); }
