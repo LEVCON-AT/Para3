@@ -2092,6 +2092,10 @@ function emit(fn) {
       // analyser the on-screen scope already reads. No control surface
       // change — exposes existing references only.
       window.__para3Debug = () => ({ audio, analyser, scopeBuf, ready });
+      // 2026-05-20 test hook: expose knob handles so Playwright can drive
+      // controls programmatically without dragging. K[id].set(v) ruft intern
+      // emitKnob() → setSwingPct / setTempoDivByIdx / etc.
+      window.__para3Knobs = K;
 
       // E2E-TAP test-only — installed ONLY when ?e2e=1 or window.__PARA3_E2E
       // is set. Attaches a ScriptProcessor that mirrors the worklet output
