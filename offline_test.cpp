@@ -3274,6 +3274,105 @@ int main() {
         if (!pass) ++failures;
     }
 
+    // ---- T49  OCTAVE-LIVE-FIX  ---------------------------------------------
+    //  User-reported (2026-05-20): "Ich muss die Musiktaste neu drücken, wenn
+    //  ich die Grundoktave verändere — das ist falsch." Vorheriger Engine-
+    //  Code rief in setOctave allNotesOff() auf → der Ton verstummt sofort,
+    //  Re-Press notwendig. Neuer Pfad: alloc_.shiftHeld(delta) erhält die
+    //  noteOn/noteOff-Stack-Invariante und refresh() snapt die neue Tonhöhe
+    //  smooth über RampParam (15ms). Test prüft:
+    //    (a) Während setOctave klingt der Ton WEITER (RMS in der Mitte
+    //        zwischen setOctave und noteOff > 0). T27 testet nur den TAIL
+    //        nach noteOff, würde diesen Bug nicht fangen.
+    //    (b) Tonhöhe verschiebt sich tatsächlich um eine Oktave (FFT-Peak
+    //        wandert zur doppelten Fundamentalfrequenz).
+    //    (c) Matching noteOff (noteOff(60) wird intern zu noteOff(60+12=72))
+    //        löst die Stimme korrekt aus → tail-Silence wie T27.
+    {
+        const double sr_ = sr; using PE = para3::ParaEngine;
+        PE e; e.prepare(sr_, 4096);
+        e.setParamNorm(PE::Param::Cutoff,   1.00);     // VCF wide open
+        e.setParamNorm(PE::Param::Sustain,  1.00);
+        e.setParamNorm(PE::Param::Attack,   0.00);
+        e.setParamNorm(PE::Param::DecRel,   0.50);
+        e.setParamNorm(PE::Param::Volume,   1.00);
+        e.setParamNorm(PE::Param::LfoCutDepth, 0.0);
+        e.setParamNorm(PE::Param::LfoPitchDepth, 0.0);
+        e.setParamNorm(PE::Param::DelayMix, 0.0);
+
+        e.noteOn(60);                                  // MIDI 60 ≈ 261.63 Hz
+        // Warm-up: settle envelope + filter
+        std::vector<float> warm(4000); e.process(warm.data(), 4000);
+
+        // PHASE A — render at original octave (oct=0). Capture RMS + fundamental.
+        const int N = 16384;
+        std::vector<float> phaseA(N); e.process(phaseA.data(), N);
+
+        // SHIFT — move octave +1 (no noteOff). With the old code this would
+        // call allNotesOff() and silence everything. With the new code: shift
+        // the alloc.held_[] entries by +12 and let refresh() smooth-glide.
+        e.setOctave(1);
+        std::vector<float> glide(2400); e.process(glide.data(), 2400);  // let 50ms RampParam settle
+
+        // PHASE B — render at new octave. Note must STILL be sounding.
+        std::vector<float> phaseB(N); e.process(phaseB.data(), N);
+
+        auto rms = [&](const std::vector<float>& v){
+            double s = 0.0; for (float x : v) s += (double)x*x;
+            return std::sqrt(s / v.size());
+        };
+        auto peakFreq = [&](const std::vector<float>& v){
+            std::vector<cd> sp(N);
+            for (int i = 0; i < N; ++i) sp[i] = cd(v[i], 0.0);
+            fft(sp);
+            int kBest = 0; double mBest = 0.0;
+            // search in 50..3000 Hz range (covers MIDI 60..MIDI 84 fundamentals)
+            const int loBin = (int)std::round(  50.0 * N / sr_);
+            const int hiBin = (int)std::round(3000.0 * N / sr_);
+            for (int b = loBin; b < hiBin; ++b) {
+                const double m = std::abs(sp[b]);
+                if (m > mBest) { mBest = m; kBest = b; }
+            }
+            return kBest * sr_ / (double)N;
+        };
+
+        const double rmsA = rms(phaseA);
+        const double rmsB = rms(phaseB);
+        const double fA   = peakFreq(phaseA);
+        const double fB   = peakFreq(phaseB);
+        const double ratio = fB / std::max(fA, 1e-9);
+
+        // (a) NOTE STILL SOUNDING in PHASE B (RMS comparable to PHASE A)
+        const bool stillSounds = (rmsB > 0.5 * rmsA);
+        // (b) FREQUENCY DOUBLED (within 5% — allowing for spectral peak picking jitter)
+        const bool pitchUp     = std::fabs(ratio - 2.0) < 0.10;
+
+        // Now send the matching noteOff (user's keyUp on MIDI 60).
+        e.noteOff(60);
+        const int Ntail = (int)sr_;
+        std::vector<float> tail(Ntail); e.process(tail.data(), Ntail);
+        const int wnd = (int)(sr_ * 0.1);
+        double tailSq = 0.0, tailPk = 0.0;
+        for (int i = Ntail - wnd; i < Ntail; ++i) {
+            tailSq += (double)tail[i]*tail[i];
+            tailPk = std::max(tailPk, (double)std::fabs(tail[i]));
+        }
+        const double tailRms = std::sqrt(tailSq / wnd);
+        // (c) NoteOff(60) löst MIDI 72 in alloc — Stimme korrekt aus → tail silent
+        const bool tailClean = (tailRms < 1e-3) && (tailPk < 1e-2);
+
+        const bool pass = stillSounds && pitchUp && tailClean;
+        std::printf("\nT49 OCTAVE-LIVE-FIX  (gehaltene Note klingt bei Oktavwechsel weiter)\n");
+        std::printf("   RMS  phaseA(orig) / phaseB(+1oct) : %.3e / %.3e  (B > 0.5*A: %s)\n",
+                    rmsA, rmsB, stillSounds?"yes":"NO");
+        std::printf("   peak Hz  phaseA / phaseB          : %.1f / %.1f  (ratio %.3f, want ≈ 2.0)\n",
+                    fA, fB, ratio);
+        std::printf("   tail nach matching noteOff (RMS / peak): %.3e / %.3e\n",
+                    tailRms, tailPk);
+        std::printf("   -> %s\n", pass?"PASS":"FAIL");
+        if (!pass) ++failures;
+    }
+
     std::printf("\n==================================================\n");
     std::printf("%s  (%d failure%s)\n",
                 failures ? "OVERALL: FAIL" : "OVERALL: PASS",

@@ -502,6 +502,16 @@ public:
     // its target and the voice would stay gated forever.
     void allNotesOff() noexcept { count_ = 0; }
     bool anyHeld() const noexcept { return count_ > 0; }
+    // OCTAVE-LIVE-FIX: ParaEngine.setOctave stores held notes as
+    // `userNote + octShift_`, so changing octShift in flight would break the
+    // noteOn/noteOff stack invariant (subsequent noteOff would search for
+    // `userNote + NEW_shift` which is not in held_[]). Shifting every held
+    // entry by the same delta preserves that invariant while moving the
+    // sounding pitch — no allNotesOff needed, gehaltene Noten klingen
+    // mit neuer Oktav-Höhe weiter (refresh() snapt smooth via RampParam).
+    void shiftHeld(int deltaSemis) noexcept {
+        for (int i = 0; i < count_; ++i) held_[i] += deltaSemis;
+    }
 
     // Fills target semitone for 3 oscillators + per-osc active flag.
     void resolve(double outNote[3], bool active[3]) const noexcept {
@@ -786,12 +796,29 @@ public:
     void setMetro(bool on)            noexcept { metroOn_ = on; }         // E4.4 (delay bypass)
     void metroTrigger(bool accent)    noexcept { metro_.trigger(accent); }// E4.4
     void setVolume(double g)          noexcept { vol_.setTarget(g); }     // E6.1 (smoothed)
-    // B1-fix: panic any held voice and release the envelope BEFORE changing
-    // the shift. Reuses the engine's own allNotesOff (below) so seqStop, the
-    // C-API panic path, and this one all converge on the same primitive.
+    // OCTAVE-LIVE-FIX (war: B1-fix mit allNotesOff): gehaltene Noten dürfen
+    // beim Oktav-Wechsel NICHT verstummen. User-Beschwerde: "Ich muss die
+    // Musiktaste neu drücken, wenn ich die Grundoktave verändere — das ist
+    // falsch." Stattdessen verschieben wir alle held_[] um delta-semitones,
+    // sodass die noteOn/noteOff-Invarianz (alloc speichert post-shift Werte)
+    // erhalten bleibt; refresh() pickt die neue Tonhöhe per RampParam smooth
+    // auf (15ms-Glide statt Hard-Cut + Re-Trigger). Gate bleibt geöffnet,
+    // Envelope ungekürzt — Volca-Keys-mäßiges Live-Transponieren.
+    //
+    // Stuck-voice-Schutz (urspr. Grund für allNotesOff) entfällt: solange
+    // delta für jeden Eintrag gleich groß ist (was hier garantiert ist),
+    // bleibt die Invariante bestehen. Nachgewiesen via T<n> (siehe
+    // offline_test).
     void setOctave(int oct)           noexcept {
-        allNotesOff();
-        octShift_ = oct * 12;                                                 // E6.2 semitones
+        const int newShift = oct * 12;                                          // E6.2 semitones
+        const int delta    = newShift - octShift_;
+        if (delta != 0 && alloc_.anyHeld()) {
+            alloc_.shiftHeld(delta);                                            // OCTAVE-LIVE-FIX
+            octShift_ = newShift;
+            refresh();                                                          // smooth RampParam glide to new pitch
+        } else {
+            octShift_ = newShift;
+        }
     }
     // B2: engine-level panic primitive. Single source of truth for "release
     // every voice and start the envelope's Release stage now". RT-safe: one
